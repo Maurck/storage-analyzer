@@ -1,0 +1,24 @@
+
+.content {
+    display: flex;
+    flex-direction: row;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+}
+
+img {
+    width: 100%;
+    height: 100%;
+}
+
+.graphic {
+    width: 50;
+    height: 100vh;
+    border: 1px solid #000;
+}
+
+.options {
+    width: 50vw;
+    height: 100vh;
+    font-size: 1.5rem;
+}

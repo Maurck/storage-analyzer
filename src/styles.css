@@ -1,0 +1,8 @@
+/* Generic */
+@import url("./assets/styles/generic/reset.css");
+@import url("./assets/styles/generic/box-sizing.css");
+
+:root {
+    --bg-color: rgb(48, 51, 57);
+    --text-color: rgb(214, 214, 214);
+}

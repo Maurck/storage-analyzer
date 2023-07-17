@@ -1,6 +1,6 @@
 import React from "react";
 
-function App() {
+export const App = () => {
     return (
         <main>
             <p>It works!</p>

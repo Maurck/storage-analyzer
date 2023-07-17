@@ -1,36 +1,14 @@
-/* To learn more about this file see: https://angular.io/config/tsconfig. */
 {
-  "compileOnSave": false,
   "compilerOptions": {
-    "baseUrl": "./",
-    "outDir": "./dist/out-tsc",
-    "forceConsistentCasingInFileNames": true,
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "sourceMap": true,
-    "declaration": false,
-    "downlevelIteration": true,
-    "experimentalDecorators": true,
-    "moduleResolution": "node",
-    "importHelpers": true,
+    "outDir": "./build/",
+    "noImplicitAny": true,
+    "module": "es6",
     "target": "es5",
-    "module": "commonjs",
-    "useDefineForClassFields": false,
-    "lib": [
-      "ES2022",
-      "dom"
-    ],
-    "noImplicitAny": false,
-    "suppressImplicitAnyIndexErrors": true,
-    "emitDecoratorMetadata": true,
-    "removeComments": false,
-  },
-  "angularCompilerOptions": {
-    "enableI18nLegacyMessageIdFormat": false,
-    "strictInjectionParameters": true,
-    "strictInputAccessModifiers": true,
-    "strictTemplates": true
+    "jsx": "react",
+    "allowJs": true,
+    "moduleResolution": "node",
+
+    /* Linting */
+    "allowSyntheticDefaultImports": true
   }
 }

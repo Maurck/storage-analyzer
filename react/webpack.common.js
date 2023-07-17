@@ -2,7 +2,7 @@ const path = require('path');
 
 module.exports = {
     mode: 'development',
-    entry: './src/js/index.js',
+    entry: './src/main.tsx',
     devtool: 'inline-source-map',
     target: 'electron-renderer',
     module: {
@@ -24,6 +24,11 @@ module.exports = {
                 }
             },
             {
+                test: /\.tsx?$/,
+                use: 'ts-loader',
+                exclude: /node_modules/,
+            },
+            {
                 test: [/\.s[ac]ss$/i, /\.css$/i],
                 use: [
                     // Creates `style` nodes from JS strings
@@ -37,10 +42,10 @@ module.exports = {
         ]
     },
     resolve: {
-        extensions: ['.js'],
+        extensions: ['.tsx', '.ts', '.js'],
     },
     output: {
         filename: 'app.js',
-        path: path.resolve(__dirname, 'build', 'js'),
+        path: path.resolve(__dirname, 'build'),
     },
 };

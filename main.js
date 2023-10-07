@@ -1,17 +1,15 @@
-const { win, BrowserWindow, app } = require('electron')
+const { BrowserWindow, app } = require('electron')
 
 function createWindow() {
-    const win = new BrowserWindow({
-        width: 1024,
-        height: 720,
+    new BrowserWindow({
+        width: 1980,
+        height: 1080,
         backgroundColor: "white",
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
         }
-    })
-
-    win.loadFile('index.html');
+    }).loadFile('index.html').then(ignored => {});
 }
 
 app.whenReady().then(createWindow);

@@ -1,10 +1,9 @@
 import React from "react";
+import LayoutComponent from "./components/LayoutComponent";
 
 export const App = () => {
     return (
-        <main>
-            <p>It works!</p>
-        </main>
+        <LayoutComponent />
     );
 }
 

@@ -1,0 +1,14 @@
+/*noinspection CssUnknownTarget*/
+@import url("https://necolas.github.io/normalize.css/8.0.1/normalize.css")
+layer(generics);
+
+body {
+    margin: 0;
+    padding: 0;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}

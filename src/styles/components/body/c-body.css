@@ -1,0 +1,6 @@
+.c-body {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+    flex: 10 1 0;
+}

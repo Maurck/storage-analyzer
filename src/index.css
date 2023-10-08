@@ -1,4 +1,6 @@
 @import url("./styles/generic.css");
+@import url("./styles/variables.css");
+@import url("./styles/main.css");
 @import url("./styles/components/c-layout.css");
 @import url("./styles/components/header/c-header.css");
 @import url("./styles/components/body/c-body.css");

@@ -1,7 +1,12 @@
-.c-chart {
-    border: solid black 5px;
-    background: aqua;
+.c-chart-container {
     height: 100%;
     width: 100%;
-    flex: 4 1 0;
+    padding: 24px 24px 24px 0;
+}
+
+.c-chart {
+    box-shadow: 0 0 6px 0 #121212;
+    border-radius: 10px;
+    height: 100%;
+    width: 100%;
 }

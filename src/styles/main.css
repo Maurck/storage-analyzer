@@ -1,0 +1,3 @@
+.complete-box-shadow {
+    box-shadow: 0 0 6px 0 var(--box-shadow-color);
+}

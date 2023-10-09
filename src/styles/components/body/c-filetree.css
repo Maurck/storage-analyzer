@@ -1,0 +1,11 @@
+.c-filetree-container {
+    height: 100%;
+    width: 480px;
+    padding: 24px 0 24px 24px;
+}
+
+.c-filetree {
+    border-radius: 10px;
+    height: 100%;
+    width: 100%;
+}

@@ -1,19 +1,21 @@
 .c-filetree-container {
-    overflow-y: scroll;
     height: 100%;
-    width: 480px;
+    min-width: 480px;
+    max-width: 480px;
     padding: 24px 0 24px 24px;
 }
 
 .c-filetree {
+    overflow-x: auto;
+    overflow-y: auto;
     border-radius: 10px;
     min-height: 100%;
     height: auto;
     min-width: 100%;
-    width: auto;
 }
 
 .c-filetree-item-container {
+    width: 100%;
 }
 
 .c-filetree-item {

@@ -7,7 +7,6 @@ interface Props {
     maxLevel: number;
     level: number;
     paddingBottom?: number;
-    borderButton?: boolean;
 }
 
 export const FileTreeItem = (props: Props) => {
@@ -21,7 +20,7 @@ export const FileTreeItem = (props: Props) => {
     return (
         <div
             className={"c-filetree-item-container"}
-            style={{paddingLeft: 25, marginBottom: props.paddingBottom, borderBottom: props.borderButton && "1px solid var(--app-gray)"}}>
+            style={{paddingLeft: 25, marginBottom: props.paddingBottom}}>
             <a
                 className={"c-filetree-item cursor-pointer-all"}
                 onClick={() => {setShowChildrenItems(!showChildrenItems)}}>

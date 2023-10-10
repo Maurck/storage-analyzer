@@ -5,7 +5,7 @@ import { IconType } from "../../../enums/IconType";
 
 export const FileTreeComponent = () => {
     const [dirNames, setDirNames] = useState<string[]>(["Archivos de programa", "Archivos de programa(x86)"]);
-    const [maxItemLevel, setMaxItemLevel] = useState<number>(10);
+    const [maxItemLevel, setMaxItemLevel] = useState<number>(20);
 
     const getItems = (): ReactNode[] => {
         return dirNames.map((item, i) =>
@@ -15,7 +15,6 @@ export const FileTreeComponent = () => {
                 level={1}
                 maxLevel={maxItemLevel}
                 paddingBottom={5}
-                borderButton={true}
             />);
     };
 

@@ -1,14 +1,14 @@
 import React from "react";
-import FileTreeComponent from "./fileTree/FileTreeComponent";
 import ChartComponent from "./ChartComponent";
+import FileTreeComponent from "./fileTree/FileTreeComponent";
+
 export const BodyComponent = () => {
-    return (
-        <div className={"c-body"}>
-            <FileTreeComponent />
-            <ChartComponent />
-        </div>
-    );
-}
+  return (
+    <div className="c-body">
+      <FileTreeComponent />
+      <ChartComponent />
+    </div>
+  );
+};
 
 export default BodyComponent;
-

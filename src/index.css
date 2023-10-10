@@ -1,8 +1,4 @@
-@import url("./styles/generic.css");
-@import url("./styles/variables.css");
-@import url("./styles/main.css");
-@import url("./styles/components/c-layout.css");
-@import url("./styles/components/header/c-header.css");
-@import url("./styles/components/body/c-body.css");
-@import url("./styles/components/body/c-filetree.css");
-@import url("./styles/components/body/c-chart.css");
+@import url("./styles/_generics.css");
+@import url("./styles/_objects.css");
+@import url("./styles/components/_index.css");
+@import url("./styles/_utils.css");

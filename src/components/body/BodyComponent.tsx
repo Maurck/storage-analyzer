@@ -1,5 +1,5 @@
 import React from "react";
-import FileTreeComponent from "./FileTreeComponent";
+import FileTreeComponent from "./fileTree/FileTreeComponent";
 import ChartComponent from "./ChartComponent";
 export const BodyComponent = () => {
     return (

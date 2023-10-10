@@ -6,7 +6,7 @@ export const HeaderComponent = () => {
     return (
         <div className={"c-header"}>
             <IconedLabel
-                style={{ paddingLeft: "1rem" }}
+                style={{ paddingLeft: "1rem", justifyContent: "space-evenly" }}
                 width={"22rem"}
                 iconType={IconType.STORAGE}
                 iconSize={48}

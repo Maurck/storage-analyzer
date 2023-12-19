@@ -1,0 +1,18 @@
+@layer utils {
+  .u-complete-box-shadow {
+    box-shadow: 0 0 6px 0 var(--box-shadow-color);
+  }
+
+  .u-bottom-box-shadow {
+    box-shadow: 0 5px 4px -2px var(--box-shadow-color);
+  }
+
+  .u-bottom-box-shadow-light {
+    box-shadow: 0 3px 20px -2px var(--box-shadow-color);
+  }
+
+  .u-cursor-pointer-all,
+  .u-cursor-pointer-all * {
+    cursor: pointer !important;
+  }
+}

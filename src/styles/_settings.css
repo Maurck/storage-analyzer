@@ -1,0 +1,12 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter&display=swap");
+
+@layer settings {
+  :root {
+    --background: #16203c;
+    --app-white: #dcdde6;
+    --app-gray: #6a6969;
+    --box-shadow-color: #121212;
+
+    --font-family-default: "Inter";
+  }
+}

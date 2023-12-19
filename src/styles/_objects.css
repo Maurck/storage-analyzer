@@ -1,6 +1,10 @@
-.c-layout {
+@layer objects {
+  .o-layout {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    gap: 1.5rem;
     background: var(--background);
+    padding-bottom: 1.5rem;
+  }
 }

@@ -1,4 +1,4 @@
-package-lock.json
-node_modules
-build
+modules/frontend/package-lock.json
+modules/frontend/node_modules
+modules/frontend/build
 .idea

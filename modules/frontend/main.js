@@ -8,7 +8,8 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-        }
+        },
+        icon: 'icon.ico'
     }).loadFile('index.html').then(ignored => {});
 }
 

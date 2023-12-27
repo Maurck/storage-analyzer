@@ -1,28 +1,25 @@
 @layer components {
-  .c-filetree-container {
+  .c-directory-container {
     height: 100%;
     max-height: 100vh;
     min-width: 20rem;
     flex-grow: 0;
     overflow: auto;
-    /* flex-shrink: 1; */
     border-radius: 10px;
-    /* padding: 24px 0 24px 24px; */
-    /* border: 1px solid #ffffff3f */
     background-color: #ffffff0f;
   }
 
-  .c-filetree {
+  .c-directory {
     min-height: 100%;
     height: auto;
     max-width: 100%;
   }
 
-  .c-filetree-item-container {
+  .c-directory-item-container {
     width: 100%;
   }
 
-  .c-filetree-item {
+  .c-directory-item {
     min-width: 200px;
     display: flex;
     flex-direction: column;

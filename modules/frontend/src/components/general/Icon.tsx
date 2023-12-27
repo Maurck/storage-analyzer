@@ -31,6 +31,7 @@ export const Icon = (props: Props) => {
   return (
     <svg
       id={props.id}
+      style={{overflow: "visible"}}
       onClick={props.onClick}
       width={props.size ?? 24}
       height={props.size ?? 24}

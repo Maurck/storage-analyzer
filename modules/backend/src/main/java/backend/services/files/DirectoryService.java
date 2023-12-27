@@ -9,11 +9,14 @@ import java.util.List;
 @Service
 @NoArgsConstructor
 public class DirectoryService {
-    public Directory getDirectories() {
-        Directory rootDirectory = new Directory("C/:");
-        Directory subDir1 = new Directory("Program Files");
-        Directory subDir2 = new Directory("Program Files(x86)");
-        rootDirectory.setSubdirectories(List.of(subDir1, subDir2));
+    public Directory getDirectory() {
+        Directory rootDirectory = new Directory("C:/");
+        Directory subDir1 = new Directory("Program files(x86)");
+        Directory subDir2 = new Directory(".minecraft");
+
+        subDir1.setSubdirectories(List.of(subDir2));
+        subDir2.setSubdirectories(List.of(new Directory("assets"), new Directory("mods"), new Directory("shaderpacks")));
+        rootDirectory.setSubdirectories(List.of(subDir1));
 
         return rootDirectory;
     }

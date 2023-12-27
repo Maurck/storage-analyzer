@@ -12,11 +12,15 @@ Node has to be installed
 ```
 npm install
 ```
+- Build the application
+```
+npm run build
+```
 - Execute the application
 ```
-npm run start:electron
+npm run start
 ```
-In case you want to run watcher (reloads when changes in code)
+In case you want the application to reload on changes (hot reload)
 ```
 npm run build:watch
 ```

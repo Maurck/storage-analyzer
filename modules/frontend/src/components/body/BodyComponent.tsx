@@ -1,11 +1,11 @@
 import React from "react";
 import ChartComponent from "./ChartComponent";
-import FileTreeComponent from "./fileTree/FileTreeComponent";
+import DirectoryTreeComponent from "./directoryTree/DirectoryTreeComponent";
 
 export const BodyComponent = () => {
   return (
     <div className="c-body">
-      <FileTreeComponent />
+      <DirectoryTreeComponent />
       <ChartComponent />
     </div>
   );

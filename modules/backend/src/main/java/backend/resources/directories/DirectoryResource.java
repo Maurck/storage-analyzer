@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("dirs")
+@RequestMapping("directory")
 @CrossOrigin
 public class DirectoryResource {
     private final DirectoryService directoryService;
@@ -20,7 +20,7 @@ public class DirectoryResource {
     }
 
     @RequestMapping("")
-    public ResponseEntity<Directory> getDirectories() {
-        return ResponseEntity.ok(this.directoryService.getDirectories());
+    public ResponseEntity<Directory> getDirectory() {
+        return ResponseEntity.ok(this.directoryService.getDirectory());
     }
 }

@@ -1,0 +1,8 @@
+@layer components {
+  .c-header {
+    display: flex;
+    align-items: center;
+    box-shadow: 0 5px 4px -2px var(--box-shadow-color);
+    height: 4rem;
+  }
+}

@@ -1,0 +1,13 @@
+@layer components {
+  .c-chart-container {
+    height: 100%;
+    width: 100%;
+    background-color: #ffffff0f;
+    border-radius: 10px;
+  }
+
+  .c-chart {
+    height: 100%;
+    width: 100%;
+  }
+}

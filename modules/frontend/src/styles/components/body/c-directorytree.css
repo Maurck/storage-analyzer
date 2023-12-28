@@ -1,0 +1,31 @@
+@layer components {
+  .c-directory-container {
+    height: 100%;
+    max-height: 100vh;
+    min-width: 20rem;
+    flex-grow: 0;
+    overflow: auto;
+    border-radius: 10px;
+    background-color: #ffffff0f;
+  }
+
+  .c-directory {
+    min-height: 100%;
+    height: auto;
+    max-width: 100%;
+  }
+
+  .c-directory-item-container {
+    width: 100%;
+  }
+
+  .c-directory-item {
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-left: 10px;
+    min-height: 48px;
+    color: var(--app-white);
+  }
+}

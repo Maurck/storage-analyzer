@@ -1,14 +1,7 @@
-# Storage Analyzer (In progress)
-
-This desktop application will help you manage your device storage by visualizing your directory folders and application size in an intuitive way
-using different charts based on the directory path you choose.
-
-![example](./src/public/example.png)
-
-## Installation
+## Frontend Installation
 Node has to be installed
-- Go to the root directory
-- Execute npm install
+- Go to the "frontend" directory in modules/frontend
+- Install dependencies
 ```
 npm install
 ```
@@ -28,5 +21,3 @@ npm run build:watch
 - React
 - Electron
 - Typescript
-## Contributing
-Feel free to fork this repository or create an issue if you want to.

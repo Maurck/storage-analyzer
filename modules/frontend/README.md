@@ -1,6 +1,11 @@
 ## Frontend Installation
-Node has to be installed
-- Go to the "frontend" directory in modules/frontend
+
+### Node
+#### Dependencies
+- Node
+
+#### Installation
+- Go to the "frontend" directory in **modules/frontend**
 - Install dependencies
 ```
 npm install
@@ -17,6 +22,7 @@ In case you want the application to reload on changes (hot reload)
 ```
 npm run build:watch
 ```
+
 ## Technologies
 - React
 - Electron

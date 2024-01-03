@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+
 @RestController
 @RequestMapping("directory")
 @CrossOrigin
@@ -21,6 +23,16 @@ public class DirectoryResource {
 
     @RequestMapping("")
     public ResponseEntity<Directory> getDirectory() {
-        return ResponseEntity.ok(this.directoryService.getDirectory());
+        try {
+            return ResponseEntity.ok(this.directoryService.getDirectory("C:\\Program Files (x86)"));
+        } catch (IOException exception) {
+            return ResponseEntity.internalServerError().body(new Directory("Error", ""));
+        }
+
+    }
+
+    @RequestMapping("/mock")
+    public ResponseEntity<Directory> getMockedDirectory() {
+        return ResponseEntity.ok(this.directoryService.getMockedDirectory("C:\\"));
     }
 }

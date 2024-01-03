@@ -1,23 +1,40 @@
 package backend.services.files;
 
+import backend.enums.DirectoryType;
 import backend.models.Directory;
+import backend.utils.RandomDirectoryGenerator;
 import lombok.NoArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.file.*;
 import java.util.List;
+import java.util.stream.Stream;
 
 @Service
 @NoArgsConstructor
 public class DirectoryService {
-    public Directory getDirectory() {
-        Directory rootDirectory = new Directory("C:/");
-        Directory subDir1 = new Directory("Program files(x86)");
-        Directory subDir2 = new Directory(".minecraft");
+    private final RandomDirectoryGenerator randomDirectoryGenerator = new RandomDirectoryGenerator();
 
-        subDir1.setSubdirectories(List.of(subDir2));
-        subDir2.setSubdirectories(List.of(new Directory("assets"), new Directory("mods"), new Directory("shaderpacks")));
-        rootDirectory.setSubdirectories(List.of(subDir1));
+    public Directory getMockedDirectory(String mockedDirName) {
+        Directory rootDir = new Directory(mockedDirName, mockedDirName);
+        randomDirectoryGenerator.buildSubdirectories(rootDir, 0, 3);
+        return rootDir;
+    }
 
+    public Directory getDirectory(String rootPath) throws IOException {
+        Path root = Paths.get(rootPath);
+        Directory rootDirectory = new Directory(root.toString(), "", DirectoryType.FOLDER);
+        List<Directory> subDirectories;
+        try (Stream<Path> stream = Files.list(root)) {
+            subDirectories = stream.map(p -> new Directory(
+                    p.getFileName().toString(),
+                    p.toAbsolutePath().toString(),
+                    p.toFile().isDirectory() ? DirectoryType.FOLDER : DirectoryType.FILE
+            )).toList();
+        }
+
+        rootDirectory.setSubdirectories(subDirectories);
         return rootDirectory;
     }
 }

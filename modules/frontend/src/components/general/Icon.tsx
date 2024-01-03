@@ -5,6 +5,7 @@ import { Color } from "../../enums/Color";
 import { FolderIcon } from "../../icons/FolderIcon";
 import { ExpandMoreIcon } from "../../icons/ExpandMoreIcon";
 import { ChevronRightIcon } from "../../icons/ChevronRightIcon";
+import { FileIcon } from "../../icons/FileIcon";
 
 interface Props {
   id?: string;
@@ -19,12 +20,12 @@ export const Icon = (props: Props) => {
         return <StorageIcon size={props.size} fillColor={Color.APP_WHITE} />;
       case IconType.FOLDER:
         return <FolderIcon size={props.size} fillColor={Color.APP_WHITE} />;
+      case IconType.FILE:
+        return <FileIcon size={props.size} fillColor={Color.APP_WHITE} />
       case IconType.EXPAND_MORE:
         return <ExpandMoreIcon size={props.size} fillColor={Color.APP_WHITE} />;
       case IconType.CHEVRON_RIGHT:
-        return (
-          <ChevronRightIcon size={props.size} fillColor={Color.APP_WHITE} />
-        );
+        return <ChevronRightIcon size={props.size} fillColor={Color.APP_WHITE} />;
     }
   };
 

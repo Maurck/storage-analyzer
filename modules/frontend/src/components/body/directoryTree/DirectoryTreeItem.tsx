@@ -2,6 +2,7 @@ import React, { ReactNode, useState } from "react";
 import { IconedLabel } from "../../general/IconedLabel";
 import { IconType } from "../../../enums/IconType";
 import { Directory } from "../../../models/Directory";
+import { DirectoryType } from "../../../enums/DirectoryType";
 
 interface Props {
     directory: Directory
@@ -22,6 +23,12 @@ export const DirectoryTreeItem = (props: Props) => {
                 level={props.level+1} />)
     }
 
+    const getIconType = () => {
+        if (props.directory.type === DirectoryType.FILE) return IconType.FILE;
+        if (props.directory.type === DirectoryType.FOLDER && (props.directory.subdirectories.length === 0 || props.level - 1 === props.maxLevel)) return IconType.FOLDER;
+        return showChildrenItems ? IconType.EXPAND_MORE : IconType.CHEVRON_RIGHT
+    }
+
     return (
         <div
             className={"c-directory-item-container"}
@@ -30,8 +37,8 @@ export const DirectoryTreeItem = (props: Props) => {
                 className={"c-directory-item u-cursor-pointer-all"}
                 onClick={() => {setShowChildrenItems(!showChildrenItems)}}>
                 <IconedLabel
-                    hideIcon={(props.level - 1 === props.maxLevel) || props.directory.subdirectories.length == 0}
-                    iconType={showChildrenItems ? IconType.EXPAND_MORE : IconType.CHEVRON_RIGHT}
+                    hideIcon={false}
+                    iconType={getIconType()}
                     width={"auto"}
                     textSize={18}
                     text={props.directory.name}

@@ -8,31 +8,32 @@ interface Props {
     directory: Directory
     maxLevel: number;
     level: number;
-    paddingBottom?: number;
+    marginBottom?: number;
 }
 
-export const DirectoryTreeItem = (props: Props) => {
+export const DirectoryTreeItem = ({ directory, level, maxLevel, marginBottom }: Props) => {
     const [showChildrenItems, setShowChildrenItems] = useState<boolean>(false);
 
     const getSubItems = (): ReactNode[] => {
-        return props.directory.subdirectories.map((directory: Directory, i) =>
+        return directory.subdirectories.map((directory: Directory, i) =>
             <DirectoryTreeItem
                 key={i}
                 directory={directory}
-                maxLevel={props.maxLevel}
-                level={props.level+1} />)
+                maxLevel={maxLevel}
+                level={level+1} />)
     }
 
     const getIconType = () => {
-        if (props.directory.type === DirectoryType.FILE) return IconType.FILE;
-        if (props.directory.type === DirectoryType.FOLDER && (props.directory.subdirectories.length === 0 || props.level - 1 === props.maxLevel)) return IconType.FOLDER;
+        if (directory.type === DirectoryType.ERROR) return IconType.ROUNDED_ERROR;
+        if (directory.type === DirectoryType.FILE) return IconType.FILE;
+        if (directory.type === DirectoryType.FOLDER && (directory.subdirectories.length === 0 || level - 1 === maxLevel)) return IconType.FOLDER;
         return showChildrenItems ? IconType.EXPAND_MORE : IconType.CHEVRON_RIGHT
     }
 
     return (
         <div
             className={"c-directory-item-container"}
-            style={{paddingLeft: 25, marginBottom: props.paddingBottom}}>
+            style={{ paddingLeft: 25, marginBottom }}>
             <a
                 className={"c-directory-item u-cursor-pointer-all"}
                 onClick={() => {setShowChildrenItems(!showChildrenItems)}}>
@@ -41,12 +42,11 @@ export const DirectoryTreeItem = (props: Props) => {
                     iconType={getIconType()}
                     width={"auto"}
                     textSize={18}
-                    text={props.directory.name}
+                    text={directory.name}
                     textStyle={{paddingLeft: "5px"}} />
             </a>
-            {(showChildrenItems && props.level <= props.maxLevel) &&
-                getSubItems()
-            }
+            {(showChildrenItems && level <= maxLevel) &&
+                getSubItems()}
         </div>
     )
 }

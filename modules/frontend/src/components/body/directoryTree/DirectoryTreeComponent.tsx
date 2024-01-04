@@ -7,7 +7,7 @@ import { Spinner } from "../../general/Spinner";
 
 export const DirectoryTreeComponent = () => {
   const { isLoading, isError, data: directory = null } = useGetDirectory();
-  const [ maxItemLevel, setMaxItemLevel ] = useState<number>(2);
+  const [ maxItemLevel, setMaxItemLevel ] = useState<number>(4);
 
   const getItems = (): ReactNode[] => {
     return directory?.subdirectories.map((directory, i) => (
@@ -16,7 +16,7 @@ export const DirectoryTreeComponent = () => {
         directory={directory}
         level={1}
         maxLevel={maxItemLevel}
-        paddingBottom={5}
+        marginBottom={5}
       />
     ));
   };

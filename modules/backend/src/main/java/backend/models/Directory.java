@@ -15,7 +15,7 @@ import java.util.List;
 public class Directory {
     String name = "";
     String absolutePath = "";
-    DirectoryType type = DirectoryType.FOLDER;
+    @Setter DirectoryType type = DirectoryType.FOLDER;
     @Setter List<Directory> subdirectories = new ArrayList<>();
 
     public Directory(String name, String absolutePath, DirectoryType type) {

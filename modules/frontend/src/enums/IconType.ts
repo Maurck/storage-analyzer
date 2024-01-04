@@ -4,4 +4,5 @@ export enum IconType {
     FILE,
     EXPAND_MORE,
     CHEVRON_RIGHT,
+    ROUNDED_ERROR
 }

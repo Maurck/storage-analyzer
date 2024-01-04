@@ -6,6 +6,7 @@ import { FolderIcon } from "../../icons/FolderIcon";
 import { ExpandMoreIcon } from "../../icons/ExpandMoreIcon";
 import { ChevronRightIcon } from "../../icons/ChevronRightIcon";
 import { FileIcon } from "../../icons/FileIcon";
+import { RoundedErrorIcon } from "../../icons/RoundedErrorIcon";
 
 interface Props {
   id?: string;
@@ -26,6 +27,8 @@ export const Icon = (props: Props) => {
         return <ExpandMoreIcon size={props.size} fillColor={Color.APP_WHITE} />;
       case IconType.CHEVRON_RIGHT:
         return <ChevronRightIcon size={props.size} fillColor={Color.APP_WHITE} />;
+      case IconType.ROUNDED_ERROR:
+        return <RoundedErrorIcon size={props.size} fillColor={Color.APP_WHITE} />;
     }
   };
 

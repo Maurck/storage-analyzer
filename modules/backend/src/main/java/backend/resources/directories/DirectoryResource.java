@@ -21,6 +21,15 @@ public class DirectoryResource {
 
     @RequestMapping("")
     public ResponseEntity<Directory> getDirectory() {
-        return ResponseEntity.ok(this.directoryService.getDirectory());
+        try {
+            return ResponseEntity.ok(this.directoryService.getDirectory("C:\\Program Files"));
+        } catch (Exception exception) {
+            return ResponseEntity.internalServerError().body(new Directory());
+        }
+    }
+
+    @RequestMapping("/mock")
+    public ResponseEntity<Directory> getMockedDirectory() {
+        return ResponseEntity.ok(this.directoryService.getMockedDirectory("C:\\"));
     }
 }

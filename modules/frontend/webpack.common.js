@@ -1,51 +1,34 @@
 const path = require('path');
 
-module.exports = {
-    mode: 'development',
-    entry: './src/main.tsx',
-    devtool: 'inline-source-map',
-    target: 'electron-renderer',
-    module: {
-        rules: [
-            {
-                test: /\.js$/,
-                exclude: /node_modules/,
-                use: {
-                    loader: 'babel-loader',
-                    options: {
-                        presets: [[
-                            '@babel/preset-env', {
-                                targets: {
-                                    esmodules: true
-                                }
-                            }],
-                            '@babel/preset-react']
-                    }
-                }
-            },
-            {
-                test: /\.tsx?$/,
-                use: 'ts-loader',
-                exclude: /node_modules/,
-            },
-            {
-                test: [/\.s[ac]ss$/i, /\.css$/i],
-                use: [
-                    // Creates `style` nodes from JS strings
-                    'style-loader',
-                    // Translates CSS into CommonJS
-                    'css-loader',
-                    // Compiles Sass to CSS
-                    'sass-loader',
-                ],
-            }
-        ]
-    },
-    resolve: {
-        extensions: ['.tsx', '.ts', '.js'],
-    },
-    output: {
-        filename: 'app.js',
-        path: path.resolve(__dirname, 'build'),
-    },
+module.exports = (_environment, argv = {}) => {
+    const development = argv.mode === 'development';
+    return {
+        mode: development ? 'development' : 'production',
+        context: __dirname,
+        entry: './src/main.tsx',
+        devtool: development ? 'source-map' : false,
+        // The renderer uses the narrow preload bridge, never Node.js APIs.
+        target: 'web',
+        module: {
+            rules: [
+                {
+                    test: /\.tsx?$/,
+                    use: 'ts-loader',
+                    exclude: /node_modules/,
+                },
+                {
+                    test: /\.css$/i,
+                    use: ['style-loader', 'css-loader'],
+                },
+            ],
+        },
+        resolve: {
+            extensions: ['.tsx', '.ts', '.js'],
+        },
+        output: {
+            filename: 'app.js',
+            path: path.resolve(__dirname, 'build'),
+            clean: true,
+        },
+    };
 };

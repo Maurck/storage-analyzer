@@ -1,0 +1,112 @@
+@layer tokens {
+  :root {
+    color-scheme: dark;
+
+    --color-primary-50: #eff6ff;
+    --color-primary-100: #dbeafe;
+    --color-primary-200: #bfdbfe;
+    --color-primary-300: #93c5fd;
+    --color-primary-400: #60a5fa;
+    --color-primary-500: #3b82f6;
+    --color-primary-600: #2563eb;
+    --color-primary-700: #1d4ed8;
+    --color-primary-800: #1e40af;
+    --color-primary-900: #1e3a8a;
+    --color-primary-950: #172554;
+    --color-neutral-50: #f8fafc;
+    --color-neutral-100: #f1f5f9;
+    --color-neutral-200: #e2e8f0;
+    --color-neutral-300: #cbd5e1;
+    --color-neutral-400: #94a3b8;
+    --color-neutral-500: #64748b;
+    --color-neutral-600: #475569;
+    --color-neutral-700: #334155;
+    --color-neutral-800: #1e293b;
+    --color-neutral-900: #0f172a;
+    --color-neutral-950: #020617;
+
+    --color-background: #0b1220;
+    --color-surface: #111c2e;
+    --color-surface-raised: #17243a;
+    --color-surface-hover: #20314b;
+    --color-border: var(--color-neutral-700);
+    --color-border-interactive: var(--color-neutral-500);
+    --color-text: var(--color-neutral-50);
+    --color-text-secondary: var(--color-neutral-300);
+    --color-text-muted: var(--color-neutral-400);
+    --color-primary: var(--color-primary-600);
+    --color-primary-hover: var(--color-primary-700);
+    --color-primary-text: #ffffff;
+    --color-secondary: var(--color-neutral-600);
+    --color-accent: #7c3aed;
+    --color-accent-text: #c4b5fd;
+    --color-selection: #173467;
+    --color-selection-text: var(--color-primary-100);
+    --color-focus: var(--color-primary-400);
+    --color-success: #065f46;
+    --color-success-text: #d1fae5;
+    --color-warning: #92400e;
+    --color-warning-text: #fef3c7;
+    --color-error: #991b1b;
+    --color-error-hover: #7f1d1d;
+    --color-error-text: #fee2e2;
+    --color-info: #075985;
+    --color-info-text: #e0f2fe;
+    --color-overlay: rgb(2 6 23 / 72%);
+
+    --font-sans: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+    --font-mono: "Cascadia Code", Consolas, ui-monospace, monospace;
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-md: 1rem;
+    --text-lg: 1.25rem;
+    --text-xl: 1.5rem;
+    --text-2xl: 1.875rem;
+    --leading-xs: 1rem;
+    --leading-sm: 1.25rem;
+    --leading-md: 1.5rem;
+    --leading-lg: 1.75rem;
+    --leading-xl: 2rem;
+    --leading-2xl: 2.375rem;
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --weight-bold: 700;
+
+    --space-0: 0;
+    --space-0-5: 0.125rem;
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-12: 3rem;
+    --space-16: 4rem;
+    --radius-sm: 0.25rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+    --radius-full: 999px;
+    --shadow-popover: 0 8px 24px rgb(0 0 0 / 28%);
+    --shadow-dialog: 0 16px 48px rgb(0 0 0 / 40%);
+    --focus-width: 3px;
+    --focus-offset: 2px;
+
+    /* CSS variables cannot be used in media conditions. Keep the literal
+       queries aligned with these documented layout thresholds. */
+    --breakpoint-standard: 768px;
+    --breakpoint-wide: 1200px;
+    --z-base: 0;
+    --z-sticky: 10;
+    --z-dropdown: 20;
+    --z-overlay: 30;
+    --z-dialog: 40;
+    --z-toast: 50;
+    --z-tooltip: 60;
+    --motion-fast: 100ms;
+    --motion-standard: 160ms;
+    --motion-enter: 240ms;
+    --motion-easing: cubic-bezier(0.2, 0, 0, 1);
+  }
+}

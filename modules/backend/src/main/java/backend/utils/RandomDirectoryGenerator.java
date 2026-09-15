@@ -22,7 +22,12 @@ public class RandomDirectoryGenerator {
     }
 
     public void buildSubdirectories(Directory directory, int currentLevel, int maxLevel) {
-        if (currentLevel >= maxLevel || directory.isFile()) {
+        if (directory.isFile()) {
+            directory.setSizeBytes(random.nextLong(1, 10_000_000));
+            directory.setFileCount(1);
+            return;
+        }
+        if (currentLevel >= maxLevel) {
             return;
         }
 
@@ -32,11 +37,15 @@ public class RandomDirectoryGenerator {
             buildSubdirectories(subdirectory, currentLevel + 1, maxLevel);
 
             directory.getSubdirectories().add(subdirectory);
+            directory.setSizeBytes(directory.getSizeBytes() + subdirectory.getSizeBytes());
+            directory.setFileCount(directory.getFileCount() + subdirectory.getFileCount());
+            directory.setDirectoryCount(directory.getDirectoryCount() + subdirectory.getDirectoryCount() + (subdirectory.isFile() ? 0 : 1));
         }
+        directory.setHasChildren(!directory.getSubdirectories().isEmpty());
     }
 
     private Directory getMockedDirectory(int currentLevel, String basePath, boolean isFile) {
-        String subdirectoryName = subDirNames.get(currentLevel).get(random.nextInt(0, subDirNames.get(currentLevel).size() - 1));
+        String subdirectoryName = subDirNames.get(currentLevel).get(random.nextInt(0, subDirNames.get(currentLevel).size()));
         String subdirectoryPath = basePath + PATH_DELIMITER + subdirectoryName;
 
         Directory mockedDirectory = new Directory(subdirectoryName, subdirectoryPath);

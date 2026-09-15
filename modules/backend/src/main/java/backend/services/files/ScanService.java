@@ -23,6 +23,8 @@ public class ScanService {
     static final int MAX_DEPTH = 128;
     static final int MAX_SESSIONS = 5;
     private final ExecutorService executor;
+    private final int maximumEntries;
+    private final int maximumDepth;
     private final LinkedHashMap<String, Session> sessions = new LinkedHashMap<>();
 
     public ScanService() {
@@ -35,7 +37,13 @@ public class ScanService {
     }
 
     ScanService(ExecutorService executor) {
+        this(executor, MAX_ENTRIES, MAX_DEPTH);
+    }
+
+    ScanService(ExecutorService executor, int maximumEntries, int maximumDepth) {
         this.executor = executor;
+        this.maximumEntries = maximumEntries;
+        this.maximumDepth = maximumDepth;
     }
 
     public synchronized ScanStatus start(String requestedPath) {
@@ -122,7 +130,7 @@ public class ScanService {
 
     private void scan(Session session) {
         try {
-            Files.walkFileTree(session.path, EnumSet.noneOf(FileVisitOption.class), MAX_DEPTH, new SimpleFileVisitor<>() {
+            Files.walkFileTree(session.path, EnumSet.noneOf(FileVisitOption.class), maximumDepth, new SimpleFileVisitor<>() {
                 @Override
                 public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attributes) {
                     checkCancelled(session);
@@ -208,8 +216,8 @@ public class ScanService {
     }
 
     private Entry addEntry(Session session, Path path, DirectoryType type) {
-        if (session.entries.size() >= MAX_ENTRIES) {
-            throw new ScanLimitException("This scan exceeded the limit of 100,000 items. Select a smaller folder.");
+        if (session.entries.size() >= maximumEntries) {
+            throw new ScanLimitException("This scan exceeded the limit of " + maximumEntries + " items. Select a smaller folder.");
         }
         Entry entry = new Entry(path, type);
         session.entries.put(path, entry);

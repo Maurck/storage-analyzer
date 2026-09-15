@@ -1,5 +1,8 @@
-modules/frontend/package-lock.json
 modules/frontend/node_modules
 modules/frontend/build
+.tools/
+modules/frontend/test-results/
+modules/frontend/playwright-report/
+modules/backend/target/
 .idea
 example.jpg

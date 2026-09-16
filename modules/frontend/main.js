@@ -11,10 +11,11 @@ let pendingDirectoryDialog = null;
 
 function getBackendUrl(value = 'http://localhost:5000') {
     const url = new URL(value);
-    const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
+    // CSP host sources do not support literal IPv6 addresses; localhost may resolve to IPv6.
+    const localHosts = new Set(['localhost', '127.0.0.1']);
     if (!['http:', 'https:'].includes(url.protocol) || !localHosts.has(url.hostname)
         || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-        throw new Error('STORAGE_ANALYZER_API_URL must be an HTTP(S) loopback origin.');
+        throw new Error('STORAGE_ANALYZER_API_URL must be an HTTP(S) loopback origin using localhost or 127.0.0.1.');
     }
     return url.origin;
 }

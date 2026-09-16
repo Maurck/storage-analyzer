@@ -72,16 +72,17 @@ test('renderer is isolated and only receives a loopback API origin', async () =>
     assert.equal(window.options.minWidth, 360);
 });
 
-test('remote origins and URL credentials, paths, queries or fragments are rejected', async () => {
+test('unsupported backend origins, credentials, paths, queries or fragments are rejected', async () => {
     for (const backendUrl of [
         'https://example.com', 'file:///C:/Data', 'http://localhost.evil.test',
         'http://user:password@localhost:5000', 'http://localhost:5000/api',
         'http://localhost:5000/?remote=true', 'http://localhost:5000/#api',
+        'http://[::1]:5000', 'https://[::1]:5000',
     ]) {
         await assert.rejects(loadDesktop({ backendUrl }), /loopback origin/);
     }
-    const ipv6 = await loadDesktop({ backendUrl: 'http://[::1]:5000' });
-    assert.equal(ipv6.windows.length, 1);
+    const local = await loadDesktop({ backendUrl: 'https://localhost:5000' });
+    assert.equal(local.windows.length, 1);
 });
 
 test('folder dialog belongs to the main window and cancellation returns null', async () => {

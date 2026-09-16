@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  },
+  "scripts": {
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,css,md}\"",
+    "start": "cd modules/frontend && npm start",
+    "start:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start-backend.ps1"
+  }
+}

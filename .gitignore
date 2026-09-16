@@ -6,3 +6,4 @@ modules/frontend/playwright-report/
 modules/backend/target/
 .idea
 example.jpg
+node_modules

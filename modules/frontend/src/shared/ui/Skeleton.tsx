@@ -1,11 +1,17 @@
-import React, { CSSProperties, HTMLAttributes } from 'react';
+import React, { CSSProperties, HTMLAttributes } from "react";
 
 export interface SkeletonProps extends HTMLAttributes<HTMLDivElement> {
-  width?: CSSProperties['width'];
-  height?: CSSProperties['height'];
+  width?: CSSProperties["width"];
+  height?: CSSProperties["height"];
 }
 
-export function Skeleton({ width, height, className = '', style, ...props }: SkeletonProps) {
+export function Skeleton({
+  width,
+  height,
+  className = "",
+  style,
+  ...props
+}: SkeletonProps) {
   return (
     <div
       {...props}

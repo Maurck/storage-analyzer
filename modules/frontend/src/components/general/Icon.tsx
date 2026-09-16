@@ -22,20 +22,24 @@ export const Icon = (props: Props) => {
       case IconType.FOLDER:
         return <FolderIcon size={props.size} fillColor={Color.APP_WHITE} />;
       case IconType.FILE:
-        return <FileIcon size={props.size} fillColor={Color.APP_WHITE} />
+        return <FileIcon size={props.size} fillColor={Color.APP_WHITE} />;
       case IconType.EXPAND_MORE:
         return <ExpandMoreIcon size={props.size} fillColor={Color.APP_WHITE} />;
       case IconType.CHEVRON_RIGHT:
-        return <ChevronRightIcon size={props.size} fillColor={Color.APP_WHITE} />;
+        return (
+          <ChevronRightIcon size={props.size} fillColor={Color.APP_WHITE} />
+        );
       case IconType.ROUNDED_ERROR:
-        return <RoundedErrorIcon size={props.size} fillColor={Color.APP_WHITE} />;
+        return (
+          <RoundedErrorIcon size={props.size} fillColor={Color.APP_WHITE} />
+        );
     }
   };
 
   return (
     <svg
       id={props.id}
-      style={{overflow: "visible"}}
+      style={{ overflow: "visible" }}
       onClick={props.onClick}
       width={props.size ?? 24}
       height={props.size ?? 24}

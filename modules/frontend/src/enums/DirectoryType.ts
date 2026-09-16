@@ -1,5 +1,5 @@
 export enum DirectoryType {
-    FOLDER = "FOLDER",
-    FILE = "FILE",
-    ERROR = "ERROR",
+  FOLDER = "FOLDER",
+  FILE = "FILE",
+  ERROR = "ERROR",
 }

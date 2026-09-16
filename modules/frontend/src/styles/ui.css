@@ -14,7 +14,8 @@
     font-weight: var(--weight-semibold);
     line-height: var(--leading-sm);
     text-decoration: none;
-    transition: background-color var(--motion-fast) var(--motion-easing),
+    transition:
+      background-color var(--motion-fast) var(--motion-easing),
       border-color var(--motion-fast) var(--motion-easing);
   }
 
@@ -228,11 +229,15 @@
   }
 
   @keyframes sa-spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   @keyframes sa-pulse {
-    50% { opacity: 0.45; }
+    50% {
+      opacity: 0.45;
+    }
   }
 
   @media (forced-colors: active) {

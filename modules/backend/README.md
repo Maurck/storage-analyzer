@@ -22,12 +22,12 @@ The tests use temporary folders and cover byte totals, lazy expansion, snapshot 
 
 ## Scan API
 
-| Method and path | Result |
-| --- | --- |
-| `POST /scans`, JSON `{"path":"C:\\Users\\example\\Documents"}` | `202` with a scan status |
-| `GET /scans/{id}` | Progress, completion or failure |
-| `DELETE /scans/{id}` | Cancels active work; repeated cancellation is safe |
-| `GET /scans/{id}/directory?path=...` | Completed snapshot node with its direct children; URL-encode the absolute path |
+| Method and path                                                | Result                                                                         |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `POST /scans`, JSON `{"path":"C:\\Users\\example\\Documents"}` | `202` with a scan status                                                       |
+| `GET /scans/{id}`                                              | Progress, completion or failure                                                |
+| `DELETE /scans/{id}`                                           | Cancels active work; repeated cancellation is safe                             |
+| `GET /scans/{id}/directory?path=...`                           | Completed snapshot node with its direct children; URL-encode the absolute path |
 
 The status object contains `id`, `path`, `status`, `processedFiles`, `processedDirectories`, `processedBytes`, `skippedCount`, `error` and `root`. `status` is `SCANNING`, `COMPLETE`, `CANCELLED` or `ERROR`. `root` is present only for completed scans; it contains one level of children. Poll progress while the status is `SCANNING`.
 

@@ -1,7 +1,7 @@
-import React from 'react';
-import { Button } from '../ui/Button';
-import { Icon } from '../ui/Icon';
-import { EmptyState, EmptyStateProps } from './EmptyState';
+import React from "react";
+import { Button } from "../ui/Button";
+import { Icon } from "../ui/Icon";
+import { EmptyState, EmptyStateProps } from "./EmptyState";
 
 export interface ErrorStateProps extends EmptyStateProps {
   onRetry?: () => void;
@@ -10,10 +10,10 @@ export interface ErrorStateProps extends EmptyStateProps {
 
 export function ErrorState({
   onRetry,
-  retryLabel = 'Try again',
+  retryLabel = "Try again",
   action,
   icon = <Icon name="alert" size={24} />,
-  className = '',
+  className = "",
   ...props
 }: ErrorStateProps) {
   return (
@@ -22,7 +22,15 @@ export function ErrorState({
         {...props}
         icon={icon}
         className={`sa-state--error ${className}`.trim()}
-        action={action || (onRetry && <Button variant="secondary" onClick={onRetry}><Icon name="refresh" />{retryLabel}</Button>)}
+        action={
+          action ||
+          (onRetry && (
+            <Button variant="secondary" onClick={onRetry}>
+              <Icon name="refresh" />
+              {retryLabel}
+            </Button>
+          ))
+        }
       />
     </div>
   );

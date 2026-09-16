@@ -19,8 +19,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Bounded, read-only scans. Completed snapshots are immutable and expanded on demand. */
 @Service
 public class ScanService {
-    static final int MAX_ENTRIES = 100_000;
-    static final int MAX_DEPTH = 128;
+    static final int MAX_ENTRIES = 100_000_000;
+    static final int MAX_DEPTH = 512;
     static final int MAX_SESSIONS = 5;
     private final ExecutorService executor;
     private final int maximumEntries;

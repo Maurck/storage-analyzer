@@ -54,11 +54,37 @@ function assertAppError(error, message, status = 0) {
   return true;
 }
 
-test('binary size formatting covers exact boundaries, rounding, and invalid sizes', () => {
+// Every expected size below is the literal output of Windows'
+// StrFormatByteSize for the same byte count, so the application and the file
+// manager never disagree about a folder.
+test('size formatting matches Windows Explorer at unit, digit and truncation boundaries', () => {
   for (const [input, output] of [
-    [0, '0 B'], [1, '1 B'], [1023, '1,023 B'], [1024, '1 KiB'],
-    [1536, '1.5 KiB'], [1024 ** 2, '1 MiB'], [1024 ** 3, '1 GiB'],
-    [1024 ** 4, '1 TiB'], [1024 ** 5, '1 PiB'], [1.25 * 1024 ** 3, '1.3 GiB'],
+    [0, '0 B'], [1, '1 B'], [1023, '1,023 B'],
+    [1024, '1.00 KB'],
+    [1536, '1.50 KB'],
+    [1024 ** 2, '1.00 MB'],
+    [1024 ** 3, '1.00 GB'],
+    [1024 ** 4, '1.00 TB'],
+    [1024 ** 5, '1.00 PB'],
+    [1.25 * 1024 ** 3, '1.25 GB'],
+    // A unit is left behind at 1000 of it, not at 1024.
+    [1023999, '999 KB'],
+    [1024000, '0.97 MB'],
+    // Dropped digits are truncated, never rounded up.
+    [1048575, '0.99 MB'],
+    [1073741823, '0.99 GB'],
+    // Whole units are counted one step below the displayed one: 1,471,152,128 B
+    // is the first to reach 1403 MB, and 33,316,061,315,072 B the first to
+    // reach 31,028 GB. Dividing the byte count directly moves both a digit up.
+    [1471152127, '1.36 GB'],
+    [1471152128, '1.37 GB'],
+    [33316061315071, '30.2 TB'],
+    [33316061315072, '30.3 TB'],
+    // Three significant digits: two decimals, then one, then none.
+    [1480582601, '1.37 GB'],
+    [11115519, '10.5 MB'],
+    [11115520, '10.6 MB'],
+    [110677197, '105 MB'],
     [-1, 'Unavailable'], [NaN, 'Unavailable'], [Infinity, 'Unavailable'],
   ]) assert.equal(formatBytes(input), output, `formatBytes(${input})`);
   assert.equal(formatNumber(1234567), '1,234,567');

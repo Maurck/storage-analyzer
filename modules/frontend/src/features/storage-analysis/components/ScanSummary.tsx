@@ -19,7 +19,7 @@ export function ScanSummary({ root, skippedCount }: ScanSummaryProps) {
             {root.partial ? "Known size" : "Total size"}
           </span>
           <strong>{formatBytes(root.sizeBytes)}</strong>
-          <small>Logical size · binary units</small>
+          <small>Logical size · Explorer units</small>
         </div>
         <div className="metric-card">
           <span className="metric-label">

@@ -12,7 +12,7 @@ npm run build
 npm start
 ```
 
-Start the [Java backend](../backend/README.md) separately. Use **Select folder** to open the native folder picker. Scans only read filesystem metadata. Sizes are logical bytes in binary units (KiB, MiB, GiB), not allocated disk space.
+Start the [Java backend](../backend/README.md) separately. Use **Select folder** to open the native folder picker. Scans only read filesystem metadata. Sizes are logical bytes shown in the units Windows Explorer uses (KB, MB, GB as powers of 1024), not allocated disk space.
 
 For development, run `npm run build:watch` in another terminal, then reload Electron after the build finishes. The watcher rebuilds bundles; it does not provide hot module replacement.
 

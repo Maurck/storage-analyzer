@@ -5,7 +5,7 @@ import type {
   Scan,
 } from "../src/features/storage-analysis/model/directory.types";
 
-const MiB = 1024 ** 2;
+const MB = 1024 ** 2;
 const axeSource = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
 function file(name: string, parent: string, sizeBytes: number): DirectoryNode {
@@ -46,11 +46,11 @@ function folder(
 }
 function fixture(extraFiles = 0) {
   const projects = folder("Projects", "/fixture/Projects", [
-    file("package.zip", "/fixture/Projects", 512 * MiB),
-    file("assets.png", "/fixture/Projects", 256 * MiB),
+    file("package.zip", "/fixture/Projects", 512 * MB),
+    file("assets.png", "/fixture/Projects", 256 * MB),
   ]);
   const photos = folder("Photos", "/fixture/Photos", [
-    file("sun.jpg", "/fixture/Photos", 256 * MiB),
+    file("sun.jpg", "/fixture/Photos", 256 * MB),
   ]);
   const empty = folder("Empty", "/fixture/Empty", []);
   const root = folder("Fixture", "/fixture", [
@@ -273,19 +273,19 @@ test("a completed analysis displays actual sizes and an accessible table", async
   await analyze(page);
   const table = page.getByRole("table", { name: /^Contents of Fixture/ });
   await expect(table.getByRole("row", { name: /Projects/ })).toContainText(
-    "768 MiB",
+    "768 MB",
   );
   await expect(table.getByRole("row", { name: /Projects/ })).toContainText(
     "75.0%",
   );
   await expect(table.getByRole("row", { name: /Photos/ })).toContainText(
-    "256 MiB",
+    "256 MB",
   );
   await expect(table.getByRole("row", { name: /Photos/ })).toContainText(
     "25.0%",
   );
   await expect(
-    page.getByRole("figure", { name: /Fixture: 1 GiB/ }),
+    page.getByRole("figure", { name: /Fixture: 1.00 GB/ }),
   ).toBeVisible();
   await checkAccessibility(page);
   await page.screenshot({ path: "test-results/overview.png", fullPage: true });

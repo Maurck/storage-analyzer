@@ -40,7 +40,7 @@ export function AppShell({ status, busy, children, overlays }: AppShellProps) {
           <span>
             <span className="footer-dot" /> Runs locally on your device
           </span>
-          <span>Sizes in KiB, MiB and GiB · Read-only analysis</span>
+          <span>Sizes in KB, MB and GB · Read-only analysis</span>
         </footer>
       </main>
       {overlays}

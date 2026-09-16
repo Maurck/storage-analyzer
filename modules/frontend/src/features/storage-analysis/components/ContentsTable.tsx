@@ -129,8 +129,8 @@ export function ContentsTable({
             <div className="table-scroll">
               <table>
                 <caption className="sr-only">
-                  Contents of {node.name}. Sizes are logical file sizes in
-                  binary units, not allocated disk space.
+                  Contents of {node.name}. Sizes are logical file sizes as
+                  Windows Explorer reports them, not allocated disk space.
                 </caption>
                 <thead>
                   <tr>

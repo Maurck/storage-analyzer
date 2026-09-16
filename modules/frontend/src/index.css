@@ -1,4 +1,5 @@
-@import url("./styles/_generics.css");
-@import url("./styles/_objects.css");
-@import url("./styles/components/_index.css");
-@import url("./styles/_utils.css");
+@layer tokens, reset, components, app, utilities;
+@import url("./styles/tokens.css");
+@import url("./styles/reset.css");
+@import url("./styles/ui.css");
+@import url("./styles/workspace.css");

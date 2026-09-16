@@ -2,13 +2,24 @@
   "compilerOptions": {
     "outDir": "./build/",
     "noImplicitAny": true,
-    "module": "es6",
-    "target": "es5",
+    "module": "ESNext",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
     "jsx": "react",
     "allowJs": true,
     "moduleResolution": "node",
 
     /* Linting */
     "allowSyntheticDefaultImports": true
-  }
+  },
+  "include": [
+    "src/app",
+    "src/App.tsx",
+    "src/main.tsx",
+    "src/features",
+    "src/shared",
+    "src/layouts"
+  ]
 }

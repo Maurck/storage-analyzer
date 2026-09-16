@@ -8,14 +8,14 @@ The implemented product has one storage-analysis workspace. New primitives shoul
 
 `modules/frontend/src/styles/tokens.css` is the source of truth. Primary 50–950, neutral 50–950, surfaces, text, borders, selection, focus and semantic colors are CSS custom properties. The default theme is dark blue with neutral panels, blue actions, and secondary chart colors. Components use `currentColor` SVGs and local system fonts.
 
-| Pair | Approximate contrast |
-| --- | --- |
-| Primary text `#F8FAFC` / background `#0B1220` | 17.89:1 |
-| Secondary text `#CBD5E1` / surface `#111C2E` | 11.51:1 |
-| Muted text `#94A3B8` / surface | 6.66:1 |
-| White / primary `#2563EB` | 5.17:1 |
-| Focus `#60A5FA` / surface | 6.72:1 |
-| Interactive border `#64748B` / surface | 3.59:1 |
+| Pair                                          | Approximate contrast |
+| --------------------------------------------- | -------------------- |
+| Primary text `#F8FAFC` / background `#0B1220` | 17.89:1              |
+| Secondary text `#CBD5E1` / surface `#111C2E`  | 11.51:1              |
+| Muted text `#94A3B8` / surface                | 6.66:1               |
+| White / primary `#2563EB`                     | 5.17:1               |
+| Focus `#60A5FA` / surface                     | 6.72:1               |
+| Interactive border `#64748B` / surface        | 3.59:1               |
 
 Decorative borders may use a quieter token. Controls need the stronger border. Never use color as the sole explanation for errors or partial analysis. Add text and an icon. The chart's exact values remain in its adjacent legend and contents table.
 

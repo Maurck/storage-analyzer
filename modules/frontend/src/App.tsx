@@ -12,12 +12,24 @@ const client = new QueryClient({
   },
 });
 
-const StorageAnalysisPage = lazy(() => import(/* webpackChunkName: "storage-workspace" */ "./features/storage-analysis/StorageAnalysisPage").then(module => ({ default: module.StorageAnalysisPage })));
+const StorageAnalysisPage = lazy(() =>
+  import(
+    /* webpackChunkName: "storage-workspace" */ "./features/storage-analysis/StorageAnalysisPage"
+  ).then((module) => ({ default: module.StorageAnalysisPage })),
+);
 
 export const App = () => {
   return (
     <QueryClientProvider client={client}>
-      <Suspense fallback={<div className="app-loading"><Spinner label="Opening Storage Analyzer" /></div>}><StorageAnalysisPage /></Suspense>
+      <Suspense
+        fallback={
+          <div className="app-loading">
+            <Spinner label="Opening Storage Analyzer" />
+          </div>
+        }
+      >
+        <StorageAnalysisPage />
+      </Suspense>
     </QueryClientProvider>
   );
 };

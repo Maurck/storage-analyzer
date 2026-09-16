@@ -117,7 +117,9 @@ export function StorageAnalysisPage() {
     start.reset();
     if (!window.storageAnalyzer) {
       pathDialog.current?.showModal();
-      pathDialog.current?.querySelector<HTMLInputElement>("#folder-path")?.focus();
+      pathDialog.current
+        ?.querySelector<HTMLInputElement>("#folder-path")
+        ?.focus();
       return;
     }
     try {

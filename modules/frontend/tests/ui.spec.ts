@@ -157,7 +157,10 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     } else {
       requests.polls += 1;
       if (url.pathname.split("/")[2] === state.expiredId)
-        await respond({ message: "This scan has expired. Start a new scan." }, 404);
+        await respond(
+          { message: "This scan has expired. Start a new scan." },
+          404,
+        );
       else if (state.pollErrors-- > 0)
         await respond({ message: "The local service disconnected." }, 503);
       else
@@ -238,10 +241,16 @@ test("cancelling the native folder picker does not start a scan", async ({
   expect(requests.starts).toBe(0);
 });
 
-test("browser folder entry preserves input and recovers from validation errors", async ({ page }) => {
+test("browser folder entry preserves input and recovers from validation errors", async ({
+  page,
+}) => {
   await prepare(page, { startErrors: 1 });
-  await page.evaluate(() => { delete window.storageAnalyzer; });
-  await page.getByRole("button", { name: "Select folder", exact: true }).click();
+  await page.evaluate(() => {
+    delete window.storageAnalyzer;
+  });
+  await page
+    .getByRole("button", { name: "Select folder", exact: true })
+    .click();
   const dialog = page.getByRole("dialog", { name: "Choose a folder" });
   const input = dialog.getByRole("textbox", { name: "Folder path" });
   await expect(input).toBeFocused();
@@ -252,7 +261,9 @@ test("browser folder entry preserves input and recovers from validation errors",
   await expect(dialog.getByRole("alert")).toBeVisible();
   await dialog.getByRole("button", { name: "Analyze folder" }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByRole("table", { name: /^Contents of Fixture/ })).toBeVisible();
+  await expect(
+    page.getByRole("table", { name: /^Contents of Fixture/ }),
+  ).toBeVisible();
 });
 
 test("a completed analysis displays actual sizes and an accessible table", async ({
@@ -510,36 +521,64 @@ test("an active scan can be cancelled and started again", async ({ page }) => {
   expect(requests.starts).toBe(2);
 });
 
-test("an expired scan releases controls and can be replaced", async ({ page }) => {
+test("an expired scan releases controls and can be replaced", async ({
+  page,
+}) => {
   const { state, requests } = await prepare(page, { pending: true });
   state.expiredId = "scan-fixture-1";
-  await page.getByRole("button", { name: "Select folder", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Analysis session expired" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Select folder", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Cancel scan", exact: true })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Select folder", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Analysis session expired" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Select folder", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Cancel scan", exact: true }),
+  ).toHaveCount(0);
   expect(requests.polls).toBe(1);
   state.pending = false;
   await page.getByRole("button", { name: "Select another folder" }).click();
-  await expect(page.getByRole("table", { name: /^Contents of Fixture/ })).toBeVisible();
+  await expect(
+    page.getByRole("table", { name: /^Contents of Fixture/ }),
+  ).toBeVisible();
   expect(requests.starts).toBe(2);
 });
 
-test("a pending cancellation cannot overwrite a replacement scan", async ({ page }) => {
+test("a pending cancellation cannot overwrite a replacement scan", async ({
+  page,
+}) => {
   const { state, requests } = await prepare(page, { pending: true });
   let releaseCancel: () => void = () => {};
-  state.cancelGate = new Promise<void>(resolve => { releaseCancel = resolve; });
-  await page.getByRole("button", { name: "Select folder", exact: true }).click();
+  state.cancelGate = new Promise<void>((resolve) => {
+    releaseCancel = resolve;
+  });
+  await page
+    .getByRole("button", { name: "Select folder", exact: true })
+    .click();
   await page.getByRole("button", { name: "Cancel scan", exact: true }).click();
   await expect.poll(() => requests.cancels).toBe(1);
   state.pending = false;
-  await expect(page.getByRole("table", { name: /^Contents of Fixture/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Select folder", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("table", { name: /^Contents of Fixture/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Select folder", exact: true }),
+  ).toBeDisabled();
   releaseCancel();
-  await expect(page.getByRole("button", { name: "Select folder", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Select folder", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Select folder", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Select folder", exact: true })
+    .click();
   await expect.poll(() => requests.starts).toBe(2);
   await expect(page.locator(".header-status")).toHaveText("Analysis complete");
-  await expect(page.getByRole("table", { name: /^Contents of Fixture/ })).toBeVisible();
+  await expect(
+    page.getByRole("table", { name: /^Contents of Fixture/ }),
+  ).toBeVisible();
 });
 
 test("compact windows and 200 percent text retain reachable content without body overflow", async ({

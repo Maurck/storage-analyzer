@@ -33,10 +33,13 @@ src/
     hooks/                     query and scan lifecycle
     components/                explorer, chart, contents and scan presentation
     StorageAnalysisPage.tsx    feature composition and selection
+  features/settings/
+    SettingsDialog.tsx         language picker in a modal dialog
   shared/
     ui/                        Button, IconButton, Icon, Text, Spinner, Skeleton
     components/                Alert, EmptyState, ErrorState
     hooks/                     media query subscription
+    i18n/                      language context, dictionaries and error wording
     lib/                       HTTP errors and pure formatting
   styles/                      tokens, reset, primitives and workspace layout
 ```
@@ -56,6 +59,7 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 - Modal: use `<dialog>.showModal()`, a named dialog, Escape, and focus restoration. Keep lengthy exploration in the workspace.
 - Destructive actions: none exist. If added later, require an explicit target, consequence and appropriately named confirmation; do not reuse scan cancellation as a deletion pattern.
 - Forms: label each input; connect hints/errors with IDs; preserve values after failure.
+- Language: every visible string and accessible name comes from `shared/i18n`, so a new one means a key in both dictionaries; English defines the key type, so a missing Spanish entry fails the build. Settings stay in a dialog rather than a page, which keeps the application free of a router. Sizes and counts follow the operating system, never the selected language, so they keep matching Windows Explorer.
 
 ## Responsive and keyboard acceptance
 

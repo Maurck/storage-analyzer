@@ -12,7 +12,9 @@ npm run build
 npm start
 ```
 
-Start the [Java backend](../backend/README.md) separately; on Windows, `npm run start:backend` from the repository root does it. Use **Select folder** to open the native folder picker. Scans only read filesystem metadata. Sizes are logical bytes shown in the units Windows Explorer uses (KB, MB, GB as powers of 1024), not allocated disk space.
+The interface ships in English and Spanish. The **Settings** button in the header opens a dialog with the language picker; the choice applies immediately, is remembered in `localStorage` and sets the `lang` attribute so screen readers switch voice with it. Without a stored choice the app follows the browser's language and falls back to English. Sizes keep the format Windows Explorer uses on the machine, whichever language is selected.
+
+On Windows, `npm start` also starts the [Java backend](../backend/README.md) and stops it when the window closes, when the app quits, or when the command is interrupted; a backend already listening is reused and left running. On macOS and Linux, start it separately. Use **Select folder** to open the native folder picker. Scans only read filesystem metadata. Sizes are logical bytes shown in the units Windows Explorer uses (KB, MB, GB as powers of 1024), not allocated disk space.
 
 For development, run `npm run build:watch` in another terminal, then reload Electron after the build finishes. The watcher rebuilds bundles; it does not provide hot module replacement.
 

@@ -1,6 +1,10 @@
 import React, { lazy, Suspense } from "react";
 import { Spinner } from "./shared/ui/Spinner";
 import { QueryClient, QueryClientProvider } from "react-query";
+import {
+  LanguageProvider,
+  useTranslation,
+} from "./shared/i18n/LanguageProvider";
 
 const client = new QueryClient({
   defaultOptions: {
@@ -18,19 +22,25 @@ const StorageAnalysisPage = lazy(() =>
   ).then((module) => ({ default: module.StorageAnalysisPage })),
 );
 
+// Inside the provider so the loading label follows the chosen language.
+function Loading() {
+  const { t } = useTranslation();
+  return (
+    <div className="app-loading">
+      <Spinner label={t("app.loading")} />
+    </div>
+  );
+}
+
 export const App = () => {
   return (
-    <QueryClientProvider client={client}>
-      <Suspense
-        fallback={
-          <div className="app-loading">
-            <Spinner label="Opening Storage Analyzer" />
-          </div>
-        }
-      >
-        <StorageAnalysisPage />
-      </Suspense>
-    </QueryClientProvider>
+    <LanguageProvider>
+      <QueryClientProvider client={client}>
+        <Suspense fallback={<Loading />}>
+          <StorageAnalysisPage />
+        </Suspense>
+      </QueryClientProvider>
+    </LanguageProvider>
   );
 };
 

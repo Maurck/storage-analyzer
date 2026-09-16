@@ -1,4 +1,5 @@
 import React, { ReactNode, useState } from "react";
+import { useTranslation } from "../shared/i18n/LanguageProvider";
 export function SplitPane({
   sidebar,
   children,
@@ -6,6 +7,7 @@ export function SplitPane({
   sidebar: ReactNode;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [width, setWidth] = useState(300);
   const clamp = (value: number) => Math.max(240, Math.min(440, value));
   return (
@@ -17,7 +19,7 @@ export function SplitPane({
       {sidebar && (
         <div
           role="separator"
-          aria-label="Resize explorer"
+          aria-label={t("explorer.resize")}
           aria-orientation="vertical"
           aria-valuenow={width}
           aria-valuemin={240}

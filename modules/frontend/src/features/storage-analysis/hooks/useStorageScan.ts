@@ -32,7 +32,11 @@ export function useStorageScan() {
   const start = useMutation(
     async (path: string) => {
       if (startPending.current)
-        throw new AppError("An analysis is already starting.");
+        throw new AppError(
+          "An analysis is already starting.",
+          0,
+          "already-starting",
+        );
       startPending.current = true;
       try {
         return await startScan(path);

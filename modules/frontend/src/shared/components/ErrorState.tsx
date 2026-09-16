@@ -2,6 +2,7 @@ import React from "react";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { EmptyState, EmptyStateProps } from "./EmptyState";
+import { useTranslation } from "../i18n/LanguageProvider";
 
 export interface ErrorStateProps extends EmptyStateProps {
   onRetry?: () => void;
@@ -10,12 +11,14 @@ export interface ErrorStateProps extends EmptyStateProps {
 
 export function ErrorState({
   onRetry,
-  retryLabel = "Try again",
+  retryLabel,
   action,
   icon = <Icon name="alert" size={24} />,
   className = "",
   ...props
 }: ErrorStateProps) {
+  const { t } = useTranslation();
+  const label = retryLabel ?? t("error.tryAgain");
   return (
     <div role="alert">
       <EmptyState
@@ -27,7 +30,7 @@ export function ErrorState({
           (onRetry && (
             <Button variant="secondary" onClick={onRetry}>
               <Icon name="refresh" />
-              {retryLabel}
+              {label}
             </Button>
           ))
         }

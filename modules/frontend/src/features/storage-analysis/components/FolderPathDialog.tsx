@@ -2,6 +2,7 @@ import React, { RefObject, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { IconButton } from "../../../shared/ui/IconButton";
 import { Icon } from "../../../shared/ui/Icon";
+import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 interface FolderPathDialogProps {
   dialogRef: RefObject<HTMLDialogElement>;
@@ -17,6 +18,7 @@ export function FolderPathDialog({
   onAnalyze,
 }: FolderPathDialogProps) {
   const [pathInput, setPathInput] = useState("");
+  const { t } = useTranslation();
 
   return (
     <dialog
@@ -31,9 +33,9 @@ export function FolderPathDialog({
         }}
       >
         <div className="dialog-heading">
-          <h2 id="path-dialog-title">Choose a folder</h2>
+          <h2 id="path-dialog-title">{t("folderDialog.title")}</h2>
           <IconButton
-            label="Close folder dialog"
+            label={t("folderDialog.close")}
             variant="ghost"
             disabled={pending}
             onClick={() => dialogRef.current?.close()}
@@ -41,11 +43,8 @@ export function FolderPathDialog({
             <Icon name="close" />
           </IconButton>
         </div>
-        <p>
-          Enter the absolute path of a folder on the machine running the
-          analysis service.
-        </p>
-        <label htmlFor="folder-path">Folder path</label>
+        <p>{t("folderDialog.description")}</p>
+        <label htmlFor="folder-path">{t("folderDialog.label")}</label>
         <input
           id="folder-path"
           value={pathInput}
@@ -68,10 +67,10 @@ export function FolderPathDialog({
             disabled={pending}
             onClick={() => dialogRef.current?.close()}
           >
-            Cancel
+            {t("folderDialog.cancel")}
           </Button>
           <Button type="submit" loading={pending} disabled={!pathInput.trim()}>
-            Analyze folder
+            {t("folderDialog.analyze")}
           </Button>
         </div>
       </form>

@@ -1,11 +1,17 @@
 const { BrowserWindow, app, dialog, ipcMain } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { startBackend, stopBackend } = require("./backend-process");
 
 const indexPath = path.join(__dirname, "index.html");
 const indexUrl = pathToFileURL(indexPath).href;
 const selectDirectoryChannel = "storage-analyzer:select-directory";
 const backendUrl = getBackendUrl(process.env.STORAGE_ANALYZER_API_URL);
+// `npm start` passes this flag. Launching Electron without it leaves the
+// backend to be started separately, which is what the test harness does.
+const managesBackend = (
+  Array.isArray(process.argv) ? process.argv : []
+).includes("--start-backend");
 let mainWindow = null;
 let pendingDirectoryDialog = null;
 
@@ -75,6 +81,18 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  if (managesBackend) {
+    startBackend(backendUrl)
+      .then((outcome) => {
+        if (outcome === "already-running") {
+          console.log(`Using the backend already serving ${backendUrl}.`);
+        }
+      })
+      .catch((error) => {
+        // The window still opens: it reports an unreachable API on its own.
+        console.error("Could not start the backend:", error.message);
+      });
+  }
   ipcMain.handle(selectDirectoryChannel, async (event) => {
     const window = mainWindow;
     if (
@@ -113,4 +131,11 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
+});
+
+// Closing the window, quitting the app and interrupting `npm start` all end
+// here. A forced kill does not, which is why the script also watches this
+// process and exits on its own when it disappears.
+app.on("will-quit", () => {
+  stopBackend();
 });

@@ -3,6 +3,7 @@ import { DirectoryNode, NodeCache } from "../model/directory.types";
 import { Icon } from "../../../shared/ui/Icon";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { formatBytes } from "../../../shared/lib/format";
+import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 interface Props {
   root: DirectoryNode;
@@ -23,6 +24,26 @@ export function DirectoryTree({
 }: Props) {
   const [expanded, setExpanded] = useState(new Set([root.absolutePath]));
   const [focused, setFocused] = useState(root.absolutePath);
+  const { t } = useTranslation();
+  const treeItemLabel = (node: DirectoryNode) => {
+    const kind =
+      node.type === "ERROR"
+        ? t("tree.skippedItem")
+        : node.type === "FILE"
+          ? t("tree.file")
+          : t("tree.folder");
+    const incomplete = node.partial ? ", " + t("tree.incomplete") : "";
+    const detail = node.error ? ", " + node.error : "";
+    return (
+      node.name +
+      ", " +
+      kind +
+      incomplete +
+      ", " +
+      formatBytes(node.sizeBytes) +
+      detail
+    );
+  };
   const [search, setSearch] = useState("");
   const refs = useRef(new Map<string, HTMLLIElement>());
   const typeAhead = useRef({ text: "", time: 0 });
@@ -163,7 +184,7 @@ export function DirectoryTree({
       <li
         key={node.absolutePath}
         role="treeitem"
-        aria-label={`${node.name}, ${node.type === "ERROR" ? "skipped item" : node.type === "FILE" ? "file" : "folder"}${node.partial ? ", incomplete" : ""}, ${formatBytes(node.sizeBytes)}${node.error ? `, ${node.error}` : ""}`}
+        aria-label={treeItemLabel(node)}
         aria-expanded={node.hasChildren ? open : undefined}
         aria-selected={node.absolutePath === selectedPath}
         aria-level={level}
@@ -239,40 +260,40 @@ export function DirectoryTree({
     <>
       <div className="explorer-search">
         <label className="sr-only" htmlFor="tree-search">
-          Search loaded items
+          {t("explorer.searchLabel")}
         </label>
         <Icon name="search" size={17} />
         <input
           id="tree-search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search loaded items…"
+          placeholder={t("explorer.searchPlaceholder")}
           aria-describedby="tree-search-hint"
           type="search"
         />
       </div>
       <p id="tree-search-hint" className="explorer-hint">
-        Open a folder to load its contents.
+        {t("explorer.hint")}
       </p>
       {visible.length ? (
         <ul
           role="tree"
-          aria-label="Folders and files"
+          aria-label={t("explorer.treeLabel")}
           className="directory-tree"
         >
           {renderNode(root, 1, 1, 1)}
         </ul>
       ) : (
         <p role="status" className="explorer-hint">
-          No loaded items match “{search}”.
+          {t("explorer.noMatches", { query: search })}
         </p>
       )}
       <div className="explorer-footer">
         <kbd>↑</kbd>
         <kbd>↓</kbd>
-        <span>Navigate</span>
+        <span>{t("explorer.navigate")}</span>
         <kbd>Enter</kbd>
-        <span>Select</span>
+        <span>{t("explorer.select")}</span>
       </div>
     </>
   );

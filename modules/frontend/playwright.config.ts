@@ -16,6 +16,9 @@ export default defineConfig({
   reporter: "list",
   use: {
     baseURL: "http://127.0.0.1:8080",
+    // The app picks its language from the browser, so pinning the locale
+    // keeps these expectations from depending on the machine's own.
+    locale: "en-US",
     browserName: "chromium",
     launchOptions: { executablePath },
     viewport: { width: 1440, height: 1000 },

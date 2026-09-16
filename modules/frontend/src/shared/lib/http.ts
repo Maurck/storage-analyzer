@@ -1,7 +1,18 @@
+/** Codes for the messages this module raises itself, so the interface can
+ *  show them in the reader's language. Messages relayed by the backend have
+ *  no code and are shown as the service worded them. */
+export type ErrorCode =
+  | "unreadable-response"
+  | "request-failed"
+  | "timeout"
+  | "offline"
+  | "already-starting";
+
 export class AppError extends Error {
   constructor(
     message: string,
     public readonly status = 0,
+    public readonly code?: ErrorCode,
   ) {
     super(message);
     this.name = "AppError";
@@ -42,6 +53,7 @@ export async function request<T>(
       throw new AppError(
         "The local service returned an unreadable response. Please try again.",
         response.status,
+        "unreadable-response",
       );
     }
     if (!response.ok) {
@@ -51,20 +63,28 @@ export async function request<T>(
         "message" in body &&
         typeof body.message === "string"
           ? body.message
-          : "The request could not be completed. Please try again.";
-      throw new AppError(message, response.status);
+          : null;
+      throw new AppError(
+        message ?? "The request could not be completed. Please try again.",
+        response.status,
+        message ? undefined : "request-failed",
+      );
     }
     return body as T;
   } catch (error) {
     if (timedOut)
       throw new AppError(
         "The local service took too long to respond. You can retry safely.",
+        0,
+        "timeout",
       );
     if (init.signal?.aborted)
       throw new DOMException("The request was cancelled.", "AbortError");
     if (error instanceof AppError) throw error;
     throw new AppError(
       "Could not connect to the local analysis service. Start the backend and try again.",
+      0,
+      "offline",
     );
   } finally {
     clearTimeout(timeout);

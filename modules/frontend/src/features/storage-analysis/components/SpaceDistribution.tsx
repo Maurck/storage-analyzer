@@ -3,6 +3,7 @@ import { DirectoryNode } from "../model/directory.types";
 import { formatBytes, percentOf } from "../../../shared/lib/format";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { Icon } from "../../../shared/ui/Icon";
+import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 const colors = [
   "#60A5FA",
@@ -19,6 +20,7 @@ export function SpaceDistribution({
   node: DirectoryNode;
   onSelect(node: DirectoryNode): void;
 }) {
+  const { t } = useTranslation();
   const sorted = [...node.subdirectories]
     .filter((child) => child.sizeBytes > 0)
     .sort((a, b) => b.sizeBytes - a.sizeBytes);
@@ -30,7 +32,7 @@ export function SpaceDistribution({
     .reduce((sum, child) => sum + child.sizeBytes, 0);
   const parts: { name: string; size: number; node?: DirectoryNode }[] = [
     ...top,
-    ...(other > 0 ? [{ name: "Other items", size: other }] : []),
+    ...(other > 0 ? [{ name: t("distribution.other"), size: other }] : []),
   ];
   const total = parts.reduce((sum, part) => sum + part.size, 0);
   let offset = 0;
@@ -45,24 +47,27 @@ export function SpaceDistribution({
     <section className="distribution-card" aria-labelledby="distribution-title">
       <div className="card-heading">
         <div>
-          <span className="eyebrow">AT A GLANCE</span>
-          <h3 id="distribution-title">Space distribution</h3>
+          <span className="eyebrow">{t("distribution.eyebrow")}</span>
+          <h3 id="distribution-title">{t("distribution.title")}</h3>
         </div>
         <span className="subtle-badge">
-          {node.partial ? "Partial results" : "Logical size"}
+          {node.partial ? t("distribution.partial") : t("distribution.logical")}
         </span>
       </div>
       {total === 0 ? (
         <EmptyState
-          title="No storage to chart"
-          description="This folder contains no readable file bytes. Empty folders and skipped items are listed below."
+          title={t("distribution.emptyTitle")}
+          description={t("distribution.emptyDescription")}
           icon={<Icon name="grid" size={28} />}
         />
       ) : (
         <div className="distribution-content">
           <figure
             className="donut-figure"
-            aria-label={`${node.name}: ${formatBytes(total)} in listed items. Exact sizes and percentages are available in the contents table below.`}
+            aria-label={t("distribution.figureLabel", {
+              name: node.name,
+              size: formatBytes(total),
+            })}
           >
             <div
               className="donut"
@@ -71,7 +76,7 @@ export function SpaceDistribution({
             >
               <div className="donut-center">
                 <span>{formatBytes(total)}</span>
-                <small>IN THIS FOLDER</small>
+                <small>{t("distribution.inThisFolder")}</small>
               </div>
             </div>
           </figure>

@@ -18,15 +18,19 @@ import { Alert } from "../../shared/components/Alert";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { ErrorState } from "../../shared/components/ErrorState";
 import { formatBytes, formatNumber } from "../../shared/lib/format";
-import { errorMessage } from "../../shared/lib/http";
+import { useErrorMessage } from "../../shared/i18n/useErrorMessage";
 import { useMediaQuery } from "../../shared/hooks/useMediaQuery";
 import { SplitPane } from "../../layouts/SplitPane";
 import { AppShell } from "../../layouts/AppShell";
+import { SettingsDialog } from "../settings/SettingsDialog";
+import { useTranslation } from "../../shared/i18n/LanguageProvider";
 
 export function StorageAnalysisPage() {
   const { scan, snapshot, start, cancel, query, busy, expired } =
     useStorageScan();
   const client = useQueryClient();
+  const { t } = useTranslation();
+  const describeError = useErrorMessage();
   const [nodes, setNodes] = useState<NodeCache>({});
   const [selectedPath, setSelectedPath] = useState("");
   const [loadingPaths, setLoadingPaths] = useState(new Set<string>());
@@ -40,6 +44,7 @@ export function StorageAnalysisPage() {
   const [copyStatus, setCopyStatus] = useState("");
   const pathDialog = useRef<HTMLDialogElement>(null);
   const explorerDialog = useRef<HTMLDialogElement>(null);
+  const settingsDialog = useRef<HTMLDialogElement>(null);
   const currentSnapshot = useRef<string>();
   const compact = useMediaQuery("(max-width: 767px)");
   currentSnapshot.current = snapshot?.id;
@@ -85,7 +90,7 @@ export function StorageAnalysisPage() {
       });
     } catch (error) {
       if (currentSnapshot.current === id)
-        setBranchError({ node, message: errorMessage(error) });
+        setBranchError({ node, message: describeError(error) });
     } finally {
       if (currentSnapshot.current === id)
         setLoadingPaths((value) => {
@@ -126,18 +131,16 @@ export function StorageAnalysisPage() {
       const path = await window.storageAnalyzer.selectDirectory();
       if (path) await begin(path);
     } catch (error) {
-      setPickerError(errorMessage(error));
+      setPickerError(describeError(error));
     }
   }
 
   async function copyPath() {
     try {
       await navigator.clipboard.writeText(selected!.absolutePath);
-      setCopyStatus("Path copied");
+      setCopyStatus(t("selection.copied"));
     } catch {
-      setCopyStatus(
-        "Could not copy. Select and copy the path displayed below.",
-      );
+      setCopyStatus(t("selection.copyFailed"));
     }
   }
 
@@ -162,13 +165,15 @@ export function StorageAnalysisPage() {
   const explorer = root && (
     <>
       <div className="explorer-heading">
-        <h2>Explorer</h2>
+        <h2>{t("explorer.title")}</h2>
         <span className="subtle-badge">
-          {formatNumber(Object.keys(nodes).length)} loaded
+          {t("explorer.loaded", {
+            count: formatNumber(Object.keys(nodes).length),
+          })}
         </span>
         {compact && (
           <IconButton
-            label="Close explorer"
+            label={t("explorer.close")}
             variant="ghost"
             onClick={() => setDrawerOpen(false)}
           >
@@ -188,32 +193,34 @@ export function StorageAnalysisPage() {
     </>
   );
   const statusText = busy
-    ? "Scanning"
+    ? t("status.scanning")
     : scan?.status === "COMPLETE"
       ? scan.root?.partial
-        ? "Completed with skipped items"
-        : "Analysis complete"
+        ? t("status.completePartial")
+        : t("status.complete")
       : scan?.status === "CANCELLED"
-        ? "Scan cancelled"
-        : "Ready to explore";
+        ? t("status.cancelled")
+        : t("status.ready");
 
   return (
     <AppShell
       status={statusText}
       busy={busy}
+      onOpenSettings={() => settingsDialog.current?.showModal()}
       overlays={
         <>
+          <SettingsDialog dialogRef={settingsDialog} />
           <FolderPathDialog
             dialogRef={pathDialog}
             pending={start.isLoading}
-            error={start.isError ? errorMessage(start.error) : undefined}
+            error={start.isError ? describeError(start.error) : undefined}
             onAnalyze={begin}
           />
           {compact && (
             <dialog
               ref={explorerDialog}
               className="explorer-dialog"
-              aria-label="File explorer"
+              aria-label={t("explorer.label")}
               onClose={() => setDrawerOpen(false)}
             >
               {explorer}
@@ -225,12 +232,13 @@ export function StorageAnalysisPage() {
       <section className="page-heading" aria-labelledby="page-title">
         <div>
           <div className="eyebrow">
-            <span className="eyebrow-line" /> KNOW YOUR STORAGE
+            <span className="eyebrow-line" /> {t("page.eyebrow")}
           </div>
           <h1 id="page-title">
-            Storage overview<span className="heading-period">.</span>
+            {t("page.title")}
+            <span className="heading-period">.</span>
           </h1>
-          <p>See what’s taking up space. Find what matters.</p>
+          <p>{t("page.subtitle")}</p>
         </div>
         <div className="page-actions">
           {snapshot && (
@@ -242,7 +250,7 @@ export function StorageAnalysisPage() {
               disabled={busy}
             >
               <Icon name="refresh" size={17} />
-              Rescan
+              {t("page.rescan")}
             </Button>
           )}
           <Button
@@ -253,7 +261,7 @@ export function StorageAnalysisPage() {
             loading={start.isLoading}
           >
             <Icon name="folder-open" size={18} />
-            Select folder
+            {t("page.selectFolder")}
           </Button>
         </div>
       </section>
@@ -263,8 +271,8 @@ export function StorageAnalysisPage() {
       {(pickerError || start.isError) && (
         <div className="page-feedback">
           <ErrorState
-            title="Could not start the analysis"
-            description={pickerError || errorMessage(start.error)}
+            title={t("error.startTitle")}
+            description={pickerError || describeError(start.error)}
             onRetry={() => {
               void chooseFolder();
             }}
@@ -275,14 +283,17 @@ export function StorageAnalysisPage() {
         <div className="page-feedback">
           <ErrorState
             title={
-              expired ? "Analysis session expired" : "Connection interrupted"
+              expired ? t("error.expiredTitle") : t("error.connectionTitle")
             }
             description={
               expired
-                ? "The local service restarted or this analysis expired. Choose a folder to start a new scan."
-                : `${errorMessage(query.error)}${snapshot ? " Your previous results are still available." : ""}`
+                ? t("error.expiredDescription")
+                : describeError(query.error) +
+                  (snapshot ? t("error.previousResults") : "")
             }
-            retryLabel={expired ? "Select another folder" : "Try again"}
+            retryLabel={
+              expired ? t("error.selectAnother") : t("error.tryAgain")
+            }
             onRetry={() => {
               if (expired) void chooseFolder();
               else void query.refetch();
@@ -293,10 +304,8 @@ export function StorageAnalysisPage() {
       {scan?.status === "ERROR" && (
         <div className="page-feedback">
           <ErrorState
-            title="Analysis could not finish"
-            description={
-              scan.error || "Choose an accessible folder and try again."
-            }
+            title={t("error.scanFailedTitle")}
+            description={scan.error || t("error.scanFailedDescription")}
             onRetry={() => {
               void begin(scan.path).catch(() => {});
             }}
@@ -305,25 +314,27 @@ export function StorageAnalysisPage() {
       )}
       {scan?.status === "CANCELLED" && (
         <div className="page-feedback">
-          <Alert variant="info" title="Scan cancelled">
+          <Alert variant="info" title={t("status.cancelled")}>
             {snapshot
-              ? "Your previous results are still available."
-              : "Choose a folder whenever you’re ready to start again."}
+              ? t("error.cancelledWithResults")
+              : t("error.cancelledNoResults")}
           </Alert>
         </div>
       )}
       {busy && (
-        <section className="scan-progress" aria-label="Analysis progress">
-          <Spinner label="Scanning files" />
+        <section className="scan-progress" aria-label={t("progress.label")}>
+          <Spinner label={t("progress.spinner")} />
           <div className="scan-progress-text">
-            <strong>Analyzing your folder…</strong>
+            <strong>{t("progress.heading")}</strong>
             <span className="scan-path" title={scan?.path}>
-              {scan?.path || "Starting analysis…"}
+              {scan?.path || t("progress.starting")}
             </span>
             <span>
-              {formatNumber(scan?.processedFiles ?? 0)} files ·{" "}
-              {formatBytes(scan?.processedBytes ?? 0)} found ·{" "}
-              {formatNumber(scan?.skippedCount ?? 0)} skipped
+              {t("progress.counts", {
+                files: formatNumber(scan?.processedFiles ?? 0),
+                bytes: formatBytes(scan?.processedBytes ?? 0),
+                skipped: formatNumber(scan?.skippedCount ?? 0),
+              })}
             </span>
           </div>
           <Button
@@ -333,14 +344,14 @@ export function StorageAnalysisPage() {
             loading={cancel.isLoading}
             disabled={!scan}
           >
-            Cancel scan
+            {t("progress.cancel")}
           </Button>
         </section>
       )}
       {cancel.isError && (
         <div className="page-feedback">
-          <Alert variant="error" title="Could not cancel">
-            {errorMessage(cancel.error)} Use Cancel scan to retry.
+          <Alert variant="error" title={t("error.couldNotCancel")}>
+            {describeError(cancel.error)} {t("error.couldNotCancelHint")}
           </Alert>
         </div>
       )}
@@ -358,14 +369,20 @@ export function StorageAnalysisPage() {
           <SplitPane
             sidebar={
               !compact ? (
-                <aside className="explorer-panel" aria-label="File explorer">
+                <aside
+                  className="explorer-panel"
+                  aria-label={t("explorer.label")}
+                >
                   {explorer}
                 </aside>
               ) : null
             }
           >
             <div className="selection-header">
-              <nav className="path-breadcrumbs" aria-label="Folder path">
+              <nav
+                className="path-breadcrumbs"
+                aria-label={t("selection.breadcrumbLabel")}
+              >
                 {breadcrumbs().map((node, index, all) => (
                   <React.Fragment key={node.absolutePath}>
                     {index > 0 && <Icon name="chevron-right" size={14} />}
@@ -395,8 +412,11 @@ export function StorageAnalysisPage() {
                     <span className="muted">
                       {formatBytes(selected.sizeBytes)}
                       {selected.type === "FOLDER" &&
-                        ` · ${formatNumber(selected.fileCount)} files`}
-                      {selected.partial && " · Incomplete"}
+                        " · " +
+                          t("selection.files", {
+                            count: formatNumber(selected.fileCount),
+                          })}
+                      {selected.partial && " · " + t("selection.incomplete")}
                     </span>
                   </div>
                 </div>
@@ -408,11 +428,11 @@ export function StorageAnalysisPage() {
                       onClick={() => setDrawerOpen(true)}
                     >
                       <Icon name="menu" size={17} />
-                      Explorer
+                      {t("selection.explorer")}
                     </Button>
                   )}
                   <IconButton
-                    label="Copy folder path"
+                    label={t("selection.copyPath")}
                     variant="ghost"
                     onClick={() => {
                       void copyPath();
@@ -422,7 +442,11 @@ export function StorageAnalysisPage() {
                   </IconButton>
                   {selected.type === "FOLDER" && (
                     <IconButton
-                      label={showChart ? "Hide chart" : "Show chart"}
+                      label={
+                        showChart
+                          ? t("selection.hideChart")
+                          : t("selection.showChart")
+                      }
                       aria-pressed={showChart}
                       variant="ghost"
                       onClick={() => setShowChart((value) => !value)}
@@ -443,7 +467,9 @@ export function StorageAnalysisPage() {
             </div>
             {branchError && (
               <ErrorState
-                title={`Could not open ${branchError.node.name}`}
+                title={t("error.branchTitle", {
+                  name: branchError.node.name,
+                })}
                 description={branchError.message}
                 onRetry={() => {
                   void loadNode(branchError.node);
@@ -452,38 +478,39 @@ export function StorageAnalysisPage() {
             )}
             {loadingPaths.has(selected.absolutePath) ? (
               <div className="detail-skeleton" role="status">
-                <span className="sr-only">Loading folder contents</span>
+                <span className="sr-only">
+                  {t("selection.loadingContents")}
+                </span>
                 <Skeleton height={260} />
                 <Skeleton height={220} />
               </div>
             ) : selected.type === "FILE" ? (
               <div className="file-detail">
                 <EmptyState
-                  title="File details"
-                  description="This file contributes to the total logical size of its parent folder."
+                  title={t("file.title")}
+                  description={t("file.description")}
                   icon={<Icon name="file" size={36} />}
                 />
                 <dl>
                   <div>
-                    <dt>File name</dt>
+                    <dt>{t("file.name")}</dt>
                     <dd>{selected.name}</dd>
                   </div>
                   <div>
-                    <dt>Size</dt>
+                    <dt>{t("file.size")}</dt>
                     <dd>{formatBytes(selected.sizeBytes)}</dd>
                   </div>
                   <div>
-                    <dt>Path</dt>
+                    <dt>{t("file.path")}</dt>
                     <dd>{selected.absolutePath}</dd>
                   </div>
                 </dl>
               </div>
             ) : selected.type === "ERROR" ? (
               <ErrorState
-                title="This item could not be read"
+                title={t("error.itemUnreadableTitle")}
                 description={
-                  selected.error ||
-                  "Check the folder’s permissions, then rescan to try again."
+                  selected.error || t("error.itemUnreadableDescription")
                 }
               />
             ) : selected.childrenLoaded ? (
@@ -500,15 +527,15 @@ export function StorageAnalysisPage() {
             ) : (
               !branchError && (
                 <EmptyState
-                  title="Open this folder"
-                  description="Load its contents to explore the next level."
+                  title={t("load.title")}
+                  description={t("load.description")}
                   action={
                     <Button
                       onClick={() => {
                         void loadNode(selected);
                       }}
                     >
-                      Load contents
+                      {t("load.button")}
                     </Button>
                   }
                 />

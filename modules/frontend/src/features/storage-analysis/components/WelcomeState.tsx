@@ -1,12 +1,14 @@
 import React from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Icon } from "../../../shared/ui/Icon";
+import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 interface WelcomeStateProps {
   onChooseFolder(): void;
 }
 
 export function WelcomeState({ onChooseFolder }: WelcomeStateProps) {
+  const { t } = useTranslation();
   return (
     <section className="welcome-panel">
       <div className="welcome-art" aria-hidden="true">
@@ -23,32 +25,29 @@ export function WelcomeState({ onChooseFolder }: WelcomeStateProps) {
         </div>
         <span className="art-spark" />
       </div>
-      <span className="eyebrow">A CLEARER VIEW OF YOUR FILES</span>
-      <h2>A little clarity. A lot of space.</h2>
-      <p>
-        Choose a folder to uncover its largest files, explore what’s inside, and
-        understand how your storage adds up.
-      </p>
+      <span className="eyebrow">{t("welcome.eyebrow")}</span>
+      <h2>{t("welcome.title")}</h2>
+      <p>{t("welcome.description")}</p>
       <Button size="lg" onClick={onChooseFolder}>
         <Icon name="folder-open" />
-        Choose a folder
+        {t("welcome.chooseFolder")}
       </Button>
       <span className="privacy-note">
         <Icon name="check" size={15} />
-        Local analysis. Your files stay on your device.
+        {t("welcome.privacy")}
       </span>
       <div className="welcome-features">
         <span>
           <Icon name="grid" />
-          Visual breakdown
+          {t("welcome.featureBreakdown")}
         </span>
         <span>
           <Icon name="search" />
-          Find large files
+          {t("welcome.featureFind")}
         </span>
         <span>
           <Icon name="folder" />
-          Explore every folder
+          {t("welcome.featureExplore")}
         </span>
       </div>
     </section>

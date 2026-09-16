@@ -622,3 +622,65 @@ test("compact windows and 200 percent text retain reachable content without body
   ).toBe(true);
   await checkAccessibility(page);
 });
+
+test("the language can be switched from settings and survives a reload", async ({
+  page,
+}) => {
+  await prepare(page);
+  // playwright.config.ts pins the browser to en-US, so the app starts in
+  // English and this exercises a real change of language.
+  await expect(
+    page.getByRole("heading", { name: "Storage overview." }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+  await page.getByLabel("Language").selectOption("es");
+
+  // The dialog translates in place, so its accessible name changes with it.
+  await expect(
+    page.getByRole("dialog", { name: "Configuración" }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
+  await page.getByRole("button", { name: "Listo" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Configuración" }),
+  ).not.toBeVisible();
+
+  await expect(
+    page.getByRole("heading", { name: "Resumen de almacenamiento." }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Elegir carpeta", exact: true }).first(),
+  ).toBeVisible();
+  await checkAccessibility(page);
+
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Resumen de almacenamiento." }),
+  ).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
+});
+
+test("switching language keeps the analysis and the Explorer sizes", async ({
+  page,
+}) => {
+  await prepare(page);
+  await analyze(page);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("Language").selectOption("es");
+  await page.getByRole("button", { name: "Listo" }).click();
+
+  const table = page.getByRole("table", { name: /^Contenido de Fixture/ });
+  await expect(table).toBeVisible();
+  await expect(table.getByRole("row", { name: /Projects/ })).toContainText(
+    "768 MB",
+  );
+  await expect(table.getByRole("row", { name: /Photos/ })).toContainText(
+    "256 MB",
+  );
+  await expect(
+    page.getByRole("figure", { name: /Fixture: 1\.00 GB/ }),
+  ).toBeVisible();
+});

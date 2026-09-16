@@ -22,6 +22,10 @@
 .PARAMETER Force
     Runs even when the detected JDK is not 17.
 
+.PARAMETER ParentProcessId
+    Stop once this process is gone. Electron passes its own id so that killing
+    the desktop app never leaves the server holding port 5000.
+
 .EXAMPLE
     .\start-backend.ps1
 
@@ -35,7 +39,8 @@
 param(
     [string[]] $Goal = @('spring-boot:run'),
     [switch] $Online,
-    [switch] $Force
+    [switch] $Force,
+    [int] $ParentProcessId = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -198,6 +203,16 @@ public static class ScanKillOnClose {
 }
 '@
 
+$parentProcess = $null
+if ($ParentProcessId -gt 0) {
+    try {
+        $parentProcess = [System.Diagnostics.Process]::GetProcessById($ParentProcessId)
+    } catch {
+        Write-Host "Parent process $ParentProcessId is already gone. Nothing to serve."
+        exit 0
+    }
+}
+
 $jobReady = $false
 try {
     $jobReady = [ScanKillOnClose]::Create()
@@ -231,8 +246,14 @@ if ($jobReady) { [ScanKillOnClose]::Add($process.Handle) | Out-Null }
 
 try {
     # Polling rather than WaitForExit so Ctrl+C reaches the finally block below.
-    while (-not $process.HasExited) { Start-Sleep -Milliseconds 150 }
-    $exitCode = $process.ExitCode
+    while (-not $process.HasExited) {
+        if ($parentProcess -and $parentProcess.HasExited) {
+            Write-Host "Parent process $ParentProcessId exited. Stopping the server."
+            break
+        }
+        Start-Sleep -Milliseconds 150
+    }
+    if ($process.HasExited) { $exitCode = $process.ExitCode }
 } finally {
     if (-not $process.HasExited) {
         # Reached on Ctrl+C. The job object covers a forced kill, but tearing the

@@ -4,7 +4,7 @@ Java 17 and Spring Boot. The filesystem API is read-only and runs on `http://127
 
 ## Run and test
 
-On Windows, `start-backend.ps1` at the repository root prepares the toolchain and runs the server:
+The Electron app runs this server for you when launched with `npm start`, so this section is for running the API on its own. On Windows, `start-backend.ps1` at the repository root prepares the toolchain and runs the server:
 
 ```powershell
 npm run start:backend                 # same as .\start-backend.ps1

@@ -9,7 +9,7 @@ const frontendPath = path.resolve(__dirname, '..');
 const mainSource = fs.readFileSync(path.join(frontendPath, 'main.js'), 'utf8');
 const preloadSource = fs.readFileSync(path.join(frontendPath, 'preload.js'), 'utf8');
 
-async function loadDesktop({ backendUrl, platform = 'win32', openDialog } = {}) {
+async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv } = {}) {
     const windows = [];
     const handlers = new Map();
     const appEvents = new Map();
@@ -38,6 +38,11 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog } = {}) 
         on: (name, handler) => appEvents.set(name, handler),
         quit: () => { quitCount += 1; },
     };
+    const backendCalls = [];
+    const backend = {
+        startBackend: url => { backendCalls.push({ call: 'start', url }); return Promise.resolve('started'); },
+        stopBackend: () => { backendCalls.push({ call: 'stop' }); return true; },
+    };
     const electron = {
         app, BrowserWindow,
         ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
@@ -47,13 +52,15 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog } = {}) 
         } },
     };
     vm.runInNewContext(mainSource, {
-        require: name => name === 'electron' ? electron : require(name),
+        require: name => name === 'electron' ? electron
+            : name === './backend-process' ? backend
+            : require(name),
         __dirname: frontendPath,
-        process: { env: backendUrl === undefined ? {} : { STORAGE_ANALYZER_API_URL: backendUrl }, platform },
+        process: { env: backendUrl === undefined ? {} : { STORAGE_ANALYZER_API_URL: backendUrl }, platform, argv },
         URL, console,
     });
     await Promise.resolve();
-    return { windows, handlers, appEvents, dialogCalls, quitCount: () => quitCount };
+    return { windows, handlers, appEvents, dialogCalls, backendCalls, quitCount: () => quitCount };
 }
 
 function windowEvent(window) {
@@ -166,4 +173,23 @@ test('preload exposes only backend configuration and the fixed folder-selection 
     assert.equal(exposed.api.backendUrl, 'http://localhost:5050');
     assert.equal(await exposed.api.selectDirectory('untrusted-channel'), 'C:\\Selected');
     assert.deepEqual(calls, [['storage-analyzer:select-directory']]);
+});
+
+test('the backend is only managed when the app was started through npm', async () => {
+    const plain = await loadDesktop();
+    assert.deepEqual(plain.backendCalls, [], 'without the flag the backend is left alone');
+    plain.appEvents.get('will-quit')();
+    assert.deepEqual(plain.backendCalls, [{ call: 'stop' }], 'quitting never stops someone else’s backend');
+
+    const managed = await loadDesktop({ argv: ['electron', '.', '--start-backend'] });
+    assert.deepEqual(managed.backendCalls, [{ call: 'start', url: 'http://localhost:5000' }]);
+});
+
+test('quitting stops the backend the app started, whichever way the app is closed', async () => {
+    const managed = await loadDesktop({ argv: ['electron', '.', '--start-backend'] });
+    managed.windows[0].events.get('closed')();
+    managed.appEvents.get('window-all-closed')();
+    assert.equal(managed.quitCount(), 1, 'closing the last window quits the app');
+    managed.appEvents.get('will-quit')();
+    assert.deepEqual(managed.backendCalls.at(-1), { call: 'stop' });
 });

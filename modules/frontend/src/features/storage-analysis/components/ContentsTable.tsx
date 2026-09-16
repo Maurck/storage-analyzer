@@ -9,6 +9,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconButton } from "../../../shared/ui/IconButton";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/components/EmptyState";
+import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 export function ContentsTable({
   node,
@@ -17,6 +18,7 @@ export function ContentsTable({
   node: DirectoryNode;
   onSelect(node: DirectoryNode): void;
 }) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState<{
@@ -61,17 +63,17 @@ export function ContentsTable({
     <section className="contents-card" aria-labelledby="contents-title">
       <div className="card-heading">
         <div className="inline-heading">
-          <h3 id="contents-title">Folder contents</h3>
+          <h3 id="contents-title">{t("contents.title")}</h3>
           <span className="count-badge">
             {formatNumber(node.subdirectories.length)}
           </span>
         </div>
-        <span className="muted">Largest first by default</span>
+        <span className="muted">{t("contents.largestFirst")}</span>
       </div>
       {node.subdirectories.length === 0 ? (
         <EmptyState
-          title="This folder is empty"
-          description="There are no items to display in this folder."
+          title={t("contents.emptyTitle")}
+          description={t("contents.emptyDescription")}
           icon={<Icon name="folder-open" size={28} />}
         />
       ) : (
@@ -80,12 +82,12 @@ export function ContentsTable({
             <div className="search-field">
               <Icon name="search" size={18} />
               <label className="sr-only" htmlFor="contents-search">
-                Search this folder
+                {t("contents.searchLabel")}
               </label>
               <input
                 id="contents-search"
                 type="search"
-                placeholder="Search this folder…"
+                placeholder={t("contents.searchPlaceholder")}
                 value={search}
                 onChange={(event) => {
                   setSearch(event.target.value);
@@ -94,7 +96,7 @@ export function ContentsTable({
               />
             </div>
             <label className="sr-only" htmlFor="type-filter">
-              Filter by type
+              {t("contents.filterLabel")}
             </label>
             <select
               id="type-filter"
@@ -104,24 +106,24 @@ export function ContentsTable({
                 setPage(0);
               }}
             >
-              <option value="all">All types</option>
-              <option value="FOLDER">Folders</option>
-              <option value="FILE">Files</option>
-              <option value="ERROR">Skipped items</option>
+              <option value="all">{t("contents.allTypes")}</option>
+              <option value="FOLDER">{t("contents.folders")}</option>
+              <option value="FILE">{t("contents.files")}</option>
+              <option value="ERROR">{t("contents.skippedItems")}</option>
             </select>
             {(search || filter !== "all") && (
               <Button variant="ghost" size="sm" onClick={reset}>
-                Reset
+                {t("contents.reset")}
               </Button>
             )}
           </div>
           {items.length === 0 ? (
             <EmptyState
-              title="No matching items"
-              description="Try another name or clear the active filters."
+              title={t("contents.noMatchTitle")}
+              description={t("contents.noMatchDescription")}
               action={
                 <Button variant="secondary" onClick={reset}>
-                  Clear filters
+                  {t("contents.clearFilters")}
                 </Button>
               }
             />
@@ -129,8 +131,7 @@ export function ContentsTable({
             <div className="table-scroll">
               <table>
                 <caption className="sr-only">
-                  Contents of {node.name}. Sizes are logical file sizes as
-                  Windows Explorer reports them, not allocated disk space.
+                  {t("contents.caption", { name: node.name })}
                 </caption>
                 <thead>
                   <tr>
@@ -145,7 +146,7 @@ export function ContentsTable({
                       }
                     >
                       <button onClick={() => sortBy("name")}>
-                        Name{" "}
+                        {t("contents.columnName")}{" "}
                         <Icon
                           name={
                             sort.key === "name" && !sort.descending
@@ -157,7 +158,7 @@ export function ContentsTable({
                       </button>
                     </th>
                     <th scope="col" className="type-column">
-                      Type
+                      {t("contents.columnType")}
                     </th>
                     <th
                       scope="col"
@@ -171,7 +172,7 @@ export function ContentsTable({
                       }
                     >
                       <button onClick={() => sortBy("sizeBytes")}>
-                        Size{" "}
+                        {t("contents.columnSize")}{" "}
                         <Icon
                           name={
                             sort.key === "sizeBytes" && !sort.descending
@@ -183,7 +184,7 @@ export function ContentsTable({
                       </button>
                     </th>
                     <th scope="col" className="share-column">
-                      Share
+                      {t("contents.columnShare")}
                     </th>
                   </tr>
                 </thead>
@@ -210,16 +211,18 @@ export function ContentsTable({
                             />
                             <span>{child.name}</span>
                             {child.partial && (
-                              <span className="partial-label">Partial</span>
+                              <span className="partial-label">
+                                {t("contents.partial")}
+                              </span>
                             )}
                           </button>
                         </td>
                         <td className="type-column muted">
                           {child.type === "FILE"
-                            ? "File"
+                            ? t("contents.typeFile")
                             : child.type === "ERROR"
-                              ? "Skipped"
-                              : "Folder"}
+                              ? t("contents.typeSkipped")
+                              : t("contents.typeFolder")}
                         </td>
                         <td className="numeric">
                           {child.partial ? "≥ " : ""}
@@ -252,13 +255,17 @@ export function ContentsTable({
           <div className="table-footer">
             <span role="status">
               {items.length
-                ? `${currentPage * 25 + 1}–${Math.min((currentPage + 1) * 25, items.length)} of ${formatNumber(items.length)} items`
-                : "0 items"}
+                ? t("contents.range", {
+                    from: currentPage * 25 + 1,
+                    to: Math.min((currentPage + 1) * 25, items.length),
+                    total: formatNumber(items.length),
+                  })
+                : t("contents.noItems")}
             </span>
             {pages > 1 && (
-              <nav aria-label="Contents pagination">
+              <nav aria-label={t("contents.pagination")}>
                 <IconButton
-                  label="Previous page"
+                  label={t("contents.previousPage")}
                   variant="ghost"
                   disabled={currentPage === 0}
                   onClick={() => setPage(currentPage - 1)}
@@ -266,10 +273,13 @@ export function ContentsTable({
                   <Icon name="chevron-right" className="rotate-180" />
                 </IconButton>
                 <span>
-                  Page {currentPage + 1} of {pages}
+                  {t("contents.pageOf", {
+                    page: currentPage + 1,
+                    pages,
+                  })}
                 </span>
                 <IconButton
-                  label="Next page"
+                  label={t("contents.nextPage")}
                   variant="ghost"
                   disabled={currentPage + 1 >= pages}
                   onClick={() => setPage(currentPage + 1)}

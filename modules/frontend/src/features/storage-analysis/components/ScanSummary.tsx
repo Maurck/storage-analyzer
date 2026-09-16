@@ -3,6 +3,7 @@ import { DirectoryNode } from "../model/directory.types";
 import { Icon } from "../../../shared/ui/Icon";
 import { Alert } from "../../../shared/components/Alert";
 import { formatBytes, formatNumber } from "../../../shared/lib/format";
+import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 interface ScanSummaryProps {
   root: DirectoryNode;
@@ -10,53 +11,53 @@ interface ScanSummaryProps {
 }
 
 export function ScanSummary({ root, skippedCount }: ScanSummaryProps) {
+  const { t } = useTranslation();
   return (
     <>
-      <section className="metric-grid" aria-label="Analysis summary">
+      <section className="metric-grid" aria-label={t("summary.label")}>
         <div className="metric-card metric-primary">
           <span className="metric-label">
             <Icon name="hard-drive" size={18} />
-            {root.partial ? "Known size" : "Total size"}
+            {root.partial ? t("summary.knownSize") : t("summary.totalSize")}
           </span>
           <strong>{formatBytes(root.sizeBytes)}</strong>
-          <small>Logical size · Explorer units</small>
+          <small>{t("summary.logicalSize")}</small>
         </div>
         <div className="metric-card">
           <span className="metric-label">
             <Icon name="file" size={18} />
-            Files analyzed
+            {t("summary.filesAnalyzed")}
           </span>
           <strong>{formatNumber(root.fileCount)}</strong>
-          <small>Across the selected folder</small>
+          <small>{t("summary.filesAcross")}</small>
         </div>
         <div className="metric-card">
           <span className="metric-label">
             <Icon name="folder" size={18} />
-            Subfolders
+            {t("summary.subfolders")}
           </span>
           <strong>{formatNumber(root.directoryCount)}</strong>
-          <small>A hierarchy to explore</small>
+          <small>{t("summary.subfoldersHint")}</small>
         </div>
         <div
           className={`metric-card ${skippedCount > 0 ? "metric-warning" : ""}`}
         >
           <span className="metric-label">
             <Icon name={skippedCount > 0 ? "alert" : "check"} size={18} />
-            Skipped items
+            {t("summary.skipped")}
           </span>
           <strong>{formatNumber(skippedCount)}</strong>
           <small>
             {root.partial
-              ? "Some sizes may be incomplete"
-              : "No read errors reported"}
+              ? t("summary.skippedIncomplete")
+              : t("summary.skippedNone")}
           </small>
         </div>
       </section>
       {root.partial && (
         <div className="page-feedback">
-          <Alert variant="warning" title="Some items could not be measured">
-            Results show readable file bytes only. Symbolic links, inaccessible
-            files, or scan limits may leave totals incomplete.
+          <Alert variant="warning" title={t("summary.partialTitle")}>
+            {t("summary.partialDescription")}
           </Alert>
         </div>
       )}

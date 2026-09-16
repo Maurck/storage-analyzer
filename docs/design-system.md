@@ -1,0 +1,72 @@
+# Interface foundations and extension guide
+
+## Scope
+
+The implemented product has one storage-analysis workspace. New primitives should be extracted when a real feature needs them; do not prebuild unused Avatar, Radio, Tabs, Toast or CRUD abstractions. React, TypeScript, React Query and plain CSS remain the application stack.
+
+## Tokens
+
+`modules/frontend/src/styles/tokens.css` is the source of truth. Primary 50–950, neutral 50–950, surfaces, text, borders, selection, focus and semantic colors are CSS custom properties. The default theme is dark blue with neutral panels, blue actions, and secondary chart colors. Components use `currentColor` SVGs and local system fonts.
+
+| Pair | Approximate contrast |
+| --- | --- |
+| Primary text `#F8FAFC` / background `#0B1220` | 17.89:1 |
+| Secondary text `#CBD5E1` / surface `#111C2E` | 11.51:1 |
+| Muted text `#94A3B8` / surface | 6.66:1 |
+| White / primary `#2563EB` | 5.17:1 |
+| Focus `#60A5FA` / surface | 6.72:1 |
+| Interactive border `#64748B` / surface | 3.59:1 |
+
+Decorative borders may use a quieter token. Controls need the stronger border. Never use color as the sole explanation for errors or partial analysis. Add text and an icon. The chart's exact values remain in its adjacent legend and contents table.
+
+Spacing follows a 4px scale with a 2px half step. Shared typography uses rem units, medium/bold weights and a system font stack. Radius tokens cover 4/8/12/16px and pill shapes. Shadows are reserved for overlays. Z-index tokens define sticky, dropdown, overlay, dialog, toast and tooltip layers. Motion is short and reduced-motion preferences disable nonessential animation.
+
+## Component ownership
+
+```text
+src/
+  App.tsx                      providers and lazy feature entry
+  layouts/                     shell and resizable split layout
+  features/storage-analysis/
+    api/                       HTTP endpoints and runtime DTO validation
+    model/                     directory/scan contracts
+    hooks/                     query and scan lifecycle
+    components/                explorer, chart, contents and scan presentation
+    StorageAnalysisPage.tsx    feature composition and selection
+  shared/
+    ui/                        Button, IconButton, Icon, Text, Spinner, Skeleton
+    components/                Alert, EmptyState, ErrorState
+    hooks/                     media query subscription
+    lib/                       HTTP errors and pure formatting
+  styles/                      tokens, reset, primitives and workspace layout
+```
+
+Shared UI must not import feature code. Domain types remain with their feature. Use native HTML controls first. Components forward native attributes so labels, focus and form behavior remain available. Button variants are primary, secondary, ghost and danger; sizes are sm/md/lg. IconButton requires a visible-purpose accessible label.
+
+## States and navigation
+
+- Loading: preserve geometry, show a status message and expose busy state. No invented percentage for indeterminate scans.
+- Empty: distinguish no scan, an empty folder, no filter results and no measurable bytes.
+- Error: include context and a recovery action; keep prior successful data.
+- Success: update the persistent status; avoid toasts for routine expansion/selection.
+- Partial: explain exclusions and prefix affected table sizes with a lower-bound marker.
+- Search: use visible scope, native search input, persistent label and a reset action.
+- Sorting: expose `aria-sort`; preserve stable path identities.
+- Folder navigation: breadcrumbs describe the filesystem hierarchy. No application router is needed until a second feature exists.
+- Modal: use `<dialog>.showModal()`, a named dialog, Escape, and focus restoration. Keep lengthy exploration in the workspace.
+- Destructive actions: none exist. If added later, require an explicit target, consequence and appropriately named confirmation; do not reuse scan cancellation as a deletion pattern.
+- Forms: label each input; connect hints/errors with IDs; preserve values after failure.
+
+## Responsive and keyboard acceptance
+
+Compact mode is below 768px; regular mode is 768–1199px; wide is 1200px and above. Breakpoint values are documented tokens but media queries use literal values because CSS custom properties cannot be media conditions.
+
+Test keyboard-only operation, 390px windows, long paths, 200% text and 400% browser zoom/reflow. Focus indicators are distinct from selection. Decorative icons are hidden from assistive technology. ARIA tree navigation follows the [W3C tree-view pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/); the target is [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/).
+
+## Scaling rules
+
+Scans are snapshots; keys include scan ID and absolute path. Fetch direct children on expansion, retain aggregate sizes from the snapshot, and never mix measurements from different scans. Only polling state is updated during a scan. Recover explicitly from expired sessions and reject malformed responses before rendering.
+
+The backend bounds concurrency, depth, entries and retained sessions. Increasing those limits increases memory and CPU costs: lazy HTTP branches reduce payload size, but a wide expanded branch still renders all its direct tree items. Profile a representative large directory before introducing tree virtualization, and preserve its keyboard and ARIA hierarchy if doing so.
+
+Production separates the workspace into a lazy chunk. The initial JavaScript bundle remains below Webpack's default warning threshold without adding a chart library or styling dependency. Run the documented checks before committing changes to shared primitives or interaction contracts.

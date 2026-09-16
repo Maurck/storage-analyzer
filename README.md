@@ -1,13 +1,15 @@
-# Storage Analyzer (In progress)
+# Storage Analyzer
 
-This desktop application will help you manage your device storage by visualizing your directory folders and application size in an intuitive way
-using different charts based on the directory path you choose.
+Explore a folder's storage usage with an accessible desktop workspace: asynchronous scans, live progress and cancellation, keyboard-navigable directories, size charts, and searchable/sortable contents.
 
-![example](./modules/frontend/src/public/example.png)
+Analysis runs locally and reads filesystem metadata. Results show logical file bytes; partial or inaccessible items are explained explicitly. Start the Java backend and Electron frontend using the guides below.
 
 [Frontend Installation](./modules/frontend/README.md)
 
 [Backend Installation](./modules/backend/README.md)
 
+[Design system and architecture](./docs/design-system.md)
+
 ## Contributing
+
 Feel free to fork this repository or create an issue if you want to.

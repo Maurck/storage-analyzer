@@ -7,6 +7,7 @@
   "scripts": {
     "test": "playwright test",
     "test:desktop": "node --test tests/desktop.test.cjs",
+    "test:data": "node --test tests/data.test.cjs",
     "typecheck": "tsc --noEmit",
     "build:watch": "webpack --config webpack.common.js --mode development --watch",
     "build": "webpack --config webpack.common.js",

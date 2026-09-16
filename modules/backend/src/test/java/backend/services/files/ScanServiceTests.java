@@ -15,6 +15,7 @@ import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -92,6 +93,20 @@ class ScanServiceTests {
         assertEquals(HttpStatus.BAD_REQUEST, outside.getStatus());
         assertEquals(HttpStatus.NOT_FOUND, assertThrows(ApiException.class,
                 () -> service.directory(complete.id(), temporary.resolve("unknown").toString())).getStatus());
+    }
+
+    @Test
+    void rejectsInvalidPathsWithoutWaitingForOtherSessionOperations() throws Exception {
+        ExecutorService requester = Executors.newSingleThreadExecutor();
+        try {
+            synchronized (service) {
+                // A different session operation owns the monitor. Validation
+                // must still run before a new request attempts to acquire it.
+                requester.submit(() -> assertBadPath("relative/path")).get(2, TimeUnit.SECONDS);
+            }
+        } finally {
+            requester.shutdownNow();
+        }
     }
 
     @Test

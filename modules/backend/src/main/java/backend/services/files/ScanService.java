@@ -46,8 +46,16 @@ public class ScanService {
         this.maximumDepth = maximumDepth;
     }
 
-    public synchronized ScanStatus start(String requestedPath) {
+    public ScanStatus start(String requestedPath) {
+        // Filesystem metadata may block on network paths. Keep it outside the
+        // session monitor so existing scans can still report progress or cancel.
         Path path = validateRoot(requestedPath);
+        synchronized (this) {
+            return startValidated(path);
+        }
+    }
+
+    private ScanStatus startValidated(Path path) {
         if (sessions.values().stream().filter(session -> session.state == State.SCANNING).count() >= 2) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "Two scans are already running. Cancel one or wait for completion.");
         }

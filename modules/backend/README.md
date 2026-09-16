@@ -4,14 +4,25 @@ Java 17 and Spring Boot. The filesystem API is read-only and runs on `http://127
 
 ## Run and test
 
-Install a Java 17 JDK, set `JAVA_HOME`, then run from `modules/backend`:
+On Windows, `start-backend.ps1` at the repository root prepares the toolchain and runs the server:
+
+```powershell
+npm run start:backend                 # same as .\start-backend.ps1
+npm run start:backend -- -Goal test   # any other Maven goal
+```
+
+The script pins `JAVA_HOME` to a JDK 17 and refuses to build on a newer one, because Lombok 1.18.30 (pinned by Spring Boot 3.2.0) skips annotation processing there and the build then fails with `cannot find symbol` on every generated accessor. It prefers a JDK and Maven repository under `.tools/` when that folder exists, and otherwise falls back to `JAVA_HOME` and the default repository, downloading dependencies on the first run. Pass `-Online` for goals whose plugins are missing from the local repository, such as `clean`, and `-Force` to build on a JDK other than 17 anyway.
+
+Stopping the script stops the whole server. `spring-boot:run` forks its own JVM, so the script puts it in a job object that Windows tears down together with the script, releasing port 5000 even when the script is killed outright.
+
+To drive Maven yourself, install a Java 17 JDK, set `JAVA_HOME`, then run from `modules/backend`:
 
 ```powershell
 .\mvnw.cmd -B --no-transfer-progress test
 .\mvnw.cmd spring-boot:run
 ```
 
-On macOS/Linux, use `./mvnw` instead. Maven is provided by the wrapper. For a packaged application:
+On macOS/Linux, use `./mvnw` instead; the start script is Windows-only. Maven is provided by the wrapper. For a packaged application:
 
 ```powershell
 .\mvnw.cmd -B --no-transfer-progress package
@@ -43,7 +54,7 @@ Each directory node retains `name`, `absolutePath`, `type` and `subdirectories`,
 
 Scans read filesystem metadata and never open file contents. Symbolic links and special files are not followed. Inaccessible paths become explicit partial/error nodes; a failure to read the root produces an `ERROR` scan. A scan is an immutable snapshot: changed files require a new scan, and expansion never silently reads newer filesystem state.
 
-Resource limits are two active scans, 100,000 entries per scan, depth 128, and five retained sessions. The oldest terminal sessions expire as new scans start. Exceeding the item limit fails the scan with a message asking for a smaller folder. Exceeding depth marks the affected subtree partial. Cancellation releases working data cooperatively; restarting the backend clears all sessions.
+Resource limits are two active scans, 100,000,000 entries per scan, depth 512, and five retained sessions. Every entry is retained until its session expires, so available memory is the practical ceiling long before the item limit is. The oldest terminal sessions expire as new scans start. Exceeding the item limit fails the scan with a message asking for a smaller folder. Exceeding depth marks the affected subtree partial. Cancellation releases working data cooperatively; restarting the backend clears all sessions.
 
 Errors use JSON `{"message":"..."}`: invalid paths return `400`, unreadable roots `403`, expired/missing scans `404`, directory reads before completion `409`, and a busy scanner `429`.
 

@@ -121,22 +121,125 @@ if (Test-Path $localRepo) {
 
 $mavenArgs += $Goal
 
+# --- Shutdown --------------------------------------------------------------
+
+# `spring-boot:run` forks its own JVM, so stopping Maven leaves the server
+# holding port 5000. A job object fixes that at the operating-system level:
+# Windows kills every process in the job once the last handle to it closes, and
+# this script holds that handle, so the JVM dies even when the script is killed
+# outright and no finally block ever runs.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class ScanKillOnClose {
+    [StructLayout(LayoutKind.Sequential)]
+    struct BasicLimits {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct IoCounters {
+        public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+        public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct ExtendedLimits {
+        public BasicLimits BasicLimitInformation;
+        public IoCounters IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr CreateJobObjectW(IntPtr attributes, string name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+    const int ExtendedLimitInformation = 9;
+    const uint KillOnJobClose = 0x2000;
+
+    // Held for the lifetime of the script: closing it is what kills the group.
+    static IntPtr job = IntPtr.Zero;
+
+    public static bool Create() {
+        job = CreateJobObjectW(IntPtr.Zero, null);
+        if (job == IntPtr.Zero) return false;
+        ExtendedLimits limits = new ExtendedLimits();
+        limits.BasicLimitInformation.LimitFlags = KillOnJobClose;
+        int size = Marshal.SizeOf(typeof(ExtendedLimits));
+        IntPtr buffer = Marshal.AllocHGlobal(size);
+        try {
+            Marshal.StructureToPtr(limits, buffer, false);
+            return SetInformationJobObject(job, ExtendedLimitInformation, buffer, (uint)size);
+        } finally {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    public static bool Add(IntPtr process) {
+        return job != IntPtr.Zero && AssignProcessToJobObject(job, process);
+    }
+}
+'@
+
+$jobReady = $false
+try {
+    $jobReady = [ScanKillOnClose]::Create()
+} catch {
+    $jobReady = $false
+}
+
+# --- Run -------------------------------------------------------------------
+
 $env:JAVA_HOME = $javaHome
 
 Write-Host "JDK   : $javaHome ($javaFrom)"
 Write-Host "Repo  : $repoFrom"
 Write-Host "Maven : mvnw.cmd $($mavenArgs -join ' ')"
+Write-Host "Stop  : $(if ($jobReady) { 'Ctrl+C, and the forked JVM is killed with this script' } else { 'Ctrl+C (job object unavailable; falling back to a process-tree kill)' })"
 if ($Goal -contains 'spring-boot:run') {
-    Write-Host 'URL   : http://127.0.0.1:5000  (Ctrl+C to stop)'
+    Write-Host 'URL   : http://127.0.0.1:5000'
 }
 Write-Host ''
 
-Push-Location $backendDir
+# Start-Process needs one command line, and PowerShell 5.1 has no ArgumentList
+# array for native processes, so arguments carrying spaces are quoted here.
+$commandLine = ($mavenArgs | ForEach-Object {
+    if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+}) -join ' '
+
+$process = Start-Process -FilePath $mvnw -ArgumentList $commandLine `
+    -WorkingDirectory $backendDir -NoNewWindow -PassThru
+
+if ($jobReady) { [ScanKillOnClose]::Add($process.Handle) | Out-Null }
+
 try {
-    & $mvnw @mavenArgs
-    $exitCode = $LASTEXITCODE
+    # Polling rather than WaitForExit so Ctrl+C reaches the finally block below.
+    while (-not $process.HasExited) { Start-Sleep -Milliseconds 150 }
+    $exitCode = $process.ExitCode
 } finally {
-    Pop-Location
+    if (-not $process.HasExited) {
+        # Reached on Ctrl+C. The job object covers a forced kill, but tearing the
+        # tree down here shuts the server on the ordinary path too.
+        & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-Null
+    }
+    if ($null -eq $exitCode) { $exitCode = 130 }
 }
 
 exit $exitCode

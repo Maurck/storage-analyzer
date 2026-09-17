@@ -1,6 +1,7 @@
 package backend.models;
 
 import backend.enums.DirectoryType;
+import backend.enums.NodeIssueCode;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -24,6 +25,7 @@ public class Directory {
     @Setter boolean childrenLoaded = true;
     @Setter boolean partial;
     @Setter String error;
+    @Setter NodeIssueCode errorCode;
 
     public Directory(String name, String absolutePath, DirectoryType type) {
         this.name = name;

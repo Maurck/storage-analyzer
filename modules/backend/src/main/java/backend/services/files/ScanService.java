@@ -1,9 +1,13 @@
 package backend.services.files;
 
 import backend.enums.DirectoryType;
+import backend.enums.NodeIssueCode;
+import backend.enums.ScanErrorCode;
 import backend.models.Directory;
 import backend.models.ScanStatus;
 import backend.models.ScanStatus.State;
+import backend.models.ScanStatus.Volume;
+import backend.resources.ApiErrorCode;
 import backend.resources.ApiException;
 import jakarta.annotation.PreDestroy;
 import org.springframework.http.HttpStatus;
@@ -73,28 +77,41 @@ public class ScanService {
         // Filesystem metadata may block on network paths. Keep it outside the
         // session monitor so existing scans can still report progress or cancel.
         Path path = validateRoot(requestedPath);
+        Volume volume = volumeOf(path);
         synchronized (this) {
-            return startValidated(path);
+            return startValidated(path, volume);
         }
     }
 
-    private ScanStatus startValidated(Path path) {
+    /** Capacity of the volume holding the path, or null when the platform cannot tell. */
+    static Volume volumeOf(Path path) {
+        try {
+            FileStore store = Files.getFileStore(path);
+            long total = store.getTotalSpace();
+            long usable = store.getUsableSpace();
+            return total > 0 && usable >= 0 && usable <= total ? new Volume(total, usable) : null;
+        } catch (IOException | SecurityException | UnsupportedOperationException exception) {
+            return null;
+        }
+    }
+
+    private ScanStatus startValidated(Path path, Volume volume) {
         if (sessions.values().stream().filter(session -> session.state == State.SCANNING).count() >= 2) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "Two scans are already running. Cancel one or wait for completion.");
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, ApiErrorCode.SCANS_AT_CAPACITY, "Two scans are already running. Cancel one or wait for completion.");
         }
         while (sessions.size() >= MAX_SESSIONS) {
             String oldest = sessions.values().stream().filter(session -> session.state != State.SCANNING)
                     .map(session -> session.id).findFirst().orElseThrow();
             evict(oldest);
         }
-        Session session = new Session(path);
+        Session session = new Session(path, volume);
         sessions.put(session.id, session);
         try {
             if (executor instanceof ThreadPoolExecutor pool) pool.purge();
             session.future = executor.submit(() -> scan(session));
         } catch (RejectedExecutionException exception) {
             sessions.remove(session.id);
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "The scanner is busy. Try again shortly.");
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, ApiErrorCode.SCANNER_BUSY, "The scanner is busy. Try again shortly.");
         }
         return snapshot(session);
     }
@@ -107,7 +124,7 @@ public class ScanService {
         Session session = findSession(id);
         synchronized (session) {
             if (session.state == State.SCANNING) {
-                session.state = State.CANCELLED;
+                session.end(State.CANCELLED);
                 session.future.cancel(true);
             }
         }
@@ -117,45 +134,50 @@ public class ScanService {
     public synchronized Directory directory(String id, String requestedPath) {
         Session session = findSession(id);
         if (session.state != State.COMPLETE) {
-            throw new ApiException(HttpStatus.CONFLICT, "Directory details are available after the scan completes.");
+            throw new ApiException(HttpStatus.CONFLICT, ApiErrorCode.SCAN_NOT_COMPLETE, "Directory details are available after the scan completes.");
         }
         Path path = parsePath(requestedPath);
         if (!path.startsWith(session.path)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "The directory must belong to this scan.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.PATH_OUTSIDE_SCAN, "The directory must belong to this scan.");
         }
         Entry entry = session.entries.get(path);
-        if (entry == null) throw new ApiException(HttpStatus.NOT_FOUND, "This path was not found in the scan.");
+        if (entry == null) throw new ApiException(HttpStatus.NOT_FOUND, ApiErrorCode.PATH_NOT_IN_SCAN, "This path was not found in the scan.");
         return toDirectory(entry, true);
     }
 
     private Session findSession(String id) {
         Session session = sessions.get(id);
-        if (session == null) throw new ApiException(HttpStatus.NOT_FOUND, "This scan has expired or does not exist. Start a new scan.");
+        if (session == null) throw new ApiException(HttpStatus.NOT_FOUND, ApiErrorCode.SCAN_NOT_FOUND, "This scan has expired or does not exist. Start a new scan.");
         return session;
     }
 
     public static Path validateRoot(String requestedPath) {
         Path path = parsePath(requestedPath);
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "The selected folder does not exist.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.FOLDER_NOT_FOUND, "The selected folder does not exist.");
         }
         if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Choose a folder, not a file or symbolic link.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.NOT_A_FOLDER, "Choose a folder, not a file or symbolic link.");
         }
-        if (!Files.isReadable(path)) throw new ApiException(HttpStatus.FORBIDDEN, "The selected folder cannot be read.");
+        if (!Files.isReadable(path)) throw new ApiException(HttpStatus.FORBIDDEN, ApiErrorCode.FOLDER_UNREADABLE, "The selected folder cannot be read.");
         return path;
     }
 
     private static Path parsePath(String value) {
-        if (value == null || value.isBlank() || value.length() > 32_767) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Enter an absolute folder path.");
+        if (value == null || value.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.PATH_REQUIRED, "Enter an absolute folder path.");
+        }
+        if (value.length() > 32_767) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.PATH_INVALID, "The folder path is invalid.");
         }
         try {
             Path path = Path.of(value);
-            if (!path.isAbsolute()) throw new ApiException(HttpStatus.BAD_REQUEST, "Enter an absolute folder path.");
+            if (!path.isAbsolute()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.PATH_NOT_ABSOLUTE, "Enter an absolute folder path.");
+            }
             return path.normalize();
         } catch (InvalidPathException exception) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "The folder path is invalid.");
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.PATH_INVALID, "The folder path is invalid.");
         }
     }
 
@@ -165,6 +187,7 @@ public class ScanService {
                 @Override
                 public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attributes) {
                     checkCancelled(session);
+                    session.currentPath = path.toString();
                     add(session, path, DirectoryType.FOLDER);
                     session.directories.incrementAndGet();
                     return FileVisitResult.CONTINUE;
@@ -175,8 +198,8 @@ public class ScanService {
                     checkCancelled(session);
                     if (!attributes.isRegularFile()) {
                         Entry entry = add(session, path, DirectoryType.ERROR);
-                        entry.partial = true;
-                        entry.error = attributes.isDirectory() ? "Maximum scan depth reached." : "Symbolic links and special files are excluded.";
+                        if (attributes.isDirectory()) entry.flag(NodeIssueCode.DEPTH_LIMIT, "Maximum scan depth reached.");
+                        else entry.flag(NodeIssueCode.EXCLUDED_LINK, "Symbolic links and special files are excluded.");
                         session.skipped.incrementAndGet();
                     } else {
                         Entry entry = add(session, path, DirectoryType.FILE);
@@ -192,8 +215,7 @@ public class ScanService {
                 public FileVisitResult visitFileFailed(Path path, IOException exception) {
                     checkCancelled(session);
                     Entry entry = add(session, path, DirectoryType.ERROR);
-                    entry.partial = true;
-                    entry.error = "This path could not be read. It may require permission or have moved.";
+                    entry.flag(NodeIssueCode.PATH_UNREADABLE, "This path could not be read. It may require permission or have moved.");
                     session.skipped.incrementAndGet();
                     return FileVisitResult.CONTINUE;
                 }
@@ -203,8 +225,7 @@ public class ScanService {
                     checkCancelled(session);
                     Entry entry = session.entries.get(path);
                     if (exception != null) {
-                        entry.partial = true;
-                        entry.error = "Some items in this folder could not be read.";
+                        entry.flag(NodeIssueCode.CONTENTS_PARTIALLY_UNREADABLE, "Some items in this folder could not be read.");
                         session.skipped.incrementAndGet();
                     }
                     for (Entry child : entry.children) {
@@ -223,30 +244,32 @@ public class ScanService {
                 checkCancelled(session);
                 Entry root = session.entries.get(session.path);
                 if (root == null || root.type == DirectoryType.ERROR) {
-                    session.error = "The selected folder could not be read.";
-                    session.state = State.ERROR;
+                    session.fail(ScanErrorCode.ROOT_UNREADABLE, "The selected folder could not be read.", Map.of());
                 } else {
-                    session.state = State.COMPLETE;
+                    session.end(State.COMPLETE);
                 }
             }
         } catch (CancellationException exception) {
             synchronized (session) {
-                session.state = State.CANCELLED;
+                session.end(State.CANCELLED);
             }
         } catch (OutOfMemoryError error) {
             // Best-effort terminal state, not a guarantee that the JVM can recover.
             // Use a constant message and release the working tree in finally.
             synchronized (session) {
                 if (session.state != State.CANCELLED) {
-                    session.error = "The scanner ran out of memory. Select a smaller folder or restart the local service and try again.";
-                    session.state = State.ERROR;
+                    session.fail(ScanErrorCode.OUT_OF_MEMORY,
+                            "The scanner ran out of memory. Select a smaller folder or restart the local service and try again.", Map.of());
                 }
             }
         } catch (Exception exception) {
             synchronized (session) {
                 if (session.state != State.CANCELLED) {
-                    session.error = exception instanceof ScanLimitException ? exception.getMessage() : "The scan could not finish. Check folder access and try again.";
-                    session.state = State.ERROR;
+                    if (exception instanceof ScanLimitException limit) {
+                        session.fail(limit.code, limit.getMessage(), limit.params);
+                    } else {
+                        session.fail(ScanErrorCode.SCAN_FAILED, "The scan could not finish. Check folder access and try again.", Map.of());
+                    }
                 }
             }
         } finally {
@@ -276,14 +299,18 @@ public class ScanService {
     private synchronized Entry addEntry(Session session, Path path, DirectoryType type) {
         checkCancelled(session);
         if (session.entries.size() >= maximumEntries) {
-            throw new ScanLimitException("This scan exceeded the limit of " + maximumEntries + " items. Select a smaller folder.");
+            throw new ScanLimitException(ScanErrorCode.ENTRY_LIMIT,
+                    "This scan exceeded the limit of " + maximumEntries + " items. Select a smaller folder.",
+                    Map.of("limit", (long) maximumEntries));
         }
         long requiredBytes = estimatedEntryBytes(path);
         while (requiredBytes > maximumSnapshotBytes - retainedSnapshotBytes) {
             String oldest = sessions.values().stream().filter(candidate -> candidate.state == State.COMPLETE)
                     .map(candidate -> candidate.id).findFirst().orElse(null);
             if (oldest == null) {
-                throw new ScanLimitException("The scan reached the shared snapshot memory budget. Select a smaller folder or cancel another scan and try again.");
+                throw new ScanLimitException(ScanErrorCode.MEMORY_BUDGET,
+                        "The scan reached the shared snapshot memory budget. Select a smaller folder or cancel another scan and try again.",
+                        Map.of());
             }
             evict(oldest);
         }
@@ -291,6 +318,7 @@ public class ScanService {
         session.entries.put(path, entry);
         session.retainedBytes += requiredBytes;
         retainedSnapshotBytes += requiredBytes;
+        session.lastActivityNanos = System.nanoTime();
         Entry parent = session.entries.get(path.getParent());
         if (parent != null) parent.children.add(entry);
         return entry;
@@ -313,8 +341,16 @@ public class ScanService {
 
     private ScanStatus snapshot(Session session) {
         synchronized (session) {
+            long now = System.nanoTime();
+            boolean scanning = session.state == State.SCANNING;
+            long end = scanning ? now : session.finishedNanos;
             return new ScanStatus(session.id, session.path.toString(), session.state, session.files.get(),
-                    session.directories.get(), session.bytes.get(), session.skipped.get(), session.error,
+                    session.directories.get(), session.bytes.get(), session.skipped.get(),
+                    session.error, session.errorCode, session.errorParams,
+                    TimeUnit.NANOSECONDS.toMillis(end - session.startedNanos),
+                    scanning ? TimeUnit.NANOSECONDS.toMillis(now - session.lastActivityNanos) : null,
+                    scanning ? session.currentPath : null,
+                    session.volume,
                     session.state == State.COMPLETE ? toDirectory(session.entries.get(session.path), true) : null);
         }
     }
@@ -329,6 +365,7 @@ public class ScanService {
         directory.setChildrenLoaded(includeChildren || entry.type != DirectoryType.FOLDER);
         directory.setPartial(entry.partial);
         directory.setError(entry.error);
+        directory.setErrorCode(entry.errorCode);
         if (includeChildren) directory.setSubdirectories(entry.children.stream().map(child -> toDirectory(child, false)).toList());
         return directory;
     }
@@ -337,7 +374,7 @@ public class ScanService {
     public synchronized void close() {
         for (Session session : sessions.values()) {
             synchronized (session) {
-                if (session.state == State.SCANNING) session.state = State.CANCELLED;
+                if (session.state == State.SCANNING) session.end(State.CANCELLED);
             }
             if (session.state == State.COMPLETE) releaseEntries(session);
         }
@@ -354,11 +391,35 @@ public class ScanService {
         final AtomicLong directories = new AtomicLong();
         final AtomicLong bytes = new AtomicLong();
         final AtomicLong skipped = new AtomicLong();
+        final Volume volume;
+        final long startedNanos = System.nanoTime();
+        volatile long lastActivityNanos = startedNanos;
+        volatile String currentPath;
         volatile State state = State.SCANNING;
+        // Written with the session monitor held, like state transitions.
+        long finishedNanos;
         String error;
+        ScanErrorCode errorCode;
+        Map<String, Long> errorParams;
         Future<?> future;
 
-        Session(Path path) { this.path = path; }
+        Session(Path path, Volume volume) {
+            this.path = path;
+            this.volume = volume;
+        }
+
+        /** Moves to a terminal state; the first transition fixes the elapsed time. */
+        void end(State terminal) {
+            if (state == State.SCANNING) finishedNanos = System.nanoTime();
+            state = terminal;
+        }
+
+        void fail(ScanErrorCode code, String message, Map<String, Long> params) {
+            error = message;
+            errorCode = code;
+            errorParams = params.isEmpty() ? null : params;
+            end(State.ERROR);
+        }
     }
 
     private static final class Entry {
@@ -370,11 +431,25 @@ public class ScanService {
         long directoryCount;
         boolean partial;
         String error;
+        NodeIssueCode errorCode;
 
         Entry(Path path, DirectoryType type) { this.path = path; this.type = type; }
+
+        void flag(NodeIssueCode code, String message) {
+            partial = true;
+            errorCode = code;
+            error = message;
+        }
     }
 
     private static final class ScanLimitException extends RuntimeException {
-        ScanLimitException(String message) { super(message); }
+        final ScanErrorCode code;
+        final Map<String, Long> params;
+
+        ScanLimitException(ScanErrorCode code, String message, Map<String, Long> params) {
+            super(message);
+            this.code = code;
+            this.params = params;
+        }
     }
 }

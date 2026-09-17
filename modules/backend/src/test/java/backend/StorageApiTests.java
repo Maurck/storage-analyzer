@@ -33,20 +33,41 @@ class StorageApiTests {
                 .andExpect(jsonPath("$.processedFiles").isNumber())
                 .andExpect(jsonPath("$.processedDirectories").isNumber())
                 .andExpect(jsonPath("$.processedBytes").isNumber())
-                .andExpect(jsonPath("$.skippedCount").isNumber());
+                .andExpect(jsonPath("$.skippedCount").isNumber())
+                .andExpect(jsonPath("$.elapsedMillis").isNumber())
+                .andExpect(jsonPath("$.errorCode").doesNotExist())
+                .andExpect(jsonPath("$.volume.totalBytes").isNumber())
+                .andExpect(jsonPath("$.volume.usableBytes").isNumber());
     }
 
     @Test
     void reportsStructuredErrors() throws Exception {
         mvc.perform(post("/scans").contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isString());
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("PATH_REQUIRED"))
+                .andExpect(jsonPath("$.message").isString());
         mvc.perform(post("/scans").contentType(MediaType.APPLICATION_JSON).content("{"))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isString());
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").isString());
         mvc.perform(get("/scans/missing"))
-                .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").isString());
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCAN_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").isString());
         mvc.perform(post("/scans").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("path", "relative"))))
-                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isString());
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("PATH_NOT_ABSOLUTE"))
+                .andExpect(jsonPath("$.message").isString());
+        mvc.perform(post("/scans").contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("path", temporary.resolve("missing").toString()))))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("FOLDER_NOT_FOUND"));
+    }
+
+    @Test
+    void identifiesTheApplicationAndItsApiVersion() throws Exception {
+        mvc.perform(get("/health").header("Origin", "null"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "null"))
+                .andExpect(jsonPath("$.application").value("storage-analyzer"))
+                .andExpect(jsonPath("$.apiVersion").value(1))
+                .andExpect(jsonPath("$.status").value("UP"));
     }
 
     @Test

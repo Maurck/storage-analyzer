@@ -1,7 +1,10 @@
 package backend.services.files;
 
+import backend.enums.NodeIssueCode;
+import backend.enums.ScanErrorCode;
 import backend.models.Directory;
 import backend.models.ScanStatus;
+import backend.resources.ApiErrorCode;
 import backend.resources.ApiException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -14,6 +17,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -45,6 +49,8 @@ class ScanServiceTests {
         assertEquals(3, complete.processedDirectories());
         assertEquals(20, complete.processedBytes());
         assertEquals(20, complete.root().getSizeBytes());
+        assertNotNull(complete.volume());
+        assertTrue(complete.volume().usableBytes() <= complete.volume().totalBytes());
         assertEquals(2, complete.root().getFileCount());
         assertEquals(2, complete.root().getDirectoryCount());
         assertFalse(complete.root().isPartial());
@@ -210,6 +216,75 @@ class ScanServiceTests {
         assertNull(result.root());
         assertEquals(0, result.processedDirectories());
         assertTrue(result.error().contains("memory budget"));
+        assertEquals(ScanErrorCode.MEMORY_BUDGET, result.errorCode());
+        assertNull(result.errorParams());
+    }
+
+    @Test
+    void identifiesEachRejectedRequestWithAStableCode() throws Exception {
+        assertRejected(null, ApiErrorCode.PATH_REQUIRED);
+        assertRejected(" ", ApiErrorCode.PATH_REQUIRED);
+        assertRejected("relative/path", ApiErrorCode.PATH_NOT_ABSOLUTE);
+        assertRejected("x".repeat(32_768), ApiErrorCode.PATH_INVALID);
+        assertRejected(temporary.resolve("missing").toString(), ApiErrorCode.FOLDER_NOT_FOUND);
+        assertRejected(Files.write(temporary.resolve("file"), new byte[0]).toString(), ApiErrorCode.NOT_A_FOLDER);
+        String id = finish(service.start(temporary.toString()).id()).id();
+        assertEquals(ApiErrorCode.PATH_OUTSIDE_SCAN, assertThrows(ApiException.class,
+                () -> service.directory(id, temporary.getParent().toString())).getCode());
+        assertEquals(ApiErrorCode.PATH_NOT_IN_SCAN, assertThrows(ApiException.class,
+                () -> service.directory(id, temporary.resolve("unknown").toString())).getCode());
+        assertEquals(ApiErrorCode.SCAN_NOT_FOUND, assertThrows(ApiException.class,
+                () -> service.status("missing")).getCode());
+    }
+
+    @Test
+    void unknownVolumesAreReportedAsUnknownRatherThanEmpty() {
+        assertNull(ScanService.volumeOf(temporary.resolve("missing")));
+        assertNotNull(ScanService.volumeOf(temporary));
+    }
+
+    @Test
+    void reportsActivityWhileScanningAndFreezesElapsedTimeAtTheEnd() throws Exception {
+        service.close();
+        Path nested = Files.createDirectory(temporary.resolve("nested"));
+        Files.write(nested.resolve("file.bin"), new byte[1]);
+        CountDownLatch paused = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger added = new AtomicInteger();
+        service = new ScanService(Executors.newSingleThreadExecutor(), 100, 128, 1024L * 1024) {
+            @Override
+            void entryAdded() {
+                // The second entry is the nested folder: the root has no other child.
+                if (added.incrementAndGet() != 2) return;
+                paused.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        String id;
+        try {
+            id = service.start(temporary.toString()).id();
+            assertTrue(paused.await(5, TimeUnit.SECONDS));
+            Thread.sleep(60);
+            ScanStatus scanning = service.status(id);
+            assertEquals(ScanStatus.State.SCANNING, scanning.status());
+            assertEquals(nested.toString(), scanning.currentPath());
+            assertTrue(scanning.millisSinceActivity() >= 50, "idle for " + scanning.millisSinceActivity());
+            assertTrue(scanning.elapsedMillis() >= scanning.millisSinceActivity());
+        } finally {
+            release.countDown();
+        }
+
+        ScanStatus done = finish(id);
+        assertEquals(ScanStatus.State.COMPLETE, done.status());
+        assertNull(done.currentPath());
+        assertNull(done.millisSinceActivity());
+        assertNull(done.errorCode());
+        Thread.sleep(30);
+        assertEquals(done.elapsedMillis(), service.status(id).elapsedMillis());
     }
 
     @Test
@@ -279,8 +354,12 @@ class ScanServiceTests {
             assertTrue(paused.await(5, TimeUnit.SECONDS));
             long reserved = service.retainedSnapshotBytes();
             assertTrue(reserved > 0);
-            assertEquals(ScanStatus.State.CANCELLED, service.cancel(cancelled).status());
+            ScanStatus cancelledStatus = service.cancel(cancelled);
+            assertEquals(ScanStatus.State.CANCELLED, cancelledStatus.status());
             assertNull(service.status(cancelled).root());
+            Thread.sleep(30);
+            assertEquals(cancelledStatus.elapsedMillis(), service.status(cancelled).elapsedMillis(),
+                    "a cancelled scan stops its clock even while its worker is still winding down");
 
             // Enough new scans to evict the cancelled session while its worker still holds entries.
             List<String> replacements = new ArrayList<>();
@@ -334,6 +413,8 @@ class ScanServiceTests {
         assertEquals(ScanStatus.State.ERROR, result.status());
         assertNull(result.root());
         assertTrue(result.error().contains("limit"));
+        assertEquals(ScanErrorCode.ENTRY_LIMIT, result.errorCode());
+        assertEquals(Map.of("limit", 2L), result.errorParams());
         executor.submit(() -> { }).get(2, TimeUnit.SECONDS);
         Files.delete(temporary.resolve("second"));
         assertEquals(ScanStatus.State.COMPLETE, finish(service.start(temporary.toString()).id()).status());
@@ -352,6 +433,7 @@ class ScanServiceTests {
         assertEquals(0, result.processedBytes());
         Directory child = service.directory(result.id(), temporary.resolve("child").toString());
         assertTrue(child.getSubdirectories().get(0).getError().contains("depth"));
+        assertEquals(NodeIssueCode.DEPTH_LIMIT, child.getSubdirectories().get(0).getErrorCode());
     }
 
     @Test
@@ -368,10 +450,18 @@ class ScanServiceTests {
         assertTrue(complete.root().isPartial());
         assertNotNull(complete.root().getSubdirectories().stream().filter(item -> item.getName().equals("link"))
                 .findFirst().orElseThrow().getError());
+        assertEquals(NodeIssueCode.EXCLUDED_LINK, complete.root().getSubdirectories().stream()
+                .filter(item -> item.getName().equals("link")).findFirst().orElseThrow().getErrorCode());
     }
 
     private void assertBadPath(String path) {
         assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ApiException.class, () -> service.start(path)).getStatus());
+    }
+
+    private void assertRejected(String path, ApiErrorCode code) {
+        ApiException exception = assertThrows(ApiException.class, () -> service.start(path));
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        assertEquals(code, exception.getCode());
     }
 
     private static long estimate(Path... paths) {

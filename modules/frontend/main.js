@@ -1,11 +1,19 @@
 const { BrowserWindow, app, dialog, ipcMain } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { startBackend, stopBackend } = require("./backend-process");
+const {
+  probeBackend,
+  startBackend,
+  stopBackend,
+  waitForBackend,
+} = require("./backend-process");
 
 const indexPath = path.join(__dirname, "index.html");
 const indexUrl = pathToFileURL(indexPath).href;
 const selectDirectoryChannel = "storage-analyzer:select-directory";
+const backendStatusChannel = "storage-analyzer:backend-status";
+const getBackendStatusChannel = "storage-analyzer:get-backend-status";
+const retryBackendChannel = "storage-analyzer:retry-backend";
 const backendUrl = getBackendUrl(process.env.STORAGE_ANALYZER_API_URL);
 // `npm start` passes this flag. Launching Electron without it leaves the
 // backend to be started separately, which is what the test harness does.
@@ -14,6 +22,13 @@ const managesBackend = (
 ).includes("--start-backend");
 let mainWindow = null;
 let pendingDirectoryDialog = null;
+// What the renderer is told about the backend this app manages. Without
+// --start-backend the app manages nothing and the renderer relies on its own
+// health checks alone.
+let backendStatus = managesBackend
+  ? { managed: true, state: "starting" }
+  : { managed: false, state: "external" };
+let backendLaunch = null;
 
 function getBackendUrl(value = "http://localhost:5000") {
   const url = new URL(value);
@@ -59,6 +74,8 @@ function createWindow() {
       sandbox: true,
       additionalArguments: [
         `--storage-analyzer-api-url=${encodeURIComponent(backendUrl)}`,
+        // Sizes and counts follow the regional format, not the UI language.
+        `--storage-analyzer-number-locale=${encodeURIComponent(systemLocale())}`,
       ],
     },
     icon: path.join(__dirname, "icon.ico"),
@@ -80,32 +97,108 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  if (managesBackend) {
-    startBackend(backendUrl)
-      .then((outcome) => {
-        if (outcome === "already-running") {
-          console.log(`Using the backend already serving ${backendUrl}.`);
-        }
-      })
-      .catch((error) => {
-        // The window still opens: it reports an unreachable API on its own.
-        console.error("Could not start the backend:", error.message);
-      });
+function systemLocale() {
+  // The regional format (Windows "Region" settings), which Explorer follows.
+  try {
+    return app.getSystemLocale?.() || "";
+  } catch {
+    return "";
   }
-  ipcMain.handle(selectDirectoryChannel, async (event) => {
-    const window = mainWindow;
-    if (
-      !window ||
-      window.isDestroyed() ||
-      event.sender !== window.webContents ||
-      event.senderFrame !== window.webContents.mainFrame ||
-      !isAppUrl(event.senderFrame.url)
-    ) {
-      throw new Error(
-        "Folder selection is only available to the application window.",
+}
+
+function setBackendStatus(next) {
+  backendStatus = next;
+  const window = mainWindow;
+  if (window && !window.isDestroyed()) {
+    window.webContents.send(backendStatusChannel, backendStatus);
+  }
+}
+
+/**
+ * Runs the managed start sequence once at a time. It never restarts the
+ * backend on its own: a failed start waits for the person to retry.
+ */
+function launchBackend() {
+  if (backendLaunch) return backendLaunch;
+  setBackendStatus({ managed: true, state: "starting" });
+  backendLaunch = (async () => {
+    try {
+      const outcome = await startBackend(backendUrl, {
+        onExit: () => {
+          if (!backendLaunch) {
+            setBackendStatus({
+              managed: true,
+              state: "failed",
+              reason: "exited",
+            });
+          }
+        },
+      });
+      if (outcome === "already-running") {
+        console.log(`Using the backend already serving ${backendUrl}.`);
+        return setBackendStatus({ managed: true, state: "ready" });
+      }
+      if (outcome !== "started" && outcome !== "running") {
+        return setBackendStatus({
+          managed: true,
+          state: "failed",
+          reason: outcome,
+        });
+      }
+      const result = await waitForBackend(backendUrl);
+      setBackendStatus(
+        result === "ready"
+          ? { managed: true, state: "ready" }
+          : { managed: true, state: "failed", reason: result },
       );
+    } catch (error) {
+      console.error("Could not start the backend:", error.message);
+      setBackendStatus({ managed: true, state: "failed", reason: "exited" });
+    } finally {
+      backendLaunch = null;
     }
+  })();
+  return backendLaunch;
+}
+
+function assertAppSender(event, action) {
+  const window = mainWindow;
+  if (
+    !window ||
+    window.isDestroyed() ||
+    event.sender !== window.webContents ||
+    event.senderFrame !== window.webContents.mainFrame ||
+    !isAppUrl(event.senderFrame.url)
+  ) {
+    throw new Error(`${action} is only available to the application window.`);
+  }
+  return window;
+}
+
+app.whenReady().then(() => {
+  if (managesBackend) void launchBackend();
+  ipcMain.handle(getBackendStatusChannel, (event) => {
+    assertAppSender(event, "Service status");
+    return backendStatus;
+  });
+  ipcMain.handle(retryBackendChannel, async (event) => {
+    assertAppSender(event, "Restarting the service");
+    // A start that is still running keeps its attempt. Without --start-backend
+    // nothing here is ours to start.
+    if (backendLaunch) {
+      await backendLaunch;
+    } else if (backendStatus.state === "failed") {
+      await launchBackend();
+    } else if (backendStatus.state === "ready") {
+      // A reused external backend can stop after start-up without this app
+      // noticing. Start our own only once nothing answers on the port.
+      const found = await probeBackend(backendUrl);
+      if (found.state === "unreachable") await launchBackend();
+    }
+    return backendStatus;
+  });
+  ipcMain.handle(selectDirectoryChannel, async (event) => {
+    const window = assertAppSender(event, "Folder selection");
     // Keep repeated clicks from creating overlapping native dialogs.
     if (!pendingDirectoryDialog) {
       pendingDirectoryDialog = dialog

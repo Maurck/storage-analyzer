@@ -3,14 +3,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
+const http = require('node:http');
+const { EventEmitter } = require('node:events');
 const { pathToFileURL } = require('node:url');
 
 const frontendPath = path.resolve(__dirname, '..');
 const mainSource = fs.readFileSync(path.join(frontendPath, 'main.js'), 'utf8');
 const preloadSource = fs.readFileSync(path.join(frontendPath, 'preload.js'), 'utf8');
 
-async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv } = {}) {
+async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, launch = {}, systemLocale = 'es-PE' } = {}) {
     const windows = [];
+    const sent = [];
     const handlers = new Map();
     const appEvents = new Map();
     const dialogCalls = [];
@@ -24,6 +27,7 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv } 
             this.webContents = {
                 mainFrame: { url: pathToFileURL(path.join(frontendPath, 'index.html')).href },
                 setWindowOpenHandler: handler => { this.openHandler = handler; },
+                send: (channel, payload) => sent.push({ channel, payload }),
                 on: (name, handler) => this.webEvents.set(name, handler),
             };
             windows.push(this);
@@ -37,10 +41,25 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv } 
         whenReady: () => Promise.resolve(),
         on: (name, handler) => appEvents.set(name, handler),
         quit: () => { quitCount += 1; },
+        getSystemLocale: () => systemLocale,
     };
     const backendCalls = [];
+    const outcomes = [...(launch.outcomes ?? ['started'])];
+    const waits = [...(launch.waits ?? ['ready'])];
     const backend = {
-        startBackend: url => { backendCalls.push({ call: 'start', url }); return Promise.resolve('started'); },
+        startBackend: (url, options) => {
+            backendCalls.push({ call: 'start', url });
+            backend.onExit = options?.onExit;
+            return Promise.resolve(outcomes.length > 1 ? outcomes.shift() : outcomes[0]);
+        },
+        waitForBackend: url => {
+            backendCalls.push({ call: 'wait', url });
+            return Promise.resolve(waits.length > 1 ? waits.shift() : waits[0]);
+        },
+        probeBackend: url => {
+            backendCalls.push({ call: 'probe', url });
+            return Promise.resolve(launch.probe ?? { state: 'compatible' });
+        },
         stopBackend: () => { backendCalls.push({ call: 'stop' }); return true; },
     };
     const electron = {
@@ -59,8 +78,12 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv } 
         process: { env: backendUrl === undefined ? {} : { STORAGE_ANALYZER_API_URL: backendUrl }, platform, argv },
         URL, console,
     });
-    await Promise.resolve();
-    return { windows, handlers, appEvents, dialogCalls, backendCalls, quitCount: () => quitCount };
+    await settle();
+    return { windows, handlers, appEvents, dialogCalls, backendCalls, backend, sent, quitCount: () => quitCount };
+}
+
+function settle() {
+    return new Promise(resolve => setImmediate(resolve));
 }
 
 function windowEvent(window) {
@@ -75,6 +98,7 @@ test('renderer is isolated and only receives a loopback API origin', async () =>
     assert.equal(window.options.webPreferences.sandbox, true);
     assert.equal(window.options.webPreferences.preload, path.join(frontendPath, 'preload.js'));
     assert.equal(window.options.webPreferences.additionalArguments[0], '--storage-analyzer-api-url=http%3A%2F%2F127.0.0.1%3A5050');
+    assert.equal(window.options.webPreferences.additionalArguments[1], '--storage-analyzer-number-locale=es-PE');
     assert.equal(window.loadedFile, path.join(frontendPath, 'index.html'));
     assert.equal(window.options.minWidth, 360);
 });
@@ -154,25 +178,157 @@ test('Windows quits on close while macOS can recreate its window', async () => {
     assert.equal(macDesktop.windows.length, 2);
 });
 
-test('preload exposes only backend configuration and the fixed folder-selection operation', async () => {
+function loadPreload(argv) {
     let exposed;
     const calls = [];
+    const listeners = new Map();
     vm.runInNewContext(preloadSource, {
         require: name => {
             assert.equal(name, 'electron');
             return {
                 contextBridge: { exposeInMainWorld: (name, api) => { exposed = { name, api }; } },
-                ipcRenderer: { invoke: async (...args) => { calls.push(args); return 'C:\\Selected'; } },
+                ipcRenderer: {
+                    invoke: async (...args) => { calls.push(args); return 'C:\\Selected'; },
+                    on: (channel, listener) => listeners.set(channel, listener),
+                    removeListener: (channel, listener) => {
+                        if (listeners.get(channel) === listener) listeners.delete(channel);
+                    },
+                },
             };
         },
-        process: { argv: ['electron', '--storage-analyzer-api-url=http%3A%2F%2Flocalhost%3A5050'] },
+        process: { argv },
     });
+    return { exposed, calls, listeners };
+}
+
+test('preload exposes only backend configuration, service status and fixed operations', async () => {
+    const { exposed, calls, listeners } = loadPreload([
+        'electron',
+        '--storage-analyzer-api-url=http%3A%2F%2Flocalhost%3A5050',
+        '--storage-analyzer-number-locale=es-PE',
+    ]);
     assert.equal(exposed.name, 'storageAnalyzer');
-    assert.deepEqual(Object.keys(exposed.api), ['backendUrl', 'selectDirectory']);
+    assert.deepEqual(Object.keys(exposed.api),
+        ['backendUrl', 'numberLocale', 'selectDirectory', 'getBackendStatus', 'retryBackend', 'onBackendStatus']);
     assert.equal(Object.isFrozen(exposed.api), true);
     assert.equal(exposed.api.backendUrl, 'http://localhost:5050');
+    assert.equal(exposed.api.numberLocale, 'es-PE');
     assert.equal(await exposed.api.selectDirectory('untrusted-channel'), 'C:\\Selected');
-    assert.deepEqual(calls, [['storage-analyzer:select-directory']]);
+    await exposed.api.getBackendStatus('ignored');
+    await exposed.api.retryBackend('ignored');
+    assert.deepEqual(calls, [
+        ['storage-analyzer:select-directory'],
+        ['storage-analyzer:get-backend-status'],
+        ['storage-analyzer:retry-backend'],
+    ]);
+
+    const received = [];
+    const unsubscribe = exposed.api.onBackendStatus(status => received.push(status));
+    listeners.get('storage-analyzer:backend-status')({ sender: 'must not reach the page' }, { state: 'ready' });
+    assert.deepEqual(received, [{ state: 'ready' }]);
+    unsubscribe();
+    assert.equal(listeners.has('storage-analyzer:backend-status'), false);
+    assert.equal(typeof exposed.api.onBackendStatus('not a function'), 'function');
+    assert.equal(listeners.size, 0);
+});
+
+test('preload drops a malformed number locale', () => {
+    for (const locale of ['', 'x', 'es_PE', 'es-PE%3Bdrop', '%3Cscript%3E']) {
+        const { exposed } = loadPreload(['electron', `--storage-analyzer-number-locale=${locale}`]);
+        assert.equal(exposed.api.numberLocale, undefined, locale);
+    }
+    assert.equal(loadPreload(['electron']).exposed.api.numberLocale, undefined);
+});
+
+function statusOf(desktop) {
+    return desktop.handlers.get('storage-analyzer:get-backend-status')(windowEvent(desktop.windows[0]));
+}
+
+test('a managed backend moves from starting to ready and tells the window', async () => {
+    const desktop = await loadDesktop({ argv: ['electron', '.', '--start-backend'] });
+    assert.deepEqual(desktop.backendCalls, [
+        { call: 'start', url: 'http://localhost:5000' },
+        { call: 'wait', url: 'http://localhost:5000' },
+    ]);
+    assert.deepEqual({ ...statusOf(desktop) }, { managed: true, state: 'ready' });
+    assert.deepEqual(desktop.sent.map(message => message.payload.state), ['ready']);
+    assert.ok(desktop.sent.every(message => message.channel === 'storage-analyzer:backend-status'));
+});
+
+test('an unmanaged app reports an external backend and never starts one on retry', async () => {
+    const desktop = await loadDesktop();
+    assert.deepEqual({ ...statusOf(desktop) }, { managed: false, state: 'external' });
+    const retry = desktop.handlers.get('storage-analyzer:retry-backend');
+    assert.equal((await retry(windowEvent(desktop.windows[0]))).state, 'external');
+    assert.deepEqual(desktop.backendCalls, []);
+});
+
+test('failed starts keep their reason and only a person can retry them', async () => {
+    for (const [launch, reason] of [
+        [{ outcomes: ['port-in-use'] }, 'port-in-use'],
+        [{ outcomes: ['incompatible'] }, 'incompatible'],
+        [{ outcomes: ['unsupported-platform'] }, 'unsupported-platform'],
+        [{ waits: ['timeout'] }, 'timeout'],
+        [{ waits: ['exited'] }, 'exited'],
+    ]) {
+        const desktop = await loadDesktop({ argv: ['electron', '.', '--start-backend'], launch });
+        assert.deepEqual({ ...statusOf(desktop) }, { managed: true, state: 'failed', reason });
+        await settle();
+        const starts = desktop.backendCalls.filter(call => call.call === 'start').length;
+        assert.equal(starts, 1, `${reason} is not retried automatically`);
+    }
+
+    const desktop = await loadDesktop({
+        argv: ['electron', '.', '--start-backend'],
+        launch: { outcomes: ['port-in-use', 'started'], waits: ['ready'] },
+    });
+    assert.equal(statusOf(desktop).reason, 'port-in-use');
+    const retried = await desktop.handlers.get('storage-analyzer:retry-backend')(windowEvent(desktop.windows[0]));
+    assert.deepEqual({ ...retried }, { managed: true, state: 'ready' });
+    assert.deepEqual(desktop.sent.map(message => message.payload.state), ['failed', 'starting', 'ready']);
+});
+
+test('a managed backend that exits after starting is reported as stopped', async () => {
+    const desktop = await loadDesktop({ argv: ['electron', '.', '--start-backend'] });
+    assert.equal(statusOf(desktop).state, 'ready');
+    desktop.backend.onExit(1);
+    assert.deepEqual({ ...statusOf(desktop) }, { managed: true, state: 'failed', reason: 'exited' });
+});
+
+test('a retry starts the app’s own backend only once a reused one stops answering', async () => {
+    const answering = await loadDesktop({
+        argv: ['electron', '.', '--start-backend'],
+        launch: { outcomes: ['already-running'] },
+    });
+    const retryAnswering = answering.handlers.get('storage-analyzer:retry-backend');
+    assert.equal((await retryAnswering(windowEvent(answering.windows[0]))).state, 'ready');
+    assert.deepEqual(answering.backendCalls.map(call => call.call), ['start', 'probe']);
+
+    const stopped = await loadDesktop({
+        argv: ['electron', '.', '--start-backend'],
+        launch: { outcomes: ['already-running', 'started'], waits: ['ready'], probe: { state: 'unreachable' } },
+    });
+    const retryStopped = stopped.handlers.get('storage-analyzer:retry-backend');
+    assert.deepEqual({ ...(await retryStopped(windowEvent(stopped.windows[0]))) }, { managed: true, state: 'ready' });
+    assert.deepEqual(stopped.backendCalls.map(call => call.call), ['start', 'probe', 'start', 'wait']);
+
+    const occupied = await loadDesktop({
+        argv: ['electron', '.', '--start-backend'],
+        launch: { outcomes: ['already-running'], probe: { state: 'incompatible', reason: 'other-service' } },
+    });
+    await occupied.handlers.get('storage-analyzer:retry-backend')(windowEvent(occupied.windows[0]));
+    assert.deepEqual(occupied.backendCalls.map(call => call.call), ['start', 'probe'],
+        'something else on the port is left to the next status check');
+});
+
+test('service status and retries are only available to the application window', async () => {
+    const desktop = await loadDesktop({ argv: ['electron', '.', '--start-backend'] });
+    const window = desktop.windows[0];
+    for (const channel of ['storage-analyzer:get-backend-status', 'storage-analyzer:retry-backend']) {
+        await assert.rejects(async () => desktop.handlers.get(channel)({ ...windowEvent(window), sender: {} }),
+            /only available to the application window/);
+    }
+    assert.equal(desktop.backendCalls.filter(call => call.call === 'start').length, 1);
 });
 
 test('the backend is only managed when the app was started through npm', async () => {
@@ -182,7 +338,8 @@ test('the backend is only managed when the app was started through npm', async (
     assert.deepEqual(plain.backendCalls, [{ call: 'stop' }], 'quitting never stops someone else’s backend');
 
     const managed = await loadDesktop({ argv: ['electron', '.', '--start-backend'] });
-    assert.deepEqual(managed.backendCalls, [{ call: 'start', url: 'http://localhost:5000' }]);
+    assert.deepEqual(managed.backendCalls.map(call => call.call), ['start', 'wait']);
+    assert.equal(managed.backendCalls[0].url, 'http://localhost:5000');
 });
 
 test('quitting stops the backend the app started, whichever way the app is closed', async () => {
@@ -192,4 +349,120 @@ test('quitting stops the backend the app started, whichever way the app is close
     assert.equal(managed.quitCount(), 1, 'closing the last window quits the app');
     managed.appEvents.get('will-quit')();
     assert.deepEqual(managed.backendCalls.at(-1), { call: 'stop' });
+});
+
+async function withServer(handler, run) {
+    const sockets = new Set();
+    const server = http.createServer(handler);
+    server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+        return await run(`http://127.0.0.1:${server.address().port}`);
+    } finally {
+        sockets.forEach(socket => socket.destroy());
+        await new Promise(resolve => server.close(resolve));
+    }
+}
+
+function json(body, status = 200) {
+    return (_request, response) => {
+        response.writeHead(status, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify(body));
+    };
+}
+
+const backendProcess = require('../backend-process');
+
+test('the health probe tells the backend apart from other services on the port', async () => {
+    const { probeBackend, APPLICATION, API_VERSION } = backendProcess;
+    const cases = [
+        [json({ application: APPLICATION, apiVersion: API_VERSION, status: 'UP' }), { state: 'compatible' }],
+        [json({ application: APPLICATION, apiVersion: API_VERSION + 1 }), { state: 'incompatible', reason: 'api-version' }],
+        [json({ application: 'something-else', apiVersion: API_VERSION }), { state: 'incompatible', reason: 'other-service' }],
+        [json({ message: 'Not found' }, 404), { state: 'incompatible', reason: 'other-service' }],
+        [(_request, response) => response.end('<html>dev server</html>'), { state: 'incompatible', reason: 'other-service' }],
+    ];
+    for (const [handler, expected] of cases) {
+        let path;
+        await withServer((request, response) => { path = request.url; handler(request, response); }, async url => {
+            assert.deepEqual(await probeBackend(url), expected);
+        });
+        assert.equal(path, '/health');
+    }
+});
+
+test('the health probe separates a closed port from one that never answers', async () => {
+    const { probeBackend } = backendProcess;
+    const closedUrl = await withServer(json({}), async url => url);
+    assert.deepEqual(await probeBackend(closedUrl), { state: 'unreachable' });
+    await withServer(() => { /* accepts the request and never answers */ }, async url => {
+        assert.deepEqual(await probeBackend(url, { timeoutMs: 100 }), { state: 'unresponsive' });
+    });
+});
+
+function fakeChild() {
+    const child = new EventEmitter();
+    child.killed = 0;
+    child.kill = () => { child.killed += 1; };
+    return child;
+}
+
+test('starting the backend never spawns over an occupied port', async () => {
+    const { startBackend } = backendProcess;
+    const spawned = [];
+    const spawnImpl = () => { spawned.push(1); return fakeChild(); };
+    for (const [found, outcome] of [
+        [{ state: 'compatible' }, 'already-running'],
+        [{ state: 'incompatible', reason: 'other-service' }, 'port-in-use'],
+        [{ state: 'unresponsive' }, 'port-in-use'],
+        [{ state: 'incompatible', reason: 'api-version' }, 'incompatible'],
+    ]) {
+        assert.equal(await startBackend('http://localhost:5000', { probe: async () => found, spawnImpl }), outcome);
+    }
+    assert.equal(await startBackend('http://localhost:5000', {
+        probe: async () => ({ state: 'unreachable' }), spawnImpl, platform: 'darwin',
+    }), 'unsupported-platform');
+    assert.equal(spawned.length, 0);
+});
+
+test('a started backend reports its exit once and stopping it is silent', async () => {
+    const { startBackend, stopBackend, isRunning } = backendProcess;
+    const probe = async () => ({ state: 'unreachable' });
+    const exits = [];
+    const first = fakeChild();
+    assert.equal(await startBackend('http://localhost:5000', { probe, spawnImpl: () => first, platform: 'win32', onExit: code => exits.push(code) }), 'started');
+    assert.equal(isRunning(), true);
+    assert.equal(await startBackend('http://localhost:5000', { probe, spawnImpl: () => assert.fail('no second process') }), 'running');
+    first.emit('exit', 1);
+    assert.deepEqual(exits, [1]);
+    assert.equal(isRunning(), false);
+
+    const second = fakeChild();
+    await startBackend('http://localhost:5000', { probe, spawnImpl: () => second, platform: 'win32', onExit: code => exits.push(code) });
+    assert.equal(stopBackend(), true);
+    assert.equal(second.killed, 1);
+    second.emit('exit', null);
+    assert.deepEqual(exits, [1], 'a deliberate stop is not reported as a crash');
+    assert.equal(stopBackend(), false);
+});
+
+test('waiting for the backend is bounded and never restarts it', async () => {
+    const { waitForBackend } = backendProcess;
+    const run = async (states, { alive = () => true, timeoutMs = 1000 } = {}) => {
+        let time = 0;
+        const queue = [...states];
+        return waitForBackend('http://localhost:5000', {
+            timeoutMs, intervalMs: 250,
+            probe: async () => queue.length > 1 ? queue.shift() : queue[0],
+            isAlive: alive,
+            now: () => time,
+            sleep: async ms => { time += ms; },
+        });
+    };
+    const unreachable = { state: 'unreachable' };
+    assert.equal(await run([unreachable, unreachable, { state: 'compatible' }]), 'ready');
+    assert.equal(await run([unreachable]), 'timeout');
+    assert.equal(await run([unreachable], { alive: () => false }), 'exited');
+    assert.equal(await run([unreachable, { state: 'incompatible', reason: 'other-service' }]), 'port-in-use');
+    assert.equal(await run([{ state: 'incompatible', reason: 'api-version' }]), 'incompatible');
 });

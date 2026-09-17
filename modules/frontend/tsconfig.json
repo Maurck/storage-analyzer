@@ -14,12 +14,5 @@
     /* Linting */
     "allowSyntheticDefaultImports": true
   },
-  "include": [
-    "src/app",
-    "src/App.tsx",
-    "src/main.tsx",
-    "src/features",
-    "src/shared",
-    "src/layouts"
-  ]
+  "include": ["src"]
 }

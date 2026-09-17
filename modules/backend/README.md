@@ -29,7 +29,7 @@ On macOS/Linux, use `./mvnw` instead; the start script is Windows-only. Maven is
 java -jar target/sa-backend.jar
 ```
 
-The tests use temporary folders and cover byte totals, lazy expansion, snapshot consistency, cancellation, bounded concurrency, scan expiry, invalid paths, item/depth limits, HTTP errors, CORS and compatibility routes. A symbolic-link test is skipped when the operating system does not permit creating links.
+The tests use temporary folders and cover byte totals, lazy expansion, snapshot consistency, cancellation (including a worker that outlives its evicted session), two simultaneous scans, the shared memory budget and its eviction, recovery after limit failures, wide folders, scan expiry, invalid paths, item/depth limits, HTTP errors, CORS and the retired routes. A symbolic-link test is skipped when the operating system does not permit creating links.
 
 ## Scan API
 
@@ -54,15 +54,31 @@ Each directory node retains `name`, `absolutePath`, `type` and `subdirectories`,
 
 Scans read filesystem metadata and never open file contents. Symbolic links and special files are not followed. Inaccessible paths become explicit partial/error nodes; a failure to read the root produces an `ERROR` scan. A scan is an immutable snapshot: changed files require a new scan, and expansion never silently reads newer filesystem state.
 
-Resource limits are two active scans, 100,000,000 entries per scan, depth 512, and five retained sessions. Every entry is retained until its session expires, so available memory is the practical ceiling long before the item limit is. The oldest terminal sessions expire as new scans start. Exceeding the item limit fails the scan with a message asking for a smaller folder. Exceeding depth marks the affected subtree partial. Cancellation releases working data cooperatively; restarting the backend clears all sessions.
+### Resource limits
+
+| Limit                  | Value                                                | When it is reached                                                                     |
+| ---------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Active scans           | 2                                                    | `429`; cancel one or wait.                                                             |
+| Entries per scan       | 250,000 files, folders and skipped items             | The scan fails with `ERROR` and asks for a smaller folder. No totals are shown.        |
+| Depth                  | 512                                                  | The affected subtree is marked partial.                                                |
+| Retained sessions      | 3                                                    | The oldest finished session expires when a new scan starts.                            |
+| Shared snapshot budget | a quarter of the JVM's maximum heap, at most 256 MiB | Oldest completed snapshots expire first; if none is left, the scan fails with `ERROR`. |
+
+The budget is shared by running scans and retained snapshots. Each entry is charged an estimate of `512 + 4 × path length` bytes, deliberately above what it costs: a measurement of 40,801 entries with 150–200 character paths on JDK 17 retained about 510 bytes per entry against an estimate of about 1,350. With the default heap (a quarter of physical memory), the budget is 256 MiB and fits roughly 200,000–300,000 entries depending on path length, so the entry limit and the budget bind at similar sizes. A whole system drive usually holds more than that and will fail with a message asking for a smaller folder.
+
+What the budget does **not** bound:
+
+- The rest of the JVM: Spring, the traversal itself, garbage-collection headroom and any other allocation. An `OutOfMemoryError` during a scan is reported as a constant `ERROR` message on a best-effort basis; the JVM may still be unstable afterwards, and restarting the backend is the recovery.
+- Response size. `GET /scans/{id}` and `GET /scans/{id}/directory` return every direct child of the requested folder; a folder with 100,000 files produces a 100,000-item response, built while the service lock is held. Paginating direct children is a separate decision.
+- The heap size. `-Xmx` (or the platform default) decides the budget; raising the limits in code without raising the heap only moves the failure.
+
+Cancelled and failed scans release their working tree as soon as their worker stops; a cancelled worker keeps its reservation until then, even if its session has already expired. Expired sessions answer `404`, so a client can lose a snapshot it is still displaying when newer scans need the memory. Restarting the backend clears all sessions.
 
 Errors use JSON `{"message":"..."}`: invalid paths return `400`, unreadable roots `403`, expired/missing scans `404`, directory reads before completion `409`, and a busy scanner `429`.
 
-## Compatibility endpoints
+## Retired endpoints
 
-`GET /directory?path=...` returns a bounded four-level preview, with at most 10,000 entries. Without `path`, it uses the current user's home folder on any platform. A depth/item limit sets `partial`; use the scan API for full recursive metrics.
-
-`GET /directory/mock` returns seeded demonstration data and synthetic byte counts. It does not inspect the filesystem.
+`GET /directory` and `GET /directory/mock` were removed; the desktop app never called them. They now answer Spring's default `404`, not the `{"message"}` body above. Use the scan API instead.
 
 ## Local application boundary
 

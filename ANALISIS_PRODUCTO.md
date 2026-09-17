@@ -9,7 +9,7 @@
 - **Observado:** comportamiento o estructura comprobable en el repositorio.
 - **Propuesto:** decisión de producto recomendada, pendiente de implementación y validación.
 - **[Suposición]:** hipótesis sobre usuarios, impacto o demanda; no equivale a evidencia de uso.
-- **Estado de ejecución:** la limpieza técnica está **en curso** en el árbol de trabajo. Hay cambios locales de eliminación de código y límites de memoria; falta cerrar su verificación e integración. Esta revisión documental no los declara entregados.
+- **Estado de ejecución:** H0 (limpieza técnica y límites) está **cerrado y verificado** a fecha 2026-09-17; la evidencia figura en §5.2. H1 y los hitos posteriores siguen sin empezar.
 
 ---
 
@@ -80,7 +80,7 @@ Para usarla hace falta Node, `npm ci`, `npm run build`, JDK 17 exacto y Maven (v
 
 ### 2.6 Los resultados son efímeros
 
-Las sesiones viven en memoria y se pierden al reiniciar (`ScanService`). La versión previa retenía hasta 5; el cambio local en curso reduce ese límite a 3 y añade un presupuesto compartido que puede hacerlas caducar antes. No hay historial ni comparación entre escaneos. La pregunta «¿qué ha crecido desde la última vez?» no tiene respuesta; que sea una necesidad recurrente del segmento inicial es una hipótesis por validar.
+Las sesiones viven en memoria y se pierden al reiniciar (`ScanService`). Desde H0 se retienen como máximo 3 y comparten un presupuesto de memoria estimado que puede hacerlas caducar antes. No hay historial ni comparación entre escaneos. La pregunta «¿qué ha crecido desde la última vez?» no tiene respuesta; que sea una necesidad recurrente del segmento inicial es una hipótesis por validar.
 
 ### 2.7 Pocas dimensiones de análisis
 
@@ -114,11 +114,11 @@ Es indeterminado a propósito (correcto según el design system), pero ni siquie
 - Las métricas del resumen incluyen textos de relleno ("Una jerarquía para explorar") que podrían ser datos útiles (la carpeta más grande, el archivo más grande).
 - El contador de "elementos omitidos" no lleva a ninguna parte: falta una lista de motivos y rutas. Elevar permisos no debe ser la respuesta automática a esta carencia.
 - El backend admite 2 escaneos simultáneos, pero la interfaz solo gestiona uno.
-- Robustez: el límite anterior de 100 millones de entradas y 5 sesiones era desproporcionado para snapshots en memoria. El cambio local en curso propone 250.000 entradas por escaneo, 3 sesiones y un presupuesto estimado compartido de `min(256 MiB, heap máximo / 4)`. No es una garantía sobre el consumo total de la JVM: faltan validar concurrencia, respuestas de carpetas anchas y recuperación bajo presión.
+- Robustez (resuelto en H0): el límite anterior de 100 millones de entradas y 5 sesiones era desproporcionado para snapshots en memoria. Ahora hay 250.000 entradas por escaneo, 3 sesiones y un presupuesto estimado compartido de `min(256 MiB, heap máximo / 4)`, con pruebas de concurrencia, cancelación, evicción, recuperación y carpetas anchas. **Consecuencia de producto:** analizar una unidad de sistema completa (normalmente más de 250.000 entradas) falla con un mensaje que pide elegir una carpeta más pequeña. El presupuesto no limita el consumo total de la JVM ni el tamaño de las respuestas de carpetas anchas.
 
 ### 2.12 Deuda que afecta a la evolución del producto
 
-La revisión inicial identificó código heredado sin uso: `src/components/**`, `src/services/**`, `src/hooks/directories.hooks.ts`, `src/models/**`, `src/icons/**`, los endpoints `/directory` y `/directory/mock`, `DirectoryService` y `RandomDirectoryGenerator`. Su retirada está aplicada localmente, pero el primer hito sigue **en curso** hasta cerrar pruebas, documentación y commits. Mantener los contratos modernos de `/scans` es un criterio de aceptación, no solo eliminar archivos.
+La revisión inicial identificó código heredado sin uso: `src/components/**`, `src/services/**`, `src/hooks/directories.hooks.ts`, `src/models/**`, `src/icons/**`, `src/enums/**`, los estilos ITCSS antiguos, los endpoints `/directory` y `/directory/mock`, `DirectoryService` y `RandomDirectoryGenerator`. **Retirado en H0**; los contratos de `/scans` se mantienen sin cambios y las rutas retiradas responden `404`.
 
 ---
 
@@ -390,14 +390,36 @@ No hay evidencia suficiente para comprometer «0–6 semanas» o «4–12 meses�
 
 ### 5.2 Estado real del trabajo
 
-| Hito                             | Estado al 2026-09-17         | Evidencia / siguiente acción                                                                                                                                        |
-| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| H0 · Limpieza y límites          | **En curso, no cerrado**     | Código legacy retirado localmente y límites de snapshots modificados; completar revisión, pruebas de concurrencia/recuperación, documentación y commits granulares. |
-| H1–H3 · Primer recorrido y beta  | **Propuestos**               | Sin entrega declarada en esta revisión. Acordar criterios y ejecutar en orden.                                                                                      |
-| H4 · Profundidad/recurrencia     | **Backlog condicionado**     | Elegir la siguiente necesidad a partir de pruebas con usuarios.                                                                                                     |
-| H5–H6 · Acciones y largo alcance | **Investigación o diferido** | Requieren evidencia y garantías adicionales; no autorizan implementación automática.                                                                                |
+| Hito                             | Estado al 2026-09-17         | Evidencia / siguiente acción                                                         |
+| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------ |
+| H0 · Limpieza y límites          | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H0» debajo. Siguiente: contrato conjunto F9/F11 (H1).    |
+| H1–H3 · Primer recorrido y beta  | **Propuestos**               | Sin entrega declarada en esta revisión. Acordar criterios y ejecutar en orden.       |
+| H4 · Profundidad/recurrencia     | **Backlog condicionado**     | Elegir la siguiente necesidad a partir de pruebas con usuarios.                      |
+| H5–H6 · Acciones y largo alcance | **Investigación o diferido** | Requieren evidencia y garantías adicionales; no autorizan implementación automática. |
 
 Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No marcar un hito como completado solo porque exista código.
+
+#### Evidencia de cierre de H0 (2026-09-17)
+
+| Criterio de salida                         | Evidencia                                                                                                                                                                                                                               |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sin referencias activas al código retirado | Búsqueda en el repositorio: solo aparece en metadatos locales del IDE (`.idea/`, ignorado). `tsconfig.json` incluye ahora todo `src`, así que el typecheck cubriría cualquier resto.                                                    |
+| Rutas retiradas con la respuesta esperada  | `GET /directory`, `GET /directory?path=…` y `GET /directory/mock` → `404` (prueba `StorageApiTests` y comprobación manual contra el JAR empaquetado).                                                                                   |
+| Build y pruebas desde una salida limpia    | Sin `target/` ni `build/`: `mvnw package` con 22 pruebas (21 correctas y 1 omitida porque Windows no permite crear enlaces simbólicos); `tsc`, webpack, 22 pruebas de datos, 10 de escritorio y 18 de UI (Playwright), todas correctas. |
+| Dos escaneos simultáneos                   | `runsTwoScansAtOnceAndChargesBothToTheSharedBudget`: los dos workers se esperan mutuamente, así que una ejecución en serie no puede pasar.                                                                                              |
+| Evicción por presupuesto                   | `evictsTheOldestSnapshotBeforeExceedingTheSharedMemoryBudget`.                                                                                                                                                                          |
+| Cancelación                                | `cancellingMidScanKeepsItsReservationUntilTheWorkerStops`: el worker cancelado conserva su reserva aunque su sesión haya caducado, y la libera al terminar.                                                                             |
+| Recuperación tras un error                 | `memoryLimitFailureReleasesItsWorkingTreeAndAllowsAnotherScan` y `stopsAtTheItemLimitWithoutPublishingMisleadingTotals`. Al quitar la liberación del `finally`, dos pruebas fallan (prueba de mutación).                                |
+| Carpetas anchas                            | `expandsWideFoldersWithEveryDirectChild` (2.000 hijos directos, sin paginar).                                                                                                                                                           |
+| Integración entre procesos                 | Smoke de Electron contra `sa-backend.jar`: 6 archivos reales, sin errores en el renderer.                                                                                                                                               |
+| Estimación de memoria                      | Medición puntual: 40.801 entradas con rutas de 150–200 caracteres ocupan unos 510 bytes por entrada; la estimación es de unos 1.350 (unas 2,6 veces conservadora).                                                                      |
+| Documentación                              | `modules/backend/README.md` (tabla de límites, qué no cubre el presupuesto y rutas retiradas) y `docs/design-system.md`.                                                                                                                |
+
+**Pendientes detectados, fuera del alcance de H0:**
+
+- `tests/electron-smoke.cjs` espera textos en inglés, pero Electron toma el idioma del sistema. En un Windows en español falla antes de probar nada. Recargar la página tras fijar el idioma con CDP cierra la ventana, así que hay que resolverlo aparte (por ejemplo, con un perfil `userData` temporal para las pruebas). La verificación de H0 se hizo con una copia temporal adaptada al español.
+- **Decisión de producto antes de H2/H3:** con 250.000 entradas y el heap por defecto, analizar `C:\` completo falla. Hay que decidir entre aceptar ese alcance y explicarlo en la interfaz, aumentar el heap y los límites tras medir, o cambiar el almacenamiento del snapshot (§5.6, «Tamaño de datasets objetivo»).
+- Las respuestas de carpetas anchas se construyen con el lock del servicio tomado y sin paginar. Con los fixtures actuales (2.000 hijos) no bloquean; conviene revisarlas si H2 usa fixtures más anchos.
 
 ### 5.3 Secuencia de entregas
 
@@ -512,4 +534,4 @@ Registrar notas y tiempos localmente con consentimiento. No capturar rutas perso
 | Mantenimiento de reglas y formatos históricos.       | Responsable y capacidad de pruebas/migración definidos.    | Limitar F3/F4 al alcance sostenible.                                                             |
 | Tamaño de datasets objetivo.                         | Mediciones en árboles profundos/anchos con heap declarado. | Decidir paginación, almacenamiento persistente o cambio de arquitectura antes de aumentar topes. |
 
-**Siguiente paso recomendado:** cerrar H0 con su evidencia, luego definir el contrato conjunto F9/F11. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.
+**Siguiente paso recomendado:** H0 está cerrado; definir el contrato conjunto F9/F11 (H1) y tomar la decisión de alcance sobre el límite de entradas antes de H2. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.

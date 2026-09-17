@@ -1,5 +1,5 @@
 import React from "react";
-import { DirectoryNode } from "../model/directory.types";
+import { DirectoryNode, Volume } from "../model/directory.types";
 import { Icon } from "../../../shared/ui/Icon";
 import { Alert } from "../../../shared/components/Alert";
 import { formatBytes, formatNumber } from "../../../shared/lib/format";
@@ -8,9 +8,10 @@ import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 interface ScanSummaryProps {
   root: DirectoryNode;
   skippedCount: number;
+  volume?: Volume | null;
 }
 
-export function ScanSummary({ root, skippedCount }: ScanSummaryProps) {
+export function ScanSummary({ root, skippedCount, volume }: ScanSummaryProps) {
   const { t } = useTranslation();
   return (
     <>
@@ -54,6 +55,23 @@ export function ScanSummary({ root, skippedCount }: ScanSummaryProps) {
           </small>
         </div>
       </section>
+      <div className="size-context">
+        <p className="size-note">
+          <Icon name="info" size={16} />
+          <span>{t("summary.sizeNote")}</span>
+        </p>
+        <p className="volume-note">
+          <Icon name="hard-drive" size={16} />
+          <span>
+            {volume
+              ? t("summary.volume", {
+                  free: formatBytes(volume.usableBytes),
+                  total: formatBytes(volume.totalBytes),
+                })
+              : t("summary.volumeUnknown")}
+          </span>
+        </p>
+      </div>
       {root.partial && (
         <div className="page-feedback">
           <Alert variant="warning" title={t("summary.partialTitle")}>

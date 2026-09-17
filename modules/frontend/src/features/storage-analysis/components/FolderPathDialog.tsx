@@ -7,6 +7,8 @@ import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 interface FolderPathDialogProps {
   dialogRef: RefObject<HTMLDialogElement>;
   pending: boolean;
+  /** The analysis engine is not ready: keep the input, block submission. */
+  unavailable?: boolean;
   error?: string;
   onAnalyze(path: string): Promise<void>;
 }
@@ -14,6 +16,7 @@ interface FolderPathDialogProps {
 export function FolderPathDialog({
   dialogRef,
   pending,
+  unavailable,
   error,
   onAnalyze,
 }: FolderPathDialogProps) {
@@ -29,6 +32,7 @@ export function FolderPathDialog({
       <form
         onSubmit={(event) => {
           event.preventDefault();
+          if (unavailable) return;
           void onAnalyze(pathInput).catch(() => {});
         }}
       >
@@ -69,7 +73,11 @@ export function FolderPathDialog({
           >
             {t("folderDialog.cancel")}
           </Button>
-          <Button type="submit" loading={pending} disabled={!pathInput.trim()}>
+          <Button
+            type="submit"
+            loading={pending}
+            disabled={!pathInput.trim() || unavailable}
+          >
             {t("folderDialog.analyze")}
           </Button>
         </div>

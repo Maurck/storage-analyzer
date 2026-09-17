@@ -103,6 +103,9 @@
   .status-dot.is-busy {
     background: #fbbf24;
   }
+  .status-dot.is-offline {
+    background: #f87171;
+  }
   main {
     max-width: 1800px;
     padding: 38px 40px 0;
@@ -819,6 +822,60 @@
   .scan-path {
     font-family: var(--font-mono);
   }
+  .scan-progress-text > .scan-current {
+    font-family: var(--font-mono);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow-wrap: normal;
+  }
+  .scan-activity {
+    color: var(--color-warning-text);
+    font-size: 12px;
+  }
+  .scan-activity:empty {
+    display: none;
+  }
+  .service-banner {
+    margin-bottom: 20px;
+  }
+  .service-banner p + p,
+  .service-banner p + .sa-button {
+    margin-top: var(--space-2);
+  }
+  .service-banner--waiting {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    background: #11213a;
+    border: 1px solid #2d5085;
+    border-radius: 12px;
+    color: var(--color-text-secondary);
+    font-size: 13px;
+  }
+  .service-banner__title {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+  .size-context {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+    gap: 12px 24px;
+    margin: -8px 0 24px;
+    color: var(--color-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .size-context p {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .size-context svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
   .initial-skeleton,
   .detail-skeleton {
     display: grid;
@@ -1379,6 +1436,26 @@
   @media (forced-colors: active) {
     .directory-tree li[aria-selected="true"] > .tree-row {
       border: 2px solid Highlight;
+    }
+    /* Forced colors drop backgrounds: keep bars and status dots visible with
+       system colors. Their values are also written out as text. */
+    .share-bar,
+    .legend-bar {
+      border: 1px solid CanvasText;
+    }
+    .share-bar > span,
+    .legend-bar > span,
+    .status-dot {
+      forced-color-adjust: none;
+      background: Highlight !important;
+    }
+    .status-dot.is-offline {
+      background: Mark !important;
+    }
+    .service-banner--waiting,
+    .scan-progress,
+    .metric-card {
+      border: 1px solid CanvasText;
     }
     .donut {
       forced-color-adjust: none;

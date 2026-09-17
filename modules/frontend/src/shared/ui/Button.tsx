@@ -1,4 +1,5 @@
 import React, { ButtonHTMLAttributes, forwardRef } from "react";
+import { useTranslation } from "../i18n/LanguageProvider";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -13,7 +14,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       variant = "primary",
       size = "md",
       loading = false,
-      loadingLabel = "Loading",
+      loadingLabel,
       disabled,
       className = "",
       type = "button",
@@ -22,6 +23,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref,
   ) {
+    const { t } = useTranslation();
     return (
       <button
         {...props}
@@ -34,7 +36,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {loading && <span className="sa-spinner__ring" aria-hidden="true" />}
         <span className="sa-button__content">{children}</span>
         <span className="sa-sr-only" role="status" aria-live="polite">
-          {loading ? loadingLabel : ""}
+          {loading ? (loadingLabel ?? t("common.loading")) : ""}
         </span>
       </button>
     );

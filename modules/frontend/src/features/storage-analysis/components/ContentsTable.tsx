@@ -3,6 +3,7 @@ import { DirectoryNode } from "../model/directory.types";
 import {
   formatBytes,
   formatNumber,
+  formatPercent,
   percentOf,
 } from "../../../shared/lib/format";
 import { Icon } from "../../../shared/ui/Icon";
@@ -238,11 +239,9 @@ export function ContentsTable({
                               />
                             </span>
                             <span>
-                              {percentOf(
-                                child.sizeBytes,
-                                node.sizeBytes,
-                              ).toFixed(1)}
-                              %
+                              {formatPercent(
+                                percentOf(child.sizeBytes, node.sizeBytes),
+                              )}
                             </span>
                           </div>
                         </td>
@@ -256,8 +255,10 @@ export function ContentsTable({
             <span role="status">
               {items.length
                 ? t("contents.range", {
-                    from: currentPage * 25 + 1,
-                    to: Math.min((currentPage + 1) * 25, items.length),
+                    from: formatNumber(currentPage * 25 + 1),
+                    to: formatNumber(
+                      Math.min((currentPage + 1) * 25, items.length),
+                    ),
                     total: formatNumber(items.length),
                   })
                 : t("contents.noItems")}
@@ -274,8 +275,8 @@ export function ContentsTable({
                 </IconButton>
                 <span>
                   {t("contents.pageOf", {
-                    page: currentPage + 1,
-                    pages,
+                    page: formatNumber(currentPage + 1),
+                    pages: formatNumber(pages),
                   })}
                 </span>
                 <IconButton

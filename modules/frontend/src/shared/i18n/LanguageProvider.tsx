@@ -8,10 +8,11 @@ import React, {
   useState,
 } from "react";
 import {
+  Dictionary,
   Language,
   TranslationKey,
   languages,
-  translations,
+  loadDictionary,
 } from "./translations";
 
 const storageKey = "storage-analyzer:language";
@@ -49,11 +50,11 @@ export function detectLanguage(): Language {
  * numbers keep the size and count formatting the rest of the app applies.
  */
 export function translate(
-  language: Language,
+  dictionary: Dictionary,
   key: TranslationKey,
   values?: Record<string, string | number>,
 ): string {
-  const template = translations[language][key] ?? translations.en[key] ?? key;
+  const template = dictionary[key] ?? key;
   if (!values) return template;
   return template.replace(/\{(\w+)\}/g, (match, name: string) =>
     name in values ? String(values[name]) : match,
@@ -65,22 +66,43 @@ export type Translate = (
   values?: Record<string, string | number>,
 ) => string;
 
-interface LanguageContextValue {
+export interface LanguageContextValue {
   language: Language;
   setLanguage(language: Language): void;
   t: Translate;
+  /** Whether a key built at runtime, such as `api.${code}`, exists. */
+  has(key: string): key is TranslationKey;
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(detectLanguage);
+  // The dictionary on screen. While another one loads, the current language
+  // stays visible instead of flashing untranslated keys.
+  const [loaded, setLoaded] = useState<{
+    language: Language;
+    dictionary: Dictionary;
+  }>();
+
+  useEffect(() => {
+    let active = true;
+    loadDictionary(language)
+      .catch(() => loadDictionary("en"))
+      .then((dictionary) => {
+        if (active) setLoaded({ language, dictionary });
+      })
+      .catch((error) => console.error("Could not load translations:", error));
+    return () => {
+      active = false;
+    };
+  }, [language]);
 
   useEffect(() => {
     // Screen readers switch voice from this attribute, so it has to track the
-    // chosen language rather than stay at the value index.html ships with.
-    document.documentElement.lang = language;
-  }, [language]);
+    // language on screen rather than stay at the value index.html ships with.
+    if (loaded) document.documentElement.lang = loaded.language;
+  }, [loaded]);
 
   const setLanguage = useCallback((next: Language) => {
     setLanguageState(next);
@@ -91,15 +113,20 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const value = useMemo<LanguageContextValue>(
-    () => ({
-      language,
-      setLanguage,
-      t: (key, values) => translate(language, key, values),
-    }),
-    [language, setLanguage],
+  const value = useMemo<LanguageContextValue | undefined>(
+    () =>
+      loaded && {
+        language,
+        setLanguage,
+        t: (key, values) => translate(loaded.dictionary, key, values),
+        has: (key): key is TranslationKey =>
+          Object.prototype.hasOwnProperty.call(loaded.dictionary, key),
+      },
+    [language, loaded, setLanguage],
   );
 
+  // Dictionaries are local chunks; the first one arrives within a frame.
+  if (!value) return null;
   return (
     <LanguageContext.Provider value={value}>
       {children}

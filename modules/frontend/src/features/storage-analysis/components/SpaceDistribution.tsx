@@ -1,6 +1,10 @@
 import React from "react";
 import { DirectoryNode } from "../model/directory.types";
-import { formatBytes, percentOf } from "../../../shared/lib/format";
+import {
+  formatBytes,
+  formatPercent,
+  percentOf,
+} from "../../../shared/lib/format";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { Icon } from "../../../shared/ui/Icon";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
@@ -113,7 +117,7 @@ export function SpaceDistribution({
                 </div>
                 <span className="legend-value">
                   {formatBytes(part.size)}
-                  <small>{percentOf(part.size, total).toFixed(1)}%</small>
+                  <small>{formatPercent(percentOf(part.size, total))}</small>
                 </span>
               </div>
             ))}

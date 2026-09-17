@@ -5,9 +5,10 @@ import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 interface WelcomeStateProps {
   onChooseFolder(): void;
+  disabled?: boolean;
 }
 
-export function WelcomeState({ onChooseFolder }: WelcomeStateProps) {
+export function WelcomeState({ onChooseFolder, disabled }: WelcomeStateProps) {
   const { t } = useTranslation();
   return (
     <section className="welcome-panel">
@@ -28,7 +29,7 @@ export function WelcomeState({ onChooseFolder }: WelcomeStateProps) {
       <span className="eyebrow">{t("welcome.eyebrow")}</span>
       <h2>{t("welcome.title")}</h2>
       <p>{t("welcome.description")}</p>
-      <Button size="lg" onClick={onChooseFolder}>
+      <Button size="lg" onClick={onChooseFolder} disabled={disabled}>
         <Icon name="folder-open" />
         {t("welcome.chooseFolder")}
       </Button>

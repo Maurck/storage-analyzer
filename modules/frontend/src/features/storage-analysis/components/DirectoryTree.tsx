@@ -4,6 +4,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { formatBytes } from "../../../shared/lib/format";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
+import { describeCode } from "../../../shared/i18n/useErrorMessage";
 
 interface Props {
   root: DirectoryNode;
@@ -24,7 +25,8 @@ export function DirectoryTree({
 }: Props) {
   const [expanded, setExpanded] = useState(new Set([root.absolutePath]));
   const [focused, setFocused] = useState(root.absolutePath);
-  const { t } = useTranslation();
+  const i18n = useTranslation();
+  const { t } = i18n;
   const treeItemLabel = (node: DirectoryNode) => {
     const kind =
       node.type === "ERROR"
@@ -33,7 +35,11 @@ export function DirectoryTree({
           ? t("tree.file")
           : t("tree.folder");
     const incomplete = node.partial ? ", " + t("tree.incomplete") : "";
-    const detail = node.error ? ", " + node.error : "";
+    const detail =
+      node.error || node.errorCode
+        ? ", " +
+          describeCode(i18n, "nodeIssue", node.errorCode, "nodeIssue.unknown")
+        : "";
     return (
       node.name +
       ", " +
@@ -241,7 +247,7 @@ export function DirectoryTree({
           />
           <span className="tree-name">{node.name}</span>
           {loadingPaths.has(node.absolutePath) ? (
-            <Spinner label={`Loading ${node.name}`} />
+            <Spinner label={t("tree.loading", { name: node.name })} />
           ) : (
             <span className="tree-size">{formatBytes(node.sizeBytes)}</span>
           )}

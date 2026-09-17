@@ -4,8 +4,11 @@ import type {
   DirectoryNode,
   Scan,
 } from "../src/features/storage-analysis/model/directory.types";
+import type { BackendLifecycle } from "../src/shared/lib/desktopBridge";
 
 const MB = 1024 ** 2;
+const GB = 1024 ** 3;
+const CORS = { "Access-Control-Allow-Origin": "*" };
 const axeSource = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
 function file(name: string, parent: string, sizeBytes: number): DirectoryNode {
@@ -82,6 +85,11 @@ interface ApiOptions {
   startErrors?: number;
   pollErrors?: number;
   branchErrors?: number;
+  health?: "up" | "down" | "other-service" | "api-version";
+  /** Added to every scan the mock returns, including its status. */
+  scanExtras?: Partial<Scan>;
+  /** What preload.js exposes; lifecycle methods only when a lifecycle is given. */
+  bridge?: { lifecycle?: BackendLifecycle; numberLocale?: string };
 }
 async function prepare(page: Page, options: ApiOptions = {}) {
   const data = fixture(options.extraFiles);
@@ -90,6 +98,7 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     polls: 0,
     branches: [] as string[],
     cancels: 0,
+    health: 0,
   };
   const state = {
     pending: !!options.pending,
@@ -98,6 +107,8 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     branchErrors: options.branchErrors ?? 0,
     expiredId: "",
     cancelGate: undefined as Promise<void> | undefined,
+    health: options.health ?? "up",
+    extras: options.scanExtras ?? ({} as Partial<Scan>),
   };
   const scan = (
     status: Scan["status"],
@@ -110,23 +121,76 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     processedDirectories: data.root.directoryCount + 1,
     processedBytes: data.root.sizeBytes,
     skippedCount: 0,
+    elapsedMillis: 1000,
+    volume: { totalBytes: 500 * GB, usableBytes: 200 * GB },
     root: status === "COMPLETE" ? data.preview(data.root) : null,
+    ...state.extras,
   });
-  await page.addInitScript(() => {
+  await page.addInitScript((bridge) => {
+    const listeners: ((status: BackendLifecycle) => void)[] = [];
+    const backend = {
+      status: bridge.lifecycle,
+      retries: 0,
+      onRetry: undefined as BackendLifecycle | undefined,
+      emit(status: BackendLifecycle) {
+        backend.status = status;
+        listeners.forEach((listener) => listener(status));
+      },
+    };
+    (window as any).__backend = backend;
     window.storageAnalyzer = {
       backendUrl: "http://localhost:5000",
+      numberLocale: bridge.numberLocale,
       selectDirectory: async () => "/fixture",
+      ...(bridge.lifecycle && {
+        getBackendStatus: async () => backend.status!,
+        retryBackend: async () => {
+          backend.retries += 1;
+          backend.status = backend.onRetry ?? backend.status;
+          return backend.status!;
+        },
+        onBackendStatus: (listener: (status: BackendLifecycle) => void) => {
+          listeners.push(listener);
+          return () => {};
+        },
+      }),
     };
+  }, options.bridge ?? {});
+  await page.route("http://localhost:5000/health", async (route) => {
+    requests.health += 1;
+    if (state.health === "down") await route.abort("connectionrefused");
+    else if (state.health === "other-service")
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<html>Another dev server</html>",
+        headers: CORS,
+      });
+    else
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: CORS,
+        body: JSON.stringify({
+          application: "storage-analyzer",
+          apiVersion: state.health === "api-version" ? 2 : 1,
+          status: "UP",
+        }),
+      });
   });
   await page.route("http://localhost:5000/scans**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    if (state.health === "down") {
+      await route.abort("connectionrefused");
+      return;
+    }
     const respond = (body: unknown, status = 200) =>
       route.fulfill({
         status,
         contentType: "application/json",
         body: JSON.stringify(body),
-        headers: { "Access-Control-Allow-Origin": "*" },
+        headers: CORS,
       });
     if (request.method() === "OPTIONS") {
       await respond({});
@@ -146,7 +210,10 @@ async function prepare(page: Page, options: ApiOptions = {}) {
       const path = url.searchParams.get("path")!;
       requests.branches.push(path);
       if (state.branchErrors-- > 0)
-        await respond({ message: "This folder could not be loaded." }, 503);
+        await respond(
+          { code: "SCANNER_BUSY", message: "The scanner is busy." },
+          429,
+        );
       else {
         const node = data.nodes.get(path);
         await respond(
@@ -158,7 +225,10 @@ async function prepare(page: Page, options: ApiOptions = {}) {
       requests.polls += 1;
       if (url.pathname.split("/")[2] === state.expiredId)
         await respond(
-          { message: "This scan has expired. Start a new scan." },
+          {
+            code: "SCAN_NOT_FOUND",
+            message: "This scan has expired. Start a new scan.",
+          },
           404,
         );
       else if (state.pollErrors-- > 0)
@@ -191,14 +261,17 @@ async function analyze(page: Page) {
 function treeNode(page: Page, name: string) {
   return page.getByRole("treeitem", { name: new RegExp(`^${name},`) });
 }
-async function checkAccessibility(page: Page) {
+async function checkAccessibility(page: Page, skipRules: string[] = []) {
   await page.evaluate(axeSource);
-  const violations = await page.evaluate(async () => {
+  const violations = await page.evaluate(async (skip) => {
     const result = await (window as any).axe.run(document, {
       runOnly: {
         type: "tag",
         values: ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"],
       },
+      rules: Object.fromEntries(
+        skip.map((rule: string) => [rule, { enabled: false }]),
+      ),
     });
     return result.violations.map((violation: any) => ({
       id: violation.id,
@@ -206,7 +279,7 @@ async function checkAccessibility(page: Page) {
       help: violation.help,
       nodes: violation.nodes.map((node: any) => node.target),
     }));
-  });
+  }, skipRules);
   expect(violations).toEqual([]);
 }
 
@@ -430,7 +503,7 @@ test("a persistent polling failure offers recovery for the existing scan", async
   await expect(
     page
       .getByRole("alert")
-      .filter({ hasText: "The local service disconnected." }),
+      .filter({ hasText: "reported a problem without explaining it" }),
   ).toBeVisible();
   state.pollErrors = 0;
   await page
@@ -452,9 +525,7 @@ test("a failed lazy folder request can be retried without discarding the analysi
   await projects.focus();
   await page.keyboard.press("ArrowRight");
   await expect(
-    page
-      .getByRole("alert")
-      .filter({ hasText: "This folder could not be loaded." }),
+    page.getByRole("alert").filter({ hasText: "The analysis engine is busy." }),
   ).toBeVisible();
   await expect(
     page.getByRole("table", { name: /^Contents of Fixture/ }),
@@ -683,4 +754,265 @@ test("switching language keeps the analysis and the Explorer sizes", async ({
   await expect(
     page.getByRole("figure", { name: /Fixture: 1\.00 GB/ }),
   ).toBeVisible();
+});
+
+const selectFolder = (page: Page) =>
+  page.getByRole("button", { name: "Select folder", exact: true });
+
+test("analyses wait until the engine answers its health check", async ({
+  page,
+}) => {
+  const { state, requests } = await prepare(page, { health: "down" });
+  const banner = page.locator(".service-banner");
+  await expect(banner).toContainText("The analysis engine is not responding");
+  await expect(selectFolder(page)).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Choose a folder", exact: true }),
+  ).toBeDisabled();
+  await expect(page.locator(".header-status")).toHaveText("Engine unavailable");
+  await checkAccessibility(page);
+  state.health = "up";
+  await expect(selectFolder(page)).toBeEnabled({ timeout: 6000 });
+  await expect(banner).toHaveCount(0);
+  expect(requests.starts).toBe(0);
+  await analyze(page);
+});
+
+test("a starting engine is explained and analyses unlock once it is ready", async ({
+  page,
+}) => {
+  const { state } = await prepare(page, {
+    health: "down",
+    bridge: { lifecycle: { managed: true, state: "starting" } },
+  });
+  await expect(page.getByText("Preparing the analysis engine…")).toBeVisible();
+  await expect(page.locator(".header-status")).toHaveText(
+    "Starting the engine",
+  );
+  await expect(selectFolder(page)).toBeDisabled();
+  await checkAccessibility(page);
+  state.health = "up";
+  await page.evaluate(() =>
+    (window as any).__backend.emit({ managed: true, state: "ready" }),
+  );
+  await expect(selectFolder(page)).toBeEnabled();
+  await expect(page.getByText("Preparing the analysis engine…")).toHaveCount(0);
+});
+
+for (const [reason, title] of [
+  ["port-in-use", "Another program is using the engine’s address"],
+  ["incompatible", "The analysis engine is a different version"],
+  ["timeout", "The analysis engine is taking too long to start"],
+  ["exited", "The analysis engine stopped"],
+  ["unsupported-platform", "Start the analysis engine separately"],
+] as const) {
+  test(`a failed start (${reason}) explains itself and only retries on request`, async ({
+    page,
+  }) => {
+    const { state } = await prepare(page, {
+      health: "down",
+      bridge: { lifecycle: { managed: true, state: "failed", reason } },
+    });
+    const alert = page.getByRole("alert").filter({ hasText: title });
+    await expect(alert).toBeVisible();
+    if (reason === "port-in-use")
+      await expect(alert).toContainText("localhost:5000");
+    await expect(selectFolder(page)).toBeDisabled();
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => (window as any).__backend.retries)).toBe(
+      0,
+    );
+    state.health = "up";
+    await page.evaluate(() => {
+      (window as any).__backend.onRetry = { managed: true, state: "ready" };
+    });
+    await alert.getByRole("button", { name: "Try again" }).click();
+    await expect(selectFolder(page)).toBeEnabled();
+    expect(await page.evaluate(() => (window as any).__backend.retries)).toBe(
+      1,
+    );
+  });
+}
+
+test("another program or another engine version on the port is never used", async ({
+  page,
+}) => {
+  const { state, requests } = await prepare(page, { health: "other-service" });
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Another program is using the engine’s address" }),
+  ).toBeVisible();
+  await expect(selectFolder(page)).toBeDisabled();
+  state.health = "api-version";
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "The analysis engine is a different version" }),
+  ).toBeVisible();
+  await expect(selectFolder(page)).toBeDisabled();
+  expect(requests.starts).toBe(0);
+});
+
+test("results stay visible when the engine stops and analyses resume when it returns", async ({
+  page,
+}) => {
+  const { state } = await prepare(page);
+  await analyze(page);
+  const rescan = page.getByRole("button", { name: "Rescan", exact: true });
+  await expect(rescan).toBeEnabled();
+  state.health = "down";
+  const banner = page.locator(".service-banner");
+  await expect(banner).toContainText("The analysis engine stopped responding", {
+    timeout: 8000,
+  });
+  await expect(banner).toContainText(
+    "The results on screen are from the last analysis",
+  );
+  await expect(
+    page.getByRole("table", { name: /^Contents of Fixture/ }),
+  ).toBeVisible();
+  await expect(rescan).toBeDisabled();
+  await expect(page.locator(".header-status")).toHaveText("Engine unavailable");
+  state.health = "up";
+  await banner.getByRole("button", { name: "Try again" }).click();
+  await expect(banner).toHaveCount(0);
+  await expect(rescan).toBeEnabled();
+});
+
+test("a long scan shows elapsed time, the folder being read and quiet periods", async ({
+  page,
+}) => {
+  const { state } = await prepare(page, {
+    pending: true,
+    scanExtras: {
+      elapsedMillis: 65000,
+      millisSinceActivity: 12000,
+      currentPath: "/fixture/Projects/very/deep",
+    },
+  });
+  await selectFolder(page).click();
+  const progress = page.getByRole("region", { name: "Analysis progress" });
+  await expect(progress).toContainText("1:05 elapsed");
+  await expect(progress).toContainText("Reading /fixture/Projects/very/deep");
+  await expect(
+    progress.getByRole("status").filter({ hasText: "No new items" }),
+  ).toBeVisible();
+  await checkAccessibility(page);
+
+  state.extras = {
+    elapsedMillis: 66000,
+    millisSinceActivity: 200,
+    currentPath: "/fixture/Photos",
+  };
+  await expect(progress).toContainText("Reading /fixture/Photos");
+  await expect(progress).toContainText("1:06 elapsed");
+  await expect(progress).not.toContainText("No new items");
+
+  state.pollErrors = 50;
+  await expect(progress).toContainText(
+    "Waiting for the analysis engine to answer",
+  );
+  await expect(
+    progress.getByRole("button", { name: "Cancel scan" }),
+  ).toBeEnabled();
+});
+
+test("the summary separates logical sizes from the drive's capacity", async ({
+  page,
+}) => {
+  const { state } = await prepare(page);
+  await analyze(page);
+  await expect(page.getByText(/not the space they take on disk/)).toBeVisible();
+  await expect(
+    page.getByText("Drive at the start of the analysis: 200 GB free of 500 GB"),
+  ).toBeVisible();
+  state.extras = { volume: null };
+  await page.getByRole("button", { name: "Rescan", exact: true }).click();
+  await expect(page.getByText("Drive capacity: unknown")).toBeVisible();
+});
+
+test("coded errors follow the interface language while numbers follow the system", async ({
+  page,
+}) => {
+  const { state } = await prepare(page);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("Language").selectOption("es");
+  await page.getByRole("button", { name: "Listo" }).click();
+
+  state.extras = {
+    status: "ERROR",
+    error: "This scan exceeded the limit of 250000 items.",
+    errorCode: "ENTRY_LIMIT",
+    errorParams: { limit: 250000 },
+  };
+  await page
+    .getByRole("button", { name: "Elegir carpeta", exact: true })
+    .click();
+  // The browser locale is en-US, so the number keeps English separators.
+  await expect(
+    page.getByText(
+      "Esta carpeta contiene más de 250,000 elementos, el máximo que admite un análisis. Elige una carpeta más pequeña.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(/exceeded the limit/)).toHaveCount(0);
+
+  state.extras = {};
+  state.branchErrors = 2; // the tree retries a failed branch once
+  await page.getByRole("button", { name: "Reintentar" }).first().click();
+  await expect(
+    page.getByRole("tree", { name: "Carpetas y archivos" }),
+  ).toBeVisible();
+  await treeNode(page, "Projects").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "El motor de análisis está ocupado." }),
+  ).toBeVisible();
+  await expect(page.getByText(/scanner is busy/)).toHaveCount(0);
+  await checkAccessibility(page);
+});
+
+test("the system's regional format applies even with an English interface", async ({
+  page,
+}) => {
+  await prepare(page, { bridge: { numberLocale: "es-ES" } });
+  await analyze(page);
+  const table = page.getByRole("table", { name: /^Contents of Fixture/ });
+  await expect(table.getByRole("row", { name: /Projects/ })).toContainText(
+    /75,0\s%/,
+  );
+  await expect(
+    page.getByRole("figure", { name: /Fixture: 1,00 GB/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Storage overview." }),
+  ).toBeVisible();
+});
+
+test("forced colors keep the selection and share bars distinguishable", async ({
+  page,
+}) => {
+  await page.emulateMedia({ forcedColors: "active" });
+  await prepare(page);
+  await analyze(page);
+  const root = treeNode(page, "Fixture");
+  await expect(root).toHaveAttribute("aria-selected", "true");
+  const row = root.locator(".tree-row").first();
+  expect(
+    await row.evaluate((element) => getComputedStyle(element).borderTopWidth),
+  ).toBe("2px");
+  const bar = page.locator(".share-bar").first();
+  expect(
+    await bar.evaluate((element) => getComputedStyle(element).borderTopStyle),
+  ).toBe("solid");
+  // axe measures contrast from author colors, which forced colors replace
+  // with the system palette; the other WCAG rules still apply.
+  await checkAccessibility(page, ["color-contrast"]);
+  await page.screenshot({
+    path: "test-results/forced-colors.png",
+    fullPage: true,
+  });
 });

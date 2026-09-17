@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "react-query";
 import { useStorageScan } from "./hooks/useStorageScan";
+import { useServiceStatus } from "./hooks/useServiceStatus";
+import { ServiceStatusBanner } from "./components/ServiceStatusBanner";
+import { ScanProgress } from "./components/ScanProgress";
 import { DirectoryNode, NodeCache } from "./model/directory.types";
 import { getDirectory } from "./api/directory.api";
 import { DirectoryTree } from "./components/DirectoryTree";
@@ -12,13 +15,15 @@ import { FolderPathDialog } from "./components/FolderPathDialog";
 import { Button } from "../../shared/ui/Button";
 import { IconButton } from "../../shared/ui/IconButton";
 import { Icon } from "../../shared/ui/Icon";
-import { Spinner } from "../../shared/ui/Spinner";
 import { Skeleton } from "../../shared/ui/Skeleton";
 import { Alert } from "../../shared/components/Alert";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { ErrorState } from "../../shared/components/ErrorState";
 import { formatBytes, formatNumber } from "../../shared/lib/format";
-import { useErrorMessage } from "../../shared/i18n/useErrorMessage";
+import {
+  describeCode,
+  useErrorMessage,
+} from "../../shared/i18n/useErrorMessage";
 import { useMediaQuery } from "../../shared/hooks/useMediaQuery";
 import { SplitPane } from "../../layouts/SplitPane";
 import { AppShell } from "../../layouts/AppShell";
@@ -29,7 +34,10 @@ export function StorageAnalysisPage() {
   const { scan, snapshot, start, cancel, query, busy, expired } =
     useStorageScan();
   const client = useQueryClient();
-  const { t } = useTranslation();
+  const service = useServiceStatus();
+  const serviceReady = service.status.state === "ready";
+  const i18n = useTranslation();
+  const { t } = i18n;
   const describeError = useErrorMessage();
   const [nodes, setNodes] = useState<NodeCache>({});
   const [selectedPath, setSelectedPath] = useState("");
@@ -110,7 +118,7 @@ export function StorageAnalysisPage() {
   }
 
   async function begin(path: string) {
-    if (busy || !path.trim()) return;
+    if (busy || !serviceReady || !path.trim()) return;
     setPickerError("");
     cancel.reset();
     await start.mutateAsync(path.trim());
@@ -118,6 +126,7 @@ export function StorageAnalysisPage() {
   }
 
   async function chooseFolder() {
+    if (!serviceReady) return;
     setPickerError("");
     start.reset();
     if (!window.storageAnalyzer) {
@@ -194,18 +203,28 @@ export function StorageAnalysisPage() {
   );
   const statusText = busy
     ? t("status.scanning")
-    : scan?.status === "COMPLETE"
-      ? scan.root?.partial
-        ? t("status.completePartial")
-        : t("status.complete")
-      : scan?.status === "CANCELLED"
-        ? t("status.cancelled")
-        : t("status.ready");
+    : service.status.state === "checking"
+      ? t("service.statusChecking")
+      : service.status.state === "starting"
+        ? t("service.statusStarting")
+        : !serviceReady
+          ? t("service.statusUnavailable")
+          : scan?.status === "COMPLETE"
+            ? scan.root?.partial
+              ? t("status.completePartial")
+              : t("status.complete")
+            : scan?.status === "CANCELLED"
+              ? t("status.cancelled")
+              : t("status.ready");
 
   return (
     <AppShell
       status={statusText}
-      busy={busy}
+      busy={busy || ["checking", "starting"].includes(service.status.state)}
+      offline={
+        !busy &&
+        ["unavailable", "failed", "incompatible"].includes(service.status.state)
+      }
       onOpenSettings={() => settingsDialog.current?.showModal()}
       overlays={
         <>
@@ -213,6 +232,7 @@ export function StorageAnalysisPage() {
           <FolderPathDialog
             dialogRef={pathDialog}
             pending={start.isLoading}
+            unavailable={!serviceReady}
             error={start.isError ? describeError(start.error) : undefined}
             onAnalyze={begin}
           />
@@ -247,7 +267,7 @@ export function StorageAnalysisPage() {
               onClick={() => {
                 void begin(snapshot.path).catch(() => {});
               }}
-              disabled={busy}
+              disabled={busy || !serviceReady}
             >
               <Icon name="refresh" size={17} />
               {t("page.rescan")}
@@ -257,7 +277,7 @@ export function StorageAnalysisPage() {
             onClick={() => {
               void chooseFolder();
             }}
-            disabled={busy}
+            disabled={busy || !serviceReady}
             loading={start.isLoading}
           >
             <Icon name="folder-open" size={18} />
@@ -265,6 +285,14 @@ export function StorageAnalysisPage() {
           </Button>
         </div>
       </section>
+      <ServiceStatusBanner
+        status={service.status}
+        hasResults={!!snapshot}
+        retrying={service.retrying}
+        onRetry={() => {
+          void service.retry();
+        }}
+      />
       <div className="global-feedback" aria-live="polite" aria-atomic="true">
         <span className="sr-only">{statusText}</span>
       </div>
@@ -305,7 +333,13 @@ export function StorageAnalysisPage() {
         <div className="page-feedback">
           <ErrorState
             title={t("error.scanFailedTitle")}
-            description={scan.error || t("error.scanFailedDescription")}
+            description={describeCode(
+              i18n,
+              "scanError",
+              scan.errorCode,
+              "error.scanFailedDescription",
+              scan.errorParams,
+            )}
             onRetry={() => {
               void begin(scan.path).catch(() => {});
             }}
@@ -322,31 +356,12 @@ export function StorageAnalysisPage() {
         </div>
       )}
       {busy && (
-        <section className="scan-progress" aria-label={t("progress.label")}>
-          <Spinner label={t("progress.spinner")} />
-          <div className="scan-progress-text">
-            <strong>{t("progress.heading")}</strong>
-            <span className="scan-path" title={scan?.path}>
-              {scan?.path || t("progress.starting")}
-            </span>
-            <span>
-              {t("progress.counts", {
-                files: formatNumber(scan?.processedFiles ?? 0),
-                bytes: formatBytes(scan?.processedBytes ?? 0),
-                skipped: formatNumber(scan?.skippedCount ?? 0),
-              })}
-            </span>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => cancel.mutate()}
-            loading={cancel.isLoading}
-            disabled={!scan}
-          >
-            {t("progress.cancel")}
-          </Button>
-        </section>
+        <ScanProgress
+          scan={scan}
+          unresponsive={query.isError}
+          cancelling={cancel.isLoading}
+          onCancel={() => cancel.mutate()}
+        />
       )}
       {cancel.isError && (
         <div className="page-feedback">
@@ -355,7 +370,9 @@ export function StorageAnalysisPage() {
           </Alert>
         </div>
       )}
-      {!root && !busy && <WelcomeState onChooseFolder={chooseFolder} />}
+      {!root && !busy && (
+        <WelcomeState onChooseFolder={chooseFolder} disabled={!serviceReady} />
+      )}
       {!root && busy && (
         <div className="initial-skeleton" aria-hidden="true">
           <Skeleton height={112} />
@@ -365,7 +382,11 @@ export function StorageAnalysisPage() {
       )}
       {root && selected && (
         <>
-          <ScanSummary root={root} skippedCount={snapshot?.skippedCount ?? 0} />
+          <ScanSummary
+            root={root}
+            skippedCount={snapshot?.skippedCount ?? 0}
+            volume={snapshot?.volume}
+          />
           <SplitPane
             sidebar={
               !compact ? (
@@ -509,9 +530,12 @@ export function StorageAnalysisPage() {
             ) : selected.type === "ERROR" ? (
               <ErrorState
                 title={t("error.itemUnreadableTitle")}
-                description={
-                  selected.error || t("error.itemUnreadableDescription")
-                }
+                description={describeCode(
+                  i18n,
+                  "nodeIssue",
+                  selected.errorCode,
+                  "error.itemUnreadableDescription",
+                )}
               />
             ) : selected.childrenLoaded ? (
               <>
@@ -531,6 +555,7 @@ export function StorageAnalysisPage() {
                   description={t("load.description")}
                   action={
                     <Button
+                      disabled={!serviceReady}
                       onClick={() => {
                         void loadNode(selected);
                       }}

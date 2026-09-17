@@ -9,7 +9,14 @@ export interface DirectoryNode {
   hasChildren: boolean;
   childrenLoaded: boolean;
   partial: boolean;
+  /** English fallback; `errorCode` is what the interface translates. */
   error?: string | null;
+  errorCode?: string | null;
+}
+
+export interface Volume {
+  totalBytes: number;
+  usableBytes: number;
 }
 
 export interface Scan {
@@ -21,16 +28,22 @@ export interface Scan {
   processedBytes: number;
   skippedCount: number;
   error?: string | null;
+  errorCode?: string | null;
+  errorParams?: Record<string, number> | null;
+  /** Frozen once the scan ends. */
+  elapsedMillis: number;
+  /** Only while scanning. */
+  millisSinceActivity?: number | null;
+  /** Only while scanning. */
+  currentPath?: string | null;
+  /** Capacity of the scanned volume at the start; null when unknown. */
+  volume?: Volume | null;
   root?: DirectoryNode | null;
 }
 
-export type NodeCache = Record<string, DirectoryNode>;
-
-declare global {
-  interface Window {
-    storageAnalyzer?: {
-      backendUrl: string;
-      selectDirectory(): Promise<string | null>;
-    };
-  }
+export interface Health {
+  application: string;
+  apiVersion: number;
 }
+
+export type NodeCache = Record<string, DirectoryNode>;

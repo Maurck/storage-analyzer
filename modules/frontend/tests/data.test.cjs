@@ -19,11 +19,13 @@ require.extensions['.ts'] = (module, filename) => {
   module._compile(outputText, filename);
 };
 
-const { formatBytes, formatNumber, percentOf } = require('../src/shared/lib/format.ts');
+const { createFormatters, resolveNumberLocale, percentOf, UNAVAILABLE } = require('../src/shared/lib/format.ts');
 const { AppError, request, errorMessage } = require('../src/shared/lib/http.ts');
 const {
-  validateDirectory, validateScan, startScan, getScan, cancelScan, getDirectory,
+  validateDirectory, validateScan, validateHealth, startScan, getScan, cancelScan, getDirectory, getHealth,
 } = require('../src/features/storage-analysis/api/directory.api.ts');
+// Pinned: the default formatters follow this machine's regional settings.
+const { formatBytes, formatNumber } = createFormatters('en-US');
 
 function directory(overrides = {}) {
   return {
@@ -38,7 +40,7 @@ function scan(overrides = {}) {
   return {
     id: 'scan-1', path: 'C:\\Documents', status: 'SCANNING',
     processedFiles: 0, processedDirectories: 0, processedBytes: 0, skippedCount: 0,
-    error: null, root: null, ...overrides,
+    elapsedMillis: 0, error: null, root: null, ...overrides,
   };
 }
 
@@ -46,11 +48,12 @@ function response(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
-function assertAppError(error, message, status = 0) {
+function assertAppError(error, message, status = 0, code) {
   assert.ok(error instanceof AppError, 'error retains the AppError prototype');
   assert.equal(error.name, 'AppError');
   assert.match(error.message, message);
   assert.equal(error.status, status);
+  if (code !== undefined) assert.equal(error.code, code);
   return true;
 }
 
@@ -85,9 +88,37 @@ test('size formatting matches Windows Explorer at unit, digit and truncation bou
     [11115519, '10.5 MB'],
     [11115520, '10.6 MB'],
     [110677197, '105 MB'],
-    [-1, 'Unavailable'], [NaN, 'Unavailable'], [Infinity, 'Unavailable'],
+    [-1, UNAVAILABLE], [NaN, UNAVAILABLE], [Infinity, UNAVAILABLE],
   ]) assert.equal(formatBytes(input), output, `formatBytes(${input})`);
   assert.equal(formatNumber(1234567), '1,234,567');
+});
+
+test('numbers follow the regional format, including grouping of four-digit values', () => {
+  const es = createFormatters('es-ES');
+  assert.equal(es.formatBytes(1023), '1.023 B');
+  assert.equal(es.formatBytes(1536), '1,50 KB');
+  assert.equal(es.formatBytes(110677197), '105 MB');
+  assert.equal(es.formatNumber(1234567), '1.234.567');
+  assert.equal(es.formatNumber(1234), '1.234');
+  assert.equal(createFormatters('en-US').formatPercent(75), '75.0%');
+  assert.match(es.formatPercent(75), /^75,0\s%$/);
+  assert.equal(es.formatPercent(NaN), UNAVAILABLE);
+  assert.equal(formatNumber(NaN), UNAVAILABLE);
+});
+
+test('durations use a clock format that does not depend on the interface language', () => {
+  const { formatDuration } = createFormatters('en-US');
+  for (const [input, output] of [
+    [0, '0:00'], [999, '0:00'], [7000, '0:07'], [65000, '1:05'],
+    [754000, '12:34'], [3723000, '1:02:03'], [-1, UNAVAILABLE], [NaN, UNAVAILABLE],
+  ]) assert.equal(formatDuration(input), output, 'formatDuration(' + input + ')');
+});
+
+test('the number locale comes from the system, then the browser, then English', () => {
+  assert.equal(resolveNumberLocale(['es-PE', 'en-GB']), 'es-PE');
+  assert.equal(resolveNumberLocale([undefined, 'en-GB']), 'en-GB');
+  assert.equal(resolveNumberLocale(['', 'not a locale!', 42]), 'en-US');
+  assert.equal(resolveNumberLocale([]), 'en-US');
 });
 
 test('percentages never exceed the valid range or divide by zero', () => {
@@ -133,6 +164,34 @@ test('HTTP non-success responses retain the server message and status', async t 
     error => assertAppError(error, /This folder is not readable\./, 403));
 });
 
+test('HTTP errors keep the backend code so the interface can translate them', async t => {
+  t.mock.method(globalThis, 'fetch', async () => response({ code: 'FOLDER_NOT_FOUND', message: 'The selected folder does not exist.' }, 400));
+  await assert.rejects(request('http://localhost:5000', '/scans'), error => {
+    assertAppError(error, /does not exist/, 400);
+    assert.equal(error.apiCode, 'FOLDER_NOT_FOUND');
+    assert.equal(error.code, undefined);
+    return true;
+  });
+});
+
+test('HTTP error codes are kept without a message and ignored when malformed', async t => {
+  const bodies = [
+    [{ code: 'SCAN_NOT_FOUND' }, 'SCAN_NOT_FOUND', undefined],
+    [{ code: 'lowercase', message: 'x' }, undefined, undefined],
+    [{ code: '<script>' }, undefined, 'request-failed'],
+    [{ code: 42 }, undefined, 'request-failed'],
+  ];
+  for (const [body, apiCode, code] of bodies) {
+    t.mock.method(globalThis, 'fetch', async () => response(body, 404));
+    await assert.rejects(request('http://localhost:5000', '/scans'), error => {
+      assert.equal(error.apiCode, apiCode, JSON.stringify(body));
+      assert.equal(error.code, code, JSON.stringify(body));
+      return true;
+    });
+    t.mock.restoreAll();
+  }
+});
+
 test('HTTP failures without a safe message use the actionable fallback', async t => {
   t.mock.method(globalThis, 'fetch', async () => response({ message: { internal: 'detail' } }, 500));
   await assert.rejects(request('http://localhost:5000', '/scans'),
@@ -142,7 +201,7 @@ test('HTTP failures without a safe message use the actionable fallback', async t
 test('network failure provides a recovery message without leaking raw errors', async t => {
   t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch internal details'); });
   await assert.rejects(request('http://localhost:5000', '/scans'),
-    error => assertAppError(error, /Could not connect.*Start the backend/i));
+    error => assertAppError(error, /Could not connect.*ready/i, 0, 'offline'));
 });
 
 test('unreadable JSON preserves its HTTP status and can be retried', async t => {
@@ -272,6 +331,18 @@ test('errorMessage exposes known Error messages and has a fallback for unknown v
   assert.match(errorMessage({ message: 'Not an Error' }), /Something went wrong/i);
 });
 
+test('a request can use a shorter timeout than the default', async t => {
+  const durations = [];
+  t.mock.method(globalThis, 'setTimeout', (_callback, duration) => { durations.push(duration); return {}; });
+  t.mock.method(globalThis, 'clearTimeout', () => {});
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    assert.equal('timeoutMs' in init, false, 'the option is not passed to fetch');
+    return response({});
+  });
+  await request('http://localhost:5000', '/health', { timeoutMs: 3000 });
+  assert.deepEqual(durations, [3000]);
+});
+
 test('valid directory trees retain partial results and unloaded child metadata', () => {
   const node = directory({
     sizeBytes: 2048, fileCount: 1, directoryCount: 1, hasChildren: true, partial: true,
@@ -279,6 +350,7 @@ test('valid directory trees retain partial results and unloaded child metadata',
   });
   assert.equal(validateDirectory(node), node);
   assert.equal(validateDirectory(directory({ type: 'ERROR', partial: true, error: 'Permission denied' })).type, 'ERROR');
+  assert.equal(validateDirectory(directory({ type: 'ERROR', partial: true, errorCode: 'PATH_UNREADABLE' })).errorCode, 'PATH_UNREADABLE');
 });
 
 test('malformed directories and malformed descendants are rejected before rendering', () => {
@@ -292,8 +364,9 @@ test('malformed directories and malformed descendants are rejected before render
     directory({ absolutePath: '' }), directory({ error: { message: 'Cannot render this object' } }),
     directory({ subdirectories: [directory({ absolutePath: null })] }),
     directory({ subdirectories: [null] }),
+    directory({ errorCode: 'path-unreadable' }), directory({ errorCode: 3 }),
   ]) {
-    assert.throws(() => validateDirectory(node), error => assertAppError(error, /analysis data is incomplete/i));
+    assert.throws(() => validateDirectory(node), error => assertAppError(error, /analysis data is incomplete/i, 0, 'invalid-data'));
   }
 });
 
@@ -314,7 +387,14 @@ test('scan validation accepts the supported lifecycle and requires a root when c
   const completed = scan({ status: 'COMPLETE', root: directory() });
   assert.equal(validateScan(completed), completed);
   assert.throws(() => validateScan(scan({ status: 'COMPLETE' })),
-    error => assertAppError(error, /completed analysis did not include a folder/i));
+    error => assertAppError(error, /completed analysis did not include a folder/i, 0, 'incomplete-scan'));
+  const detailed = scan({
+    millisSinceActivity: 12000, currentPath: 'C:\\Documents\\Slow', elapsedMillis: 65000,
+    volume: { totalBytes: 500, usableBytes: 200 },
+  });
+  assert.equal(validateScan(detailed), detailed);
+  const failed = scan({ status: 'ERROR', errorCode: 'ENTRY_LIMIT', errorParams: { limit: 250000 }, volume: null });
+  assert.equal(validateScan(failed), failed);
 });
 
 test('malformed scan progress and nested roots are rejected', () => {
@@ -324,8 +404,14 @@ test('malformed scan progress and nested roots are rejected', () => {
     scan({ processedBytes: Infinity }), scan({ skippedCount: NaN }),
     scan({ processedFiles: 1.5 }), scan({ id: '' }), scan({ path: '' }),
     scan({ error: { message: 'Invalid message' } }),
+    scan({ elapsedMillis: undefined }), scan({ elapsedMillis: -1 }),
+    scan({ millisSinceActivity: 1.5 }), scan({ currentPath: 7 }),
+    scan({ errorCode: 'entry limit' }), scan({ errorParams: { limit: -1 } }),
+    scan({ errorParams: { 'bad key': 1 } }), scan({ errorParams: [1] }),
+    scan({ volume: { totalBytes: 100, usableBytes: 200 } }), scan({ volume: { totalBytes: 100 } }),
+    scan({ volume: 'C:' }),
   ]) {
-    assert.throws(() => validateScan(value), error => assertAppError(error, /invalid scan/i));
+    assert.throws(() => validateScan(value), error => assertAppError(error, /invalid scan/i, 0, 'invalid-scan'));
   }
   assert.throws(() => validateScan(scan({ root: directory({ sizeBytes: -1 }) })),
     error => assertAppError(error, /analysis data is incomplete/i));
@@ -364,4 +450,18 @@ test('API entry points validate responses rather than accepting successful malfo
   t.mock.method(globalThis, 'fetch', async () => response({ id: 'missing-progress' }));
   await assert.rejects(getScan('scan-1'), error => assertAppError(error, /invalid scan/i));
   await assert.rejects(getDirectory('scan-1', 'C:\\Documents'), error => assertAppError(error, /analysis data is incomplete/i));
+});
+
+test('health documents are validated before the app trusts them', async t => {
+  const health = { application: 'storage-analyzer', apiVersion: 1, status: 'UP' };
+  assert.equal(validateHealth(health), health);
+  for (const value of [null, [], 'UP', { application: 'storage-analyzer' }, { apiVersion: 1 }]) {
+    assert.throws(() => validateHealth(value), error => assertAppError(error, /Another service/i, 0, 'service-unavailable'));
+  }
+  const oldWindow = globalThis.window;
+  globalThis.window = { storageAnalyzer: { backendUrl: 'http://127.0.0.1:5050' } };
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => response(health));
+  assert.deepEqual(await getHealth(), health);
+  assert.equal(fetchMock.mock.calls[0].arguments[0], 'http://127.0.0.1:5050/health');
 });

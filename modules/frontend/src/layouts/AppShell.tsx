@@ -6,6 +6,8 @@ import { useTranslation } from "../shared/i18n/LanguageProvider";
 interface AppShellProps {
   status: string;
   busy: boolean;
+  /** The analysis engine is unavailable. */
+  offline?: boolean;
   children: ReactNode;
   overlays?: ReactNode;
   onOpenSettings?(): void;
@@ -14,6 +16,7 @@ interface AppShellProps {
 export function AppShell({
   status,
   busy,
+  offline = false,
   children,
   overlays,
   onOpenSettings,
@@ -40,7 +43,9 @@ export function AppShell({
         <span className="header-divider" />
         <span className="header-label">{t("shell.workspace")}</span>
         <div className="header-status">
-          <span className={`status-dot ${busy ? "is-busy" : ""}`} />{" "}
+          <span
+            className={`status-dot ${busy ? "is-busy" : offline ? "is-offline" : ""}`}
+          />{" "}
           <span>{status}</span>
         </div>
         {onOpenSettings && (

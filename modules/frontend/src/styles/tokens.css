@@ -1,3 +1,8 @@
+/* The layer order has to come from the first stylesheet the page receives.
+   style-loader injects imported files before index.css itself, so the
+   declaration there arrives too late and utilities would lose to app. */
+@layer tokens, reset, components, app, utilities;
+
 @layer tokens {
   :root {
     color-scheme: dark;

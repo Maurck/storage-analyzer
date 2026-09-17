@@ -29,7 +29,7 @@ On macOS/Linux, use `./mvnw` instead; the start script is Windows-only. Maven is
 java -jar target/sa-backend.jar
 ```
 
-The tests use temporary folders and cover byte totals, lazy expansion, snapshot consistency, cancellation (including a worker that outlives its evicted session), two simultaneous scans, the shared memory budget and its eviction, recovery after limit failures, wide folders, scan expiry, invalid paths, item/depth limits, HTTP errors, CORS and the retired routes. A symbolic-link test is skipped when the operating system does not permit creating links.
+The tests use temporary folders and cover the health document, error codes, progress timing, current path and volume, byte totals, lazy expansion, snapshot consistency, cancellation (including a worker that outlives its evicted session), two simultaneous scans, the shared memory budget and its eviction, recovery after limit failures, wide folders, scan expiry, invalid paths, item/depth limits, HTTP errors, CORS and the retired routes. A symbolic-link test is skipped when the operating system does not permit creating links.
 
 ## Scan API
 
@@ -39,8 +39,14 @@ The tests use temporary folders and cover byte totals, lazy expansion, snapshot 
 | `GET /scans/{id}`                                              | Progress, completion or failure                                                |
 | `DELETE /scans/{id}`                                           | Cancels active work; repeated cancellation is safe                             |
 | `GET /scans/{id}/directory?path=...`                           | Completed snapshot node with its direct children; URL-encode the absolute path |
+| `GET /health`                                                  | `{"application":"storage-analyzer","apiVersion":1,"status":"UP"}`              |
 
-The status object contains `id`, `path`, `status`, `processedFiles`, `processedDirectories`, `processedBytes`, `skippedCount`, `error` and `root`. `status` is `SCANNING`, `COMPLETE`, `CANCELLED` or `ERROR`. `root` is present only for completed scans; it contains one level of children. Poll progress while the status is `SCANNING`.
+The status object contains `id`, `path`, `status`, `processedFiles`, `processedDirectories`, `processedBytes`, `skippedCount`, `error`, `errorCode`, `errorParams`, `elapsedMillis`, `millisSinceActivity`, `currentPath`, `volume` and `root`. `status` is `SCANNING`, `COMPLETE`, `CANCELLED` or `ERROR`. `root` is present only for completed scans; it contains one level of children. Poll progress while the status is `SCANNING`.
+
+- `elapsedMillis`: time since the scan started, frozen once it ends (including when it is cancelled).
+- `millisSinceActivity` and `currentPath`: time since the last recorded entry and the folder being read, only while scanning; otherwise `null`. A long quiet period can be a slow folder, not a hang.
+- `volume`: `{"totalBytes", "usableBytes"}` of the scanned volume when the scan started, or `null` when the platform cannot tell. It is not the space the scanned files take.
+- `errorCode` and `errorParams`: why a scan ended in `ERROR`: `ROOT_UNREADABLE`, `ENTRY_LIMIT` (with `limit`), `MEMORY_BUDGET`, `OUT_OF_MEMORY` or `SCAN_FAILED`. `error` holds an English fallback.
 
 Each directory node retains `name`, `absolutePath`, `type` and `subdirectories`, and adds:
 
@@ -50,7 +56,7 @@ Each directory node retains `name`, `absolutePath`, `type` and `subdirectories`,
 - `hasChildren`: whether the snapshot contains direct children.
 - `childrenLoaded`: whether those children are included in this response. Folder previews have `false`; request the directory endpoint when expanding them.
 - `partial`: some content was inaccessible, excluded or beyond the depth limit. Treat its totals as lower bounds.
-- `error`: explanation for a failed/excluded node; otherwise `null`.
+- `error` and `errorCode`: why a node is excluded, unreadable or partial (`EXCLUDED_LINK`, `DEPTH_LIMIT`, `PATH_UNREADABLE`, `CONTENTS_PARTIALLY_UNREADABLE`); otherwise `null`. The message is an English fallback.
 
 Scans read filesystem metadata and never open file contents. Symbolic links and special files are not followed. Inaccessible paths become explicit partial/error nodes; a failure to read the root produces an `ERROR` scan. A scan is an immutable snapshot: changed files require a new scan, and expansion never silently reads newer filesystem state.
 
@@ -74,11 +80,23 @@ What the budget does **not** bound:
 
 Cancelled and failed scans release their working tree as soon as their worker stops; a cancelled worker keeps its reservation until then, even if its session has already expired. Expired sessions answer `404`, so a client can lose a snapshot it is still displaying when newer scans need the memory. Restarting the backend clears all sessions.
 
-Errors use JSON `{"message":"..."}`: invalid paths return `400`, unreadable roots `403`, expired/missing scans `404`, directory reads before completion `409`, and a busy scanner `429`.
+Errors use JSON `{"code":"...","message":"..."}`. Clients translate `code`; `message` is an English fallback and may change.
+
+| Status | Codes                                                                                                                            |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | `INVALID_REQUEST`, `PATH_REQUIRED`, `PATH_INVALID`, `PATH_NOT_ABSOLUTE`, `FOLDER_NOT_FOUND`, `NOT_A_FOLDER`, `PATH_OUTSIDE_SCAN` |
+| `403`  | `FOLDER_UNREADABLE`                                                                                                              |
+| `404`  | `SCAN_NOT_FOUND`, `PATH_NOT_IN_SCAN`                                                                                             |
+| `409`  | `SCAN_NOT_COMPLETE`                                                                                                              |
+| `429`  | `SCANS_AT_CAPACITY`, `SCANNER_BUSY`                                                                                              |
+
+## Health and compatibility
+
+`GET /health` lets the desktop app tell this service apart from any other program on the port. It checks `application` and `apiVersion`; an open port alone proves nothing. Increase `HealthResource.API_VERSION`, together with `API_VERSION` in `modules/frontend/backend-process.js` and `directory.api.ts`, whenever a change would break a client built for the previous version. The endpoint reads no files and has no side effects.
 
 ## Retired endpoints
 
-`GET /directory` and `GET /directory/mock` were removed; the desktop app never called them. They now answer Spring's default `404`, not the `{"message"}` body above. Use the scan API instead.
+`GET /directory` and `GET /directory/mock` were removed; the desktop app never called them. They now answer Spring's default `404`, not the `{"code","message"}` body above. Use the scan API instead.
 
 ## Local application boundary
 

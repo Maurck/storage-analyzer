@@ -12,7 +12,7 @@ On Windows, from the repository root:
 npm start   # the Electron window, and the Java API it needs
 ```
 
-The desktop app starts the backend itself and stops it again when the window closes or the command is interrupted. A backend already serving `http://127.0.0.1:5000` is reused and left running, so a server you started by hand keeps its logs and survives closing the window. Use `npm run start:backend` to run the API on its own.
+The desktop app starts the backend itself and stops it again when the window closes or the command is interrupted. Until the engine answers, the window explains that it is starting and keeps analyses disabled. A compatible backend already serving `http://127.0.0.1:5000` is reused and left running, so a server you started by hand keeps its logs and survives closing the window; another program on that port is reported, never used. Use `npm run start:backend` to run the API on its own.
 
 The frontend needs `npm ci` and `npm run build` inside `modules/frontend` before its first start. The guides below cover both, including macOS and Linux, where the two processes are started separately.
 

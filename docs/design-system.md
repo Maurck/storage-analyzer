@@ -17,6 +17,8 @@ The implemented product has one storage-analysis workspace. New primitives shoul
 | Focus `#60A5FA` / surface                     | 6.72:1               |
 | Interactive border `#64748B` / surface        | 3.59:1               |
 
+The layer order is declared at the top of `tokens.css`, the first stylesheet injected; a declaration in `index.css` would arrive after the imported files and let `app` override `utilities`, which silently disabled the forced-colors rules before.
+
 Decorative borders may use a quieter token. Controls need the stronger border. Never use color as the sole explanation for errors or partial analysis. Add text and an icon. The chart's exact values remain in its adjacent legend and contents table.
 
 Spacing follows a 4px scale with a 2px half step. Shared typography uses rem units, medium/bold weights and a system font stack. Radius tokens cover 4/8/12/16px and pill shapes. Shadows are reserved for overlays. Z-index tokens define sticky, dropdown, overlay, dialog, toast and tooltip layers. Motion is short and reduced-motion preferences disable nonessential animation.
@@ -48,9 +50,11 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 
 ## States and navigation
 
-- Loading: preserve geometry, show a status message and expose busy state. No invented percentage for indeterminate scans.
+- Service readiness: actions that need the analysis engine stay disabled until its health check answers. Explain the reason (connecting, starting, not responding, stopped, another program or version on the port, unsupported platform) with a real recovery action. Never restart the engine without the person asking; checks may repeat with a growing interval.
+- Loading: preserve geometry, show a status message and expose busy state. No invented percentage for indeterminate scans. Long scans show elapsed time and the folder being read outside live regions; only fixed sentences (a quiet period, no response) are announced.
 - Empty: distinguish no scan, an empty folder, no filter results and no measurable bytes.
-- Error: include context and a recovery action; keep prior successful data.
+- Error: include context and a recovery action; keep prior successful data. Word errors from stable codes in the chosen language; never show the backend's English fallback.
+- Sizes: say that they are logical file sizes, not disk usage, and keep the drive's capacity separate from them. Unknown values are shown as unknown, never as zero.
 - Success: update the persistent status; avoid toasts for routine expansion/selection.
 - Partial: explain exclusions and prefix affected table sizes with a lower-bound marker.
 - Search: use visible scope, native search input, persistent label and a reset action.
@@ -59,13 +63,13 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 - Modal: use `<dialog>.showModal()`, a named dialog, Escape, and focus restoration. Keep lengthy exploration in the workspace.
 - Destructive actions: none exist. If added later, require an explicit target, consequence and appropriately named confirmation; do not reuse scan cancellation as a deletion pattern.
 - Forms: label each input; connect hints/errors with IDs; preserve values after failure.
-- Language: every visible string and accessible name comes from `shared/i18n`, so a new one means a key in both dictionaries; English defines the key type, so a missing Spanish entry fails the build. Settings stay in a dialog rather than a page, which keeps the application free of a router. Sizes and counts follow the operating system, never the selected language, so they keep matching Windows Explorer.
+- Language: every visible string and accessible name comes from `shared/i18n`, so a new one means a key in both dictionaries; English defines the key type, so a missing Spanish entry fails the build. Settings stay in a dialog rather than a page, which keeps the application free of a router. Sizes, counts and percentages follow the system's regional format, never the selected language, so they keep matching Windows Explorer: the desktop app passes the system locale through the preload and `shared/lib/format.ts` groups four-digit numbers the way Windows does. Durations use a language-neutral clock format. Dictionaries load on demand, one chunk per language, to keep the initial bundle under the warning threshold.
 
 ## Responsive and keyboard acceptance
 
 Compact mode is below 768px; regular mode is 768–1199px; wide is 1200px and above. Breakpoint values are documented tokens but media queries use literal values because CSS custom properties cannot be media conditions.
 
-Test keyboard-only operation, 390px windows, long paths, 200% text and 400% browser zoom/reflow. Focus indicators are distinct from selection. Decorative icons are hidden from assistive technology. ARIA tree navigation follows the [W3C tree-view pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/); the target is [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/).
+Test keyboard-only operation, 390px windows, long paths, 200% text, 400% browser zoom/reflow and Windows forced colors. In forced colors, selection uses a thicker `Highlight` border, bars get a `CanvasText` outline and a `Highlight` fill, and status dots keep a system color; values are always written out as text. Focus indicators are distinct from selection. Decorative icons are hidden from assistive technology. ARIA tree navigation follows the [W3C tree-view pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/); the target is [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/).
 
 ## Scaling rules
 

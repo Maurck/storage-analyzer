@@ -12,13 +12,13 @@ npm run build
 npm start
 ```
 
-The interface ships in English and Spanish. The **Settings** button in the header opens a dialog with the language picker; the choice applies immediately, is remembered in `localStorage` and sets the `lang` attribute so screen readers switch voice with it. Without a stored choice the app follows the browser's language and falls back to English. Sizes keep the format Windows Explorer uses on the machine, whichever language is selected.
+The interface ships in English and Spanish. The **Settings** button in the header opens a dialog with the language picker; the choice applies immediately, is remembered in `localStorage` and sets the `lang` attribute so screen readers switch voice with it. Without a stored choice the app follows the browser's language and falls back to English. Each language is a separate chunk loaded on demand. Numbers, sizes and percentages follow the system's regional format, as Windows Explorer does, whichever language is selected: the desktop app passes that locale through the preload, and a browser preview uses the browser's language.
 
-On Windows, `npm start` also starts the [Java backend](../backend/README.md) and stops it when the window closes, when the app quits, or when the command is interrupted; a backend already listening is reused and left running. On macOS and Linux, start it separately. Use **Select folder** to open the native folder picker. Scans only read filesystem metadata. Sizes are logical bytes shown in the units Windows Explorer uses (KB, MB, GB as powers of 1024), not allocated disk space.
+On Windows, `npm start` also starts the [Java backend](../backend/README.md) and stops it when the window closes, when the app quits, or when the command is interrupted. Before starting it, the app asks `GET /health` who is on the port: a compatible backend is reused and left running, while another program or another API version is reported instead of being mistaken for the engine. On macOS and Linux, start the backend separately; the app says so and keeps checking. Use **Select folder** to open the native folder picker. Scans only read filesystem metadata. Sizes are logical bytes shown in the units Windows Explorer uses (KB, MB, GB as powers of 1024), not allocated disk space.
 
 For development, run `npm run build:watch` in another terminal, then reload Electron after the build finishes. The watcher rebuilds bundles; it does not provide hot module replacement.
 
-`STORAGE_ANALYZER_API_URL` configures the local service origin before launching Electron (default `http://localhost:5000`). Only HTTP(S) loopback origins using `localhost` or `127.0.0.1` are accepted. The sandboxed preload exposes exactly `backendUrl` and `selectDirectory()`.
+`STORAGE_ANALYZER_API_URL` configures the local service origin before launching Electron (default `http://localhost:5000`). Only HTTP(S) loopback origins using `localhost` or `127.0.0.1` are accepted. The sandboxed preload exposes exactly `backendUrl`, `numberLocale`, `selectDirectory()`, `getBackendStatus()`, `retryBackend()` and `onBackendStatus(callback)`; the callback receives the status only, never the IPC event.
 
 For a local browser preview:
 
@@ -41,16 +41,20 @@ npm test
 
 Browser tests use installed Google Chrome on Windows if available. Otherwise run `npx playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to a compatible Chromium executable. Tests start a loopback static server and use deterministic API fixtures; no personal files are scanned by the UI suite.
 
-- Data tests: HTTP errors, cancellation, timeout cleanup, response validation and binary formatting.
-- Desktop tests: context isolation, restricted IPC, navigation, native dialog cancellation and window lifecycle.
-- Browser tests: initial/loading/completed/error states, folder-entry validation, selection, keyboard tree navigation, lazy branches, filtering, sorting, pagination, cancellation, restart recovery, compact drawer and focus restoration.
-- axe checks cover the initial and result views plus enlarged text. These checks complement manual keyboard and assistive-technology review; they are not a WCAG certification.
+- Data tests: HTTP errors and their codes, cancellation, timeouts, response and health validation, size/number/percentage/duration formatting in more than one locale.
+- Desktop tests: context isolation, restricted IPC, navigation, native dialog cancellation, window lifecycle, the managed backend's states and retries, and the health probe against real local servers (compatible, other service, other version, closed and unresponsive ports).
+- Browser tests: initial/loading/completed/error states, engine readiness (not responding, starting, each failure reason, another service, a crash after results), progress details, logical-size and drive notes, coded errors in Spanish with system number formats, forced colors, folder-entry validation, selection, keyboard tree navigation, lazy branches, filtering, sorting, pagination, cancellation, restart recovery, compact drawer and focus restoration.
+- axe checks cover the initial, starting, unavailable, progress and result views, Spanish, enlarged text and forced colors (without its color-contrast rule, which cannot read the system palette). These checks complement manual keyboard and assistive-technology review; they are not a WCAG certification.
 
 Optional real integration: with the backend running, execute `node tests/electron-smoke.cjs`. It launches and hides Electron, substitutes the native dialog selection with this project's `src/shared/ui` folder, and checks its real file count/byte total through the isolated preload and HTTP API. `STORAGE_ANALYZER_API_URL` can select another loopback port. The test closes its own Electron instance afterward.
 
 ## Interaction and data rules
 
-- Choose a folder to start an asynchronous scan. Progress displays discovered files and bytes; Cancel scan stops it cooperatively.
+- Analyses unlock only once the engine answers its health check. Until then a banner says whether it is connecting, starting, not responding, stopped, busy with another program or another version, and offers **Try again**. Only that button restarts a managed engine; checks alone never do.
+- If the engine stops after a scan, its results stay on screen as a snapshot. New scans and folders that have not loaded yet stay unavailable until it responds.
+- Choose a folder to start an asynchronous scan. Progress displays discovered files and bytes, the elapsed time and the folder being read. After ten seconds without new items it says so; if the engine stops answering it says that instead. There is no percentage, because the total is unknown. Cancel scan stops it cooperatively.
+- The summary states that sizes are logical, not disk usage, and shows the drive's free space and capacity when the scan started, or that they are unknown.
+- Errors are shown from the backend's codes in the chosen language. An unknown code gets a generic message rather than the backend's English text.
 - A completed scan remains visible while a new scan runs. A failed or cancelled replacement does not discard prior results.
 - Expand folders with Right Arrow; collapse or go to the parent with Left Arrow. Up/Down, Home/End and type-ahead move focus. Enter/Space select. Focus and selection are distinct.
 - Branch data is fetched only when needed and cached by scan ID and absolute path. Search in the explorer covers **loaded items**; it never claims to search the entire filesystem.
@@ -63,4 +67,4 @@ Optional real integration: with the backend running, execute `node tests/electro
 
 The active application is `App.tsx` → `StorageAnalysisPage`, loaded as a separate production chunk. Domain components/hooks/API/types live in `features/storage-analysis`, shared accessible primitives in `shared`, and structural components in `layouts`.
 
-Styles are plain CSS with ordered layers: `tokens`, `reset`, `components`, `app`, `utilities`. See [design-system guidance](../../docs/design-system.md). Legacy source files are retained outside the active import graph while the migration and existing local edits are reviewed; they are not shipped in the bundle.
+Styles are plain CSS with ordered layers: `tokens`, `reset`, `components`, `app`, `utilities`. The order is declared at the top of `tokens.css`, the first stylesheet the page receives; see [design-system guidance](../../docs/design-system.md).

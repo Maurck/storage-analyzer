@@ -9,7 +9,7 @@
 - **Observado:** comportamiento o estructura comprobable en el repositorio.
 - **Propuesto:** decisión de producto recomendada, pendiente de implementación y validación.
 - **[Suposición]:** hipótesis sobre usuarios, impacto o demanda; no equivale a evidencia de uso.
-- **Estado de ejecución:** H0 (limpieza técnica y límites) está **cerrado y verificado** a fecha 2026-09-17; la evidencia figura en §5.2. H1 y los hitos posteriores siguen sin empezar.
+- **Estado de ejecución:** H0 (limpieza técnica y límites) y H1 (motor listo, errores traducibles y progreso) están **cerrados y verificados** a fecha 2026-09-17; la evidencia figura en §5.2. H2 y los hitos posteriores siguen sin empezar.
 
 ---
 
@@ -70,6 +70,8 @@ Para usarla hace falta Node, `npm ci`, `npm run build`, JDK 17 exacto y Maven (v
 
 ### 2.4 Arranque en frío con un mensaje de error engañoso
 
+> **Resuelto en H1:** la interfaz espera a que `/health` responda, explica el estado del motor y solo reintenta a petición de la persona.
+
 `main.js` abre la ventana antes de que la JVM termine de arrancar. Si el usuario elige una carpeta enseguida, recibe _"No se pudo conectar con el servicio local de análisis. Inicia el backend e inténtalo de nuevo"_. Le pide que haga algo que la propia app ya está haciendo. No hay un estado de "Preparando el motor de análisis…".
 
 ### 2.5 El tamaño lógico puede engañar
@@ -92,15 +94,21 @@ Solo se muestran nombre, tipo, tamaño y porcentaje. Faltan:
 
 ### 2.8 Internacionalización incompleta
 
+> **Resuelto en H1**, salvo el título y el botón del diálogo nativo de carpetas, que siguen en inglés (ver pendientes de H1). Los números siguen el formato regional del sistema.
+
 - Los mensajes de error del backend llegan en inglés (`ScanService`). En la interfaz en español, el usuario ve _"This path could not be read…"_ en los errores de rama, en los nodos del árbol (`node.error`) y en los fallos de escaneo.
 - Hay textos fijos en inglés: `Spinner` y `Button` (`"Loading"`), `DirectoryTree.tsx` (`` `Loading ${node.name}` ``) y `formatBytes` (`"Unavailable"`).
 - `formatNumber` usa `en-US` fijo (`1,234`), mientras que `docs/design-system.md` dice que los números "siguen al sistema operativo". Un usuario hispanohablante con Windows en español ve `1.234` en el Explorador y `1,234` aquí. **Hay que decidir qué regla vale y aplicarla de forma coherente.**
 
 ### 2.9 Solo hay tema oscuro
 
+> **Parcialmente atendido en H1 (F15a iniciada):** las reglas de alto contraste ya se aplican y tienen prueba. El tema claro (F15b) sigue pendiente.
+
 `index.html` declara `color-scheme: dark` y no existe un tema claro. Tampoco se ha verificado el modo de alto contraste de Windows (`forced-colors`), un fallo relevante para un producto que se presenta como accesible.
 
 ### 2.10 El progreso del escaneo dice poco
+
+> **Resuelto en H1 (F16a):** tiempo transcurrido, carpeta actual, aviso de periodos sin actividad y aviso de motor sin respuesta, sin porcentajes.
 
 Es indeterminado a propósito (correcto según el design system), pero ni siquiera muestra el tiempo transcurrido ni la carpeta que se está leyendo. En escaneos de varios minutos, el usuario no sabe si la app se ha colgado.
 
@@ -392,8 +400,9 @@ No hay evidencia suficiente para comprometer «0–6 semanas» o «4–12 meses�
 
 | Hito                             | Estado al 2026-09-17         | Evidencia / siguiente acción                                                         |
 | -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------ |
-| H0 · Limpieza y límites          | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H0» debajo. Siguiente: contrato conjunto F9/F11 (H1).    |
-| H1–H3 · Primer recorrido y beta  | **Propuestos**               | Sin entrega declarada en esta revisión. Acordar criterios y ejecutar en orden.       |
+| H0 · Limpieza y límites          | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H0» debajo.                                              |
+| H1 · Motor listo y comprensible  | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H1» debajo. F15a queda iniciada, no cerrada.             |
+| H2–H3 · Primer hallazgo y beta   | **Propuestos**               | Decidir antes el alcance del límite de entradas (pendientes de H0).                  |
 | H4 · Profundidad/recurrencia     | **Backlog condicionado**     | Elegir la siguiente necesidad a partir de pruebas con usuarios.                      |
 | H5–H6 · Acciones y largo alcance | **Investigación o diferido** | Requieren evidencia y garantías adicionales; no autorizan implementación automática. |
 
@@ -420,6 +429,33 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 - `tests/electron-smoke.cjs` espera textos en inglés, pero Electron toma el idioma del sistema. En un Windows en español falla antes de probar nada. Recargar la página tras fijar el idioma con CDP cierra la ventana, así que hay que resolverlo aparte (por ejemplo, con un perfil `userData` temporal para las pruebas). La verificación de H0 se hizo con una copia temporal adaptada al español.
 - **Decisión de producto antes de H2/H3:** con 250.000 entradas y el heap por defecto, analizar `C:\` completo falla. Hay que decidir entre aceptar ese alcance y explicarlo en la interfaz, aumentar el heap y los límites tras medir, o cambiar el almacenamiento del snapshot (§5.6, «Tamaño de datasets objetivo»).
 - Las respuestas de carpetas anchas se construyen con el lock del servicio tomado y sin paginar. Con los fixtures actuales (2.000 hijos) no bloquean; conviene revisarlas si H2 usa fixtures más anchos.
+
+#### Evidencia de cierre de H1 (2026-09-17)
+
+**Entregado:** F9 + F11 como contrato conjunto (`GET /health` con aplicación y versión de API, códigos estables en errores HTTP, escaneos y nodos), F16a y F8a. F15a queda iniciada.
+
+| Criterio de salida                            | Evidencia                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Inicio lento con estado y acción reales       | Electron real con `--start-backend` y el backend real: «Preparando el motor de análisis…» durante 2,8 s, «Conectando…» 0,3 s y después análisis disponibles. Nunca aparece un falso «no responde» (detectado y corregido durante la verificación). Límite de espera de 120 s: `waitForBackend` probado con reloj simulado.                                                                                         |
+| Caída del backend                             | Al terminar la JVM a mano: aviso «El motor de análisis se detuvo» en 0,3 s, estado `failed/exited` y análisis bloqueados. **Reintentar** lo vuelve a arrancar en 3,5 s. Con un backend externo reutilizado que se cae, el aviso llega en 6,8 s (se comprueba cada 5 s) y **Reintentar** arranca el motor propio en 3,5 s. En el navegador, los resultados siguen visibles con el aviso de snapshot (prueba de UI). |
+| Ambos idiomas                                 | Diccionarios completos en inglés y español, comprobados por el tipo `Dictionary`. Prueba de UI con errores codificados (`ENTRY_LIMIT` con parámetro, `SCANNER_BUSY`) en español y sin el texto inglés del backend. axe sin infracciones en español.                                                                                                                                                                |
+| Un puerto ocupado no se confunde con el motor | `probeBackend` probado con servidores HTTP reales: compatible, otra aplicación, otra versión, 404, HTML, puerto cerrado y puerto que no responde. Con Electron real y otro servidor en el puerto 5000: aviso en 0,3 s, nada arrancado y ningún proceso huérfano al cerrar.                                                                                                                                         |
+| Versión incompatible y backend externo        | Pruebas de escritorio (`incompatible`, `already-running`) y de UI (`apiVersion: 2`). Una app sin `--start-backend` no arranca nada, ni siquiera al reintentar.                                                                                                                                                                                                                                                     |
+| No se abren escaneos sin motor listo          | «Elegir carpeta», «Reanalizar», la bienvenida y el diálogo de ruta quedan desactivados; las pruebas de UI comprueban que no se envía ningún `POST /scans`.                                                                                                                                                                                                                                                         |
+| Progreso sin porcentaje inventado             | Tiempo transcurrido congelado al terminar o cancelar (pruebas de backend), carpeta actual, aviso tras 10 s sin elementos y aviso de motor sin respuesta (prueba de UI). Los textos que cambian quedan fuera de las regiones `live`.                                                                                                                                                                                |
+| F8a                                           | El resumen dice «tamaño lógico, no espacio en disco», explica compresión, vínculos físicos y archivos solo en la nube, y separa la capacidad de la unidad (o «desconocida»).                                                                                                                                                                                                                                       |
+| Formato numérico del sistema                  | El preload recibe `app.getSystemLocale()` (`es-PE` en esta máquina). Pruebas con `es-ES` y la interfaz en inglés (`75,0 %`, `1,00 GB`) y con la interfaz en español y el locale `en-US` (`250,000`).                                                                                                                                                                                                               |
+| Regresiones                                   | Backend: 26 pruebas (1 omitida por los enlaces simbólicos). Frontend desde `build/` vacío: `tsc`, webpack sin avisos (paquete inicial de 229 KiB, antes 254 KiB con los diccionarios dentro), 29 pruebas de datos, 22 de escritorio, 32 de UI y smoke de Electron contra el JAR.                                                                                                                                   |
+| Seguridad                                     | El IPC nuevo valida el remitente como el diálogo de carpetas; el preload no expone el evento IPC y descarta locales mal formados. Sin telemetría ni envío de datos.                                                                                                                                                                                                                                                |
+
+**F15a iniciada:** se corrigió un fallo previo por el que ninguna regla de la capa `utilities` (alto contraste, `sr-only`) ganaba a `app`: el orden de capas se declaraba en un archivo que llega después de los importados. Ahora la selección del árbol, las barras y los puntos de estado tienen estilos de alto contraste con prueba. axe no puede evaluar el contraste con colores forzados, así que esa regla se omite solo en esa prueba; falta una revisión manual con alto contraste real de Windows.
+
+**Pendientes detectados en H1:**
+
+- El título y el botón del diálogo nativo de carpetas (`main.js`) siguen en inglés. Traducirlos exige pasar textos validados por IPC.
+- Con colores forzados, las filas no seleccionadas del árbol también muestran borde (el borde transparente se vuelve visible). La selección se distingue por grosor y color, pero el aspecto es recargado.
+- F19a (prueba de empaquetado en una máquina limpia) no se investigó en este hito.
+- `tests/electron-smoke.cjs` sigue dependiendo del idioma del sistema (pendiente de H0); en H1 se actualizó la lista de claves del puente y se verificó con la copia en español.
 
 ### 5.3 Secuencia de entregas
 
@@ -534,4 +570,4 @@ Registrar notas y tiempos localmente con consentimiento. No capturar rutas perso
 | Mantenimiento de reglas y formatos históricos.       | Responsable y capacidad de pruebas/migración definidos.    | Limitar F3/F4 al alcance sostenible.                                                             |
 | Tamaño de datasets objetivo.                         | Mediciones en árboles profundos/anchos con heap declarado. | Decidir paginación, almacenamiento persistente o cambio de arquitectura antes de aumentar topes. |
 
-**Siguiente paso recomendado:** H0 está cerrado; definir el contrato conjunto F9/F11 (H1) y tomar la decisión de alcance sobre el límite de entradas antes de H2. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.
+**Siguiente paso recomendado:** H0 y H1 están cerrados. Antes de H2, tomar la decisión de alcance sobre el límite de entradas y decidir si se completa F15a con una revisión manual de alto contraste. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.

@@ -19,12 +19,16 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Bounded, read-only scans. Completed snapshots are immutable and expanded on demand. */
 @Service
 public class ScanService {
-    static final int MAX_ENTRIES = 100_000_000;
+    static final int MAX_ENTRIES = 250_000;
     static final int MAX_DEPTH = 512;
-    static final int MAX_SESSIONS = 5;
+    static final int MAX_SESSIONS = 3;
+    private static final long MAX_SNAPSHOT_BYTES = 256L * 1024 * 1024;
     private final ExecutorService executor;
     private final int maximumEntries;
     private final int maximumDepth;
+    private final long maximumSnapshotBytes;
+    // Guarded by the service monitor; includes active work and retained snapshots.
+    private long retainedSnapshotBytes;
     private final LinkedHashMap<String, Session> sessions = new LinkedHashMap<>();
 
     public ScanService() {
@@ -41,9 +45,28 @@ public class ScanService {
     }
 
     ScanService(ExecutorService executor, int maximumEntries, int maximumDepth) {
+        this(executor, maximumEntries, maximumDepth, snapshotBudget(Runtime.getRuntime().maxMemory()));
+    }
+
+    ScanService(ExecutorService executor, int maximumEntries, int maximumDepth, long maximumSnapshotBytes) {
+        if (maximumEntries < 1 || maximumDepth < 1 || maximumSnapshotBytes < 1) {
+            throw new IllegalArgumentException("Scan resource limits must be positive.");
+        }
         this.executor = executor;
         this.maximumEntries = maximumEntries;
         this.maximumDepth = maximumDepth;
+        this.maximumSnapshotBytes = maximumSnapshotBytes;
+    }
+
+    static long snapshotBudget(long maximumHeapBytes) {
+        // Leave headroom for Spring, traversal, response DTOs/JSON and garbage collection.
+        return Math.min(MAX_SNAPSHOT_BYTES, maximumHeapBytes / 4);
+    }
+
+    static long estimatedEntryBytes(Path path) {
+        // Conservative accounting, not an object-layout measurement. Include map/list
+        // overhead and path strings/caches; long paths must not cost a single flat unit.
+        return 512L + 4L * path.toString().length();
     }
 
     public ScanStatus start(String requestedPath) {
@@ -62,7 +85,7 @@ public class ScanService {
         while (sessions.size() >= MAX_SESSIONS) {
             String oldest = sessions.values().stream().filter(session -> session.state != State.SCANNING)
                     .map(session -> session.id).findFirst().orElseThrow();
-            sessions.remove(oldest);
+            evict(oldest);
         }
         Session session = new Session(path);
         sessions.put(session.id, session);
@@ -142,7 +165,7 @@ public class ScanService {
                 @Override
                 public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes attributes) {
                     checkCancelled(session);
-                    addEntry(session, path, DirectoryType.FOLDER);
+                    add(session, path, DirectoryType.FOLDER);
                     session.directories.incrementAndGet();
                     return FileVisitResult.CONTINUE;
                 }
@@ -151,12 +174,12 @@ public class ScanService {
                 public FileVisitResult visitFile(Path path, BasicFileAttributes attributes) {
                     checkCancelled(session);
                     if (!attributes.isRegularFile()) {
-                        Entry entry = addEntry(session, path, DirectoryType.ERROR);
+                        Entry entry = add(session, path, DirectoryType.ERROR);
                         entry.partial = true;
                         entry.error = attributes.isDirectory() ? "Maximum scan depth reached." : "Symbolic links and special files are excluded.";
                         session.skipped.incrementAndGet();
                     } else {
-                        Entry entry = addEntry(session, path, DirectoryType.FILE);
+                        Entry entry = add(session, path, DirectoryType.FILE);
                         entry.sizeBytes = attributes.size();
                         entry.fileCount = 1;
                         session.files.incrementAndGet();
@@ -168,7 +191,7 @@ public class ScanService {
                 @Override
                 public FileVisitResult visitFileFailed(Path path, IOException exception) {
                     checkCancelled(session);
-                    Entry entry = addEntry(session, path, DirectoryType.ERROR);
+                    Entry entry = add(session, path, DirectoryType.ERROR);
                     entry.partial = true;
                     entry.error = "This path could not be read. It may require permission or have moved.";
                     session.skipped.incrementAndGet();
@@ -202,7 +225,6 @@ public class ScanService {
                 if (root == null || root.type == DirectoryType.ERROR) {
                     session.error = "The selected folder could not be read.";
                     session.state = State.ERROR;
-                    session.entries.clear();
                 } else {
                     session.state = State.COMPLETE;
                 }
@@ -210,7 +232,15 @@ public class ScanService {
         } catch (CancellationException exception) {
             synchronized (session) {
                 session.state = State.CANCELLED;
-                session.entries.clear();
+            }
+        } catch (OutOfMemoryError error) {
+            // Best-effort terminal state, not a guarantee that the JVM can recover.
+            // Use a constant message and release the working tree in finally.
+            synchronized (session) {
+                if (session.state != State.CANCELLED) {
+                    session.error = "The scanner ran out of memory. Select a smaller folder or restart the local service and try again.";
+                    session.state = State.ERROR;
+                }
             }
         } catch (Exception exception) {
             synchronized (session) {
@@ -218,20 +248,63 @@ public class ScanService {
                     session.error = exception instanceof ScanLimitException ? exception.getMessage() : "The scan could not finish. Check folder access and try again.";
                     session.state = State.ERROR;
                 }
-                session.entries.clear();
+            }
+        } finally {
+            // Never retain the HashMap backing array after cancellation or failure.
+            // A cancelled worker can outlive session eviction; keep charging its
+            // reservations until it actually stops using the working tree.
+            synchronized (this) {
+                if (session.state != State.COMPLETE) releaseEntries(session);
             }
         }
     }
 
-    private Entry addEntry(Session session, Path path, DirectoryType type) {
+    private Entry add(Session session, Path path, DirectoryType type) {
+        Entry entry = addEntry(session, path, type);
+        entryAdded();
+        return entry;
+    }
+
+    /** Test seam: runs on the scan thread after each retained entry, outside the service monitor. */
+    void entryAdded() { }
+
+    /** Estimated bytes held by active work and retained snapshots. */
+    synchronized long retainedSnapshotBytes() {
+        return retainedSnapshotBytes;
+    }
+
+    private synchronized Entry addEntry(Session session, Path path, DirectoryType type) {
+        checkCancelled(session);
         if (session.entries.size() >= maximumEntries) {
             throw new ScanLimitException("This scan exceeded the limit of " + maximumEntries + " items. Select a smaller folder.");
         }
+        long requiredBytes = estimatedEntryBytes(path);
+        while (requiredBytes > maximumSnapshotBytes - retainedSnapshotBytes) {
+            String oldest = sessions.values().stream().filter(candidate -> candidate.state == State.COMPLETE)
+                    .map(candidate -> candidate.id).findFirst().orElse(null);
+            if (oldest == null) {
+                throw new ScanLimitException("The scan reached the shared snapshot memory budget. Select a smaller folder or cancel another scan and try again.");
+            }
+            evict(oldest);
+        }
         Entry entry = new Entry(path, type);
         session.entries.put(path, entry);
+        session.retainedBytes += requiredBytes;
+        retainedSnapshotBytes += requiredBytes;
         Entry parent = session.entries.get(path.getParent());
         if (parent != null) parent.children.add(entry);
         return entry;
+    }
+
+    private void evict(String id) {
+        Session removed = sessions.remove(id);
+        if (removed.state == State.COMPLETE) releaseEntries(removed);
+    }
+
+    private void releaseEntries(Session session) {
+        retainedSnapshotBytes -= session.retainedBytes;
+        session.retainedBytes = 0;
+        session.entries = Map.of();
     }
 
     private static void checkCancelled(Session session) {
@@ -266,14 +339,17 @@ public class ScanService {
             synchronized (session) {
                 if (session.state == State.SCANNING) session.state = State.CANCELLED;
             }
+            if (session.state == State.COMPLETE) releaseEntries(session);
         }
+        sessions.clear();
         executor.shutdownNow();
     }
 
     private static final class Session {
         final String id = UUID.randomUUID().toString();
         final Path path;
-        final Map<Path, Entry> entries = new HashMap<>();
+        Map<Path, Entry> entries = new HashMap<>();
+        long retainedBytes;
         final AtomicLong files = new AtomicLong();
         final AtomicLong directories = new AtomicLong();
         final AtomicLong bytes = new AtomicLong();

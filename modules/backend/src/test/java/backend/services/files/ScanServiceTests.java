@@ -12,10 +12,16 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -148,15 +154,189 @@ class ScanServiceTests {
     }
 
     @Test
+    void sizesTheSharedBudgetFromHeapWithAnAbsoluteCeiling() {
+        long mebibyte = 1024L * 1024;
+        assertEquals(64 * mebibyte, ScanService.snapshotBudget(256 * mebibyte));
+        assertEquals(256 * mebibyte, ScanService.snapshotBudget(8 * 1024 * mebibyte));
+        assertTrue(ScanService.estimatedEntryBytes(temporary.resolve("longer-filename"))
+                > ScanService.estimatedEntryBytes(temporary));
+    }
+
+    @Test
+    void evictsTheOldestSnapshotBeforeExceedingTheSharedMemoryBudget() {
+        service.close();
+        long rootBytes = ScanService.estimatedEntryBytes(temporary);
+        service = new ScanService(Executors.newSingleThreadExecutor(), 100, 128, 2 * rootBytes);
+        String first = finish(service.start(temporary.toString()).id()).id();
+        String second = finish(service.start(temporary.toString()).id()).id();
+        assertEquals(ScanStatus.State.COMPLETE, service.status(first).status());
+        String third = finish(service.start(temporary.toString()).id()).id();
+
+        // Only three sessions were started: eviction is from the shared byte
+        // budget, not the session-count ceiling or the per-scan entry limit.
+        assertEquals(HttpStatus.NOT_FOUND, assertThrows(ApiException.class, () -> service.status(first)).getStatus());
+        assertEquals(ScanStatus.State.COMPLETE, service.status(second).status());
+        assertEquals(ScanStatus.State.COMPLETE, service.status(third).status());
+        assertNotNull(service.directory(third, temporary.toString()));
+    }
+
+    @Test
+    void memoryLimitFailureReleasesItsWorkingTreeAndAllowsAnotherScan() throws Exception {
+        service.close();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Path file = Files.write(temporary.resolve("file.bin"), new byte[4]);
+        long budget = ScanService.estimatedEntryBytes(temporary) + ScanService.estimatedEntryBytes(file) - 1;
+        service = new ScanService(executor, 100, 128, budget);
+
+        ScanStatus failed = finish(service.start(temporary.toString()).id());
+        assertEquals(ScanStatus.State.ERROR, failed.status());
+        assertNull(failed.root());
+        assertTrue(failed.error().contains("memory budget"));
+        assertTrue(failed.error().contains("smaller folder"));
+        executor.submit(() -> { }).get(2, TimeUnit.SECONDS); // includes worker cleanup
+        Files.delete(file);
+
+        ScanStatus recovered = finish(service.start(temporary.toString()).id());
+        assertEquals(ScanStatus.State.COMPLETE, recovered.status());
+        assertEquals(0, recovered.root().getSizeBytes());
+    }
+
+    @Test
+    void refusesAnEntryLargerThanTheEntireMemoryBudget() {
+        service.close();
+        service = new ScanService(Executors.newSingleThreadExecutor(), 100, 128, 1);
+        ScanStatus result = finish(service.start(temporary.toString()).id());
+        assertEquals(ScanStatus.State.ERROR, result.status());
+        assertNull(result.root());
+        assertEquals(0, result.processedDirectories());
+        assertTrue(result.error().contains("memory budget"));
+    }
+
+    @Test
+    void runsTwoScansAtOnceAndChargesBothToTheSharedBudget() throws Exception {
+        service.close();
+        Path first = Files.write(Files.createDirectory(temporary.resolve("first")).resolve("a.bin"), new byte[3]);
+        Path second = Files.write(Files.createDirectory(temporary.resolve("second")).resolve("b.bin"), new byte[5]);
+        CountDownLatch bothRunning = new CountDownLatch(2);
+        AtomicBoolean overlapped = new AtomicBoolean(true);
+        Set<Thread> workers = ConcurrentHashMap.newKeySet();
+        service = new ScanService(Executors.newFixedThreadPool(2), 100, 128, 1024L * 1024) {
+            @Override
+            void entryAdded() {
+                // Each worker waits for the other, so a serial run cannot pass.
+                if (workers.add(Thread.currentThread())) {
+                    bothRunning.countDown();
+                    try {
+                        if (!bothRunning.await(5, TimeUnit.SECONDS)) overlapped.set(false);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        };
+
+        String a = service.start(first.getParent().toString()).id();
+        String b = service.start(second.getParent().toString()).id();
+        assertEquals(3, finish(a).root().getSizeBytes());
+        assertEquals(5, finish(b).root().getSizeBytes());
+        assertTrue(overlapped.get());
+        assertEquals(estimate(first.getParent(), first, second.getParent(), second), service.retainedSnapshotBytes());
+
+        service.close();
+        assertEquals(0, service.retainedSnapshotBytes());
+    }
+
+    @Test
+    void cancellingMidScanKeepsItsReservationUntilTheWorkerStops() throws Exception {
+        service.close();
+        List<Path> files = new ArrayList<>();
+        for (int i = 0; i < 5; i++) files.add(Files.write(temporary.resolve("file" + i), new byte[1]));
+        CountDownLatch paused = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger added = new AtomicInteger();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        service = new ScanService(executor, 100, 128, 1024L * 1024) {
+            @Override
+            void entryAdded() {
+                if (added.incrementAndGet() != 3) return;
+                paused.countDown();
+                // Ignore the cancellation interrupt until released, like a
+                // worker stuck in a slow filesystem call, then restore it.
+                boolean interrupted = false;
+                while (true) {
+                    try {
+                        release.await();
+                        break;
+                    } catch (InterruptedException exception) {
+                        interrupted = true;
+                    }
+                }
+                if (interrupted) Thread.currentThread().interrupt();
+            }
+        };
+        try {
+            String cancelled = service.start(temporary.toString()).id();
+            assertTrue(paused.await(5, TimeUnit.SECONDS));
+            long reserved = service.retainedSnapshotBytes();
+            assertTrue(reserved > 0);
+            assertEquals(ScanStatus.State.CANCELLED, service.cancel(cancelled).status());
+            assertNull(service.status(cancelled).root());
+
+            // Enough new scans to evict the cancelled session while its worker still holds entries.
+            List<String> replacements = new ArrayList<>();
+            for (int i = 0; i < ScanService.MAX_SESSIONS; i++) {
+                replacements.add(finish(service.start(temporary.toString()).id()).id());
+            }
+            assertEquals(HttpStatus.NOT_FOUND, assertThrows(ApiException.class, () -> service.status(cancelled)).getStatus());
+            long perScan = estimate(files.toArray(Path[]::new)) + ScanService.estimatedEntryBytes(temporary);
+            assertEquals(reserved + ScanService.MAX_SESSIONS * perScan, service.retainedSnapshotBytes());
+
+            release.countDown();
+            long retained = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+                while (service.retainedSnapshotBytes() != ScanService.MAX_SESSIONS * perScan) Thread.sleep(5);
+                return service.retainedSnapshotBytes();
+            });
+            assertEquals(ScanService.MAX_SESSIONS * perScan, retained);
+            for (String id : replacements) assertEquals(ScanStatus.State.COMPLETE, service.status(id).status());
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void expandsWideFoldersWithEveryDirectChild() throws Exception {
+        Path wide = Files.createDirectory(temporary.resolve("wide"));
+        long expectedBytes = 0;
+        for (int i = 0; i < 2_000; i++) {
+            Files.write(wide.resolve("item-" + i + ".bin"), new byte[i % 7]);
+            expectedBytes += i % 7;
+        }
+        ScanStatus complete = finish(service.start(temporary.toString()).id());
+        assertEquals(1, complete.root().getSubdirectories().size());
+
+        // Direct children are not paginated: a wide folder returns all of them at once.
+        Directory loaded = service.directory(complete.id(), wide.toString());
+        assertEquals(2_000, loaded.getSubdirectories().size());
+        assertEquals(2_000, loaded.getFileCount());
+        assertEquals(expectedBytes, loaded.getSizeBytes());
+        assertEquals(6, loaded.getSubdirectories().get(0).getSizeBytes());
+        assertTrue(loaded.getSubdirectories().stream().allMatch(child -> child.getSubdirectories().isEmpty()));
+    }
+
+    @Test
     void stopsAtTheItemLimitWithoutPublishingMisleadingTotals() throws Exception {
         service.close();
-        service = new ScanService(Executors.newSingleThreadExecutor(), 2, 128);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        service = new ScanService(executor, 2, 128, 2 * ScanService.estimatedEntryBytes(temporary.resolve("second")));
         Files.write(temporary.resolve("first"), new byte[2]);
         Files.write(temporary.resolve("second"), new byte[3]);
         ScanStatus result = finish(service.start(temporary.toString()).id());
         assertEquals(ScanStatus.State.ERROR, result.status());
         assertNull(result.root());
         assertTrue(result.error().contains("limit"));
+        executor.submit(() -> { }).get(2, TimeUnit.SECONDS);
+        Files.delete(temporary.resolve("second"));
+        assertEquals(ScanStatus.State.COMPLETE, finish(service.start(temporary.toString()).id()).status());
     }
 
     @Test
@@ -192,6 +372,12 @@ class ScanServiceTests {
 
     private void assertBadPath(String path) {
         assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ApiException.class, () -> service.start(path)).getStatus());
+    }
+
+    private static long estimate(Path... paths) {
+        long total = 0;
+        for (Path path : paths) total += ScanService.estimatedEntryBytes(path);
+        return total;
     }
 
     private ScanStatus finish(String id) {

@@ -25,28 +25,10 @@ public class Directory {
     @Setter boolean partial;
     @Setter String error;
 
-    public Directory(String name, String absolutePath, DirectoryType type, List<Directory> subdirectories) {
-        this(name, absolutePath, type);
-        this.subdirectories = subdirectories;
-        this.hasChildren = !subdirectories.isEmpty();
-    }
-
     public Directory(String name, String absolutePath, DirectoryType type) {
         this.name = name;
         this.absolutePath = absolutePath;
         this.type = type;
     }
 
-    public Directory(String name, String absolutePath) {
-        this.name = name;
-        this.absolutePath = absolutePath;
-    }
-
-    public boolean isFile() {
-        return type.equals(DirectoryType.FILE);
-    }
-
-    public void setTypeByIsFile(boolean isFile) {
-        type = isFile ? DirectoryType.FILE : DirectoryType.FOLDER;
-    }
 }

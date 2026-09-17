@@ -44,17 +44,19 @@ class StorageApiTests {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isString());
         mvc.perform(get("/scans/missing"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").isString());
-        mvc.perform(get("/directory").param("path", "relative"))
+        mvc.perform(post("/scans").contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("path", "relative"))))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isString());
     }
 
     @Test
-    void preservesLegacyDirectoryAndMockEndpoints() throws Exception {
+    void doesNotExposeRetiredDirectoryAndMockEndpoints() throws Exception {
+        mvc.perform(get("/directory"))
+                .andExpect(status().isNotFound());
         mvc.perform(get("/directory").param("path", temporary.toString()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.type").value("FOLDER"))
-                .andExpect(jsonPath("$.subdirectories").isArray()).andExpect(jsonPath("$.sizeBytes").value(0));
+                .andExpect(status().isNotFound());
         mvc.perform(get("/directory/mock"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.subdirectories").isArray());
+                .andExpect(status().isNotFound());
     }
 
     @Test

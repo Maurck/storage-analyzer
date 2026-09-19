@@ -124,6 +124,10 @@ All three need a completed scan (`409 SCAN_NOT_COMPLETE` otherwise) and answer `
 
 `GET /directory` and `GET /directory/mock` were removed; the desktop app never called them. They now answer Spring's default `404`, not the `{"code","message"}` body above. Use the scan API instead.
 
+## Lifetime
+
+With `--storage-analyzer.parent-pid=<pid>`, the backend exits as soon as that process ends, or right away if it is already gone. The installed desktop app passes its own process id, so a killed app never leaves a JVM holding the port. Without the property, as when started by hand or by `start-backend.ps1`, nothing is watched.
+
 ## Local application boundary
 
 The server binds to loopback. Allowed browser origins are `localhost` and `127.0.0.1` on ports `3000`, `5173` and `8080`, plus the `null` origin used by Electron's local-file renderer. Credentials are not enabled. This is a trusted local API without authentication; CORS is a browser policy, not access control for other local processes. Do not expose this service publicly without an authentication and path-access design.

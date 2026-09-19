@@ -29,6 +29,17 @@ node tests/serve.cjs
 
 Open `http://127.0.0.1:8080`. Browser mode asks for an absolute folder path on the backend machine because the native picker is only available inside Electron.
 
+## Windows installer
+
+`npm run dist` builds the interface, runs `scripts/prepare-package.cjs` and calls electron-builder:
+
+1. The script tests and packages the backend with `start-backend.ps1`, then uses `jlink` from the JDK 17 in `.tools/java17` (or `JAVA_HOME`) to create `package-resources/runtime` with only the modules the backend needs (from `jdeps`, plus charsets and locale data), and copies the JAR beside it.
+2. electron-builder produces `dist/Storage-Analyzer-Setup-<version>.exe`: an NSIS installer, per user and without elevation, that ships the app, the runtime and the JAR (about 152 MiB; 396 MiB installed). Only English and Spanish Chromium locales are kept. The installer is not code-signed.
+
+Once installed, `app.isPackaged` makes the app manage its own backend without `--start-backend`: it runs `resources/runtime/bin/java.exe -jar resources/backend/sa-backend.jar` with `--storage-analyzer.parent-pid` set to its own process, so the backend exits with the app even when the app is killed. Backend output goes to `logs/backend.log` in the app's data folder (`%APPDATA%\Storage Analyzer`), rotated to `backend.old.log` past 5 MB. Uninstalling removes that folder; updating keeps it.
+
+`scripts/verify-install.ps1 -Installer <setup.exe> [-UpdateInstaller <newer setup.exe>]` checks the installer end to end: per-user install into a folder with spaces and non-ASCII characters, start with a `PATH` that has no developer tools, a scan of a Unicode fixture, forced and normal close without a leftover JVM, update keeping data, and uninstall removing app, data and shortcuts. `scripts/sandbox/start-sandbox.ps1` runs the same checks in Windows Sandbox, a clean Windows without network access; enabling Windows Sandbox needs an administrator once.
+
 ## Verification
 
 ```sh

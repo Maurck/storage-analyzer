@@ -158,6 +158,8 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     processedBytes: data.root.sizeBytes,
     skippedCount: 0,
     elapsedMillis: 1000,
+    startedAt: "2026-03-04T05:06:07Z",
+    finishedAt: status === "SCANNING" ? null : "2026-03-04T05:06:08Z",
     volume: { totalBytes: 500 * GB, usableBytes: 200 * GB },
     root: status === "COMPLETE" ? data.preview(data.root) : null,
     ...state.extras,
@@ -341,7 +343,7 @@ async function prepare(page: Page, options: ApiOptions = {}) {
 
 async function analyze(page: Page) {
   await page
-    .getByRole("button", { name: "Select folder", exact: true })
+    .getByRole("button", { name: "New analysis", exact: true })
     .first()
     .click();
   if ((page.viewportSize()?.width ?? 1440) < 768) {
@@ -381,7 +383,7 @@ test("initial state explains the next action and passes accessibility checks", a
 }) => {
   const { requests } = await prepare(page);
   await expect(
-    page.getByRole("button", { name: "Select folder", exact: true }).first(),
+    page.getByRole("button", { name: "New analysis", exact: true }).first(),
   ).toBeVisible();
   await expect(page.getByRole("tree")).toHaveCount(0);
   expect(requests.starts).toBe(0);
@@ -397,11 +399,11 @@ test("cancelling the native folder picker does not start a scan", async ({
     window.storageAnalyzer!.selectDirectory = async () => null;
   });
   await page
-    .getByRole("button", { name: "Select folder", exact: true })
+    .getByRole("button", { name: "New analysis", exact: true })
     .first()
     .click();
   await expect(
-    page.getByRole("button", { name: "Select folder", exact: true }).first(),
+    page.getByRole("button", { name: "New analysis", exact: true }).first(),
   ).toBeEnabled();
   await expect(page.getByRole("tree")).toHaveCount(0);
   expect(requests.starts).toBe(0);
@@ -414,9 +416,7 @@ test("browser folder entry preserves input and recovers from validation errors",
   await page.evaluate(() => {
     delete window.storageAnalyzer;
   });
-  await page
-    .getByRole("button", { name: "Select folder", exact: true })
-    .click();
+  await page.getByRole("button", { name: "New analysis", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Choose a folder" });
   const input = dialog.getByRole("textbox", { name: "Folder path" });
   await expect(input).toBeFocused();
@@ -559,7 +559,7 @@ test("a failed scan start shows an actionable error and can be retried", async (
 }) => {
   const { requests } = await prepare(page, { startErrors: 1 });
   await page
-    .getByRole("button", { name: "Select folder", exact: true })
+    .getByRole("button", { name: "New analysis", exact: true })
     .first()
     .click();
   await expect(page.getByRole("alert").first()).toBeVisible();
@@ -590,7 +590,7 @@ test("a persistent polling failure offers recovery for the existing scan", async
 }) => {
   const { requests, state } = await prepare(page, { pollErrors: 20 });
   await page
-    .getByRole("button", { name: "Select folder", exact: true })
+    .getByRole("button", { name: "New analysis", exact: true })
     .first()
     .click();
   await expect(
@@ -642,7 +642,9 @@ test("a rescan retains previous results while scanning and after cancellation", 
   const { requests, state } = await prepare(page);
   await analyze(page);
   state.pending = true;
-  await page.getByRole("button", { name: "Rescan", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Rescan Fixture", exact: true })
+    .click();
   await expect(
     page.getByRole("button", { name: "Cancel scan", exact: true }),
   ).toBeVisible();
@@ -663,7 +665,7 @@ test("a rescan retains previous results while scanning and after cancellation", 
 test("an active scan can be cancelled and started again", async ({ page }) => {
   const { requests, state } = await prepare(page, { pending: true });
   await page
-    .getByRole("button", { name: "Select folder", exact: true })
+    .getByRole("button", { name: "New analysis", exact: true })
     .first()
     .click();
   await page.getByRole("button", { name: "Cancel scan", exact: true }).click();
@@ -676,7 +678,7 @@ test("an active scan can be cancelled and started again", async ({ page }) => {
   expect(requests.cancels).toBe(1);
   state.pending = false;
   await page
-    .getByRole("button", { name: "Select folder", exact: true })
+    .getByRole("button", { name: "New analysis", exact: true })
     .first()
     .click();
   await expect(
@@ -690,14 +692,12 @@ test("an expired scan releases controls and can be replaced", async ({
 }) => {
   const { state, requests } = await prepare(page, { pending: true });
   state.expiredId = "scan-fixture-1";
-  await page
-    .getByRole("button", { name: "Select folder", exact: true })
-    .click();
+  await page.getByRole("button", { name: "New analysis", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Analysis session expired" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Select folder", exact: true }),
+    page.getByRole("button", { name: "New analysis", exact: true }),
   ).toBeEnabled();
   await expect(
     page.getByRole("button", { name: "Cancel scan", exact: true }),
@@ -719,9 +719,7 @@ test("a pending cancellation cannot overwrite a replacement scan", async ({
   state.cancelGate = new Promise<void>((resolve) => {
     releaseCancel = resolve;
   });
-  await page
-    .getByRole("button", { name: "Select folder", exact: true })
-    .click();
+  await page.getByRole("button", { name: "New analysis", exact: true }).click();
   await page.getByRole("button", { name: "Cancel scan", exact: true }).click();
   await expect.poll(() => requests.cancels).toBe(1);
   state.pending = false;
@@ -729,15 +727,13 @@ test("a pending cancellation cannot overwrite a replacement scan", async ({
     page.getByRole("table", { name: /^Contents of Fixture/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Select folder", exact: true }),
+    page.getByRole("button", { name: "New analysis", exact: true }),
   ).toBeDisabled();
   releaseCancel();
   await expect(
-    page.getByRole("button", { name: "Select folder", exact: true }),
+    page.getByRole("button", { name: "New analysis", exact: true }),
   ).toBeEnabled();
-  await page
-    .getByRole("button", { name: "Select folder", exact: true })
-    .click();
+  await page.getByRole("button", { name: "New analysis", exact: true }).click();
   await expect.poll(() => requests.starts).toBe(2);
   await expect(page.locator(".header-status")).toHaveText("Analysis complete");
   await expect(
@@ -777,7 +773,7 @@ test("compact windows and 200 percent text retain reachable content without body
     document.documentElement.style.fontSize = "200%";
   });
   await expect(
-    page.getByRole("button", { name: "Select folder", exact: true }).first(),
+    page.getByRole("button", { name: "New analysis", exact: true }).first(),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -816,7 +812,7 @@ test("the language can be switched from settings and survives a reload", async (
     page.getByRole("heading", { name: "Resumen de almacenamiento." }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Elegir carpeta", exact: true }).first(),
+    page.getByRole("button", { name: "Nuevo análisis", exact: true }).first(),
   ).toBeVisible();
   await checkAccessibility(page);
 
@@ -850,7 +846,7 @@ test("switching language keeps the analysis and the Explorer sizes", async ({
 });
 
 const selectFolder = (page: Page) =>
-  page.getByRole("button", { name: "Select folder", exact: true });
+  page.getByRole("button", { name: "New analysis", exact: true });
 
 test("analyses wait until the engine answers its health check", async ({
   page,
@@ -953,7 +949,10 @@ test("results stay visible when the engine stops and analyses resume when it ret
 }) => {
   const { state } = await prepare(page);
   await analyze(page);
-  const rescan = page.getByRole("button", { name: "Rescan", exact: true });
+  const rescan = page.getByRole("button", {
+    name: "Rescan Fixture",
+    exact: true,
+  });
   await expect(rescan).toBeEnabled();
   state.health = "down";
   const banner = page.locator(".service-banner");
@@ -968,10 +967,14 @@ test("results stay visible when the engine stops and analyses resume when it ret
   ).toBeVisible();
   await expect(rescan).toBeDisabled();
   await expect(page.locator(".header-status")).toHaveText("Engine unavailable");
+  await expect(page.locator(".state-tag")).toHaveText(
+    "Kept from the last analysis",
+  );
   state.health = "up";
   await banner.getByRole("button", { name: "Try again" }).click();
   await expect(banner).toHaveCount(0);
   await expect(rescan).toBeEnabled();
+  await expect(page.locator(".state-tag")).toHaveText("Complete");
 });
 
 test("a long scan shows elapsed time, the folder being read and quiet periods", async ({
@@ -1017,12 +1020,24 @@ test("the summary separates logical sizes from the drive's capacity", async ({
 }) => {
   const { state } = await prepare(page);
   await analyze(page);
+  const help = page.getByText("How sizes are calculated");
+  await expect(page.getByText(/not the space they take on disk/)).toBeHidden();
+  await help.focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByText(/not the space they take on disk/)).toBeVisible();
+  await expect(page.getByText(/not live monitoring/)).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Analysis summary" })
+      .getByText("Logical file size, not disk usage"),
+  ).toBeVisible();
   await expect(
     page.getByText("Drive at the start of the analysis: 200 GB free of 500 GB"),
   ).toBeVisible();
   state.extras = { volume: null };
-  await page.getByRole("button", { name: "Rescan", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Rescan Fixture", exact: true })
+    .click();
   await expect(page.getByText("Drive capacity: unknown")).toBeVisible();
 });
 
@@ -1041,7 +1056,7 @@ test("coded errors follow the interface language while numbers follow the system
     errorParams: { limit: 250000 },
   };
   await page
-    .getByRole("button", { name: "Elegir carpeta", exact: true })
+    .getByRole("button", { name: "Nuevo análisis", exact: true })
     .click();
   // The browser locale is en-US, so the number keeps English separators.
   await expect(
@@ -1081,8 +1096,18 @@ test("the system's regional format applies even with an English interface", asyn
     page.getByRole("figure", { name: /Fixture: 1,00 GB/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Storage overview." }),
+    page.getByRole("heading", { name: "Analysis of Fixture", level: 1 }),
   ).toBeVisible();
+  // The analysis date follows the system's regional format too.
+  const date = new Intl.DateTimeFormat("es-ES", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(Date.parse("2026-03-04T05:06:08Z"));
+  await expect(page.locator(".work-meta time")).toHaveText(`Analyzed ${date}`);
+  await expect(page.locator(".work-meta time")).toHaveAttribute(
+    "datetime",
+    "2026-03-04T05:06:08Z",
+  );
 });
 
 test("forced colors keep the selection and share bars distinguishable", async ({
@@ -1223,7 +1248,9 @@ test("show in Explorer targets the chosen item and explains a moved one", async 
     (window as any).__desktop.showResult = { ok: true };
   });
   await page.getByRole("radio", { name: "Folder contents" }).check();
-  await page.getByRole("button", { name: "Show Fixture in Explorer" }).click();
+  await page
+    .getByRole("button", { name: "Show in Explorer", exact: true })
+    .click();
   await expect.poll(async () => (await shown()).length).toBe(3);
   expect((await shown())[2].path).toBe("/fixture");
 });
@@ -1318,6 +1345,7 @@ test("a partial analysis warns about its ranking and lists what it skipped", asy
     },
   });
   await analyze(page);
+  await expect(page.locator(".state-tag")).toHaveText("Partial");
   await showLargest(page);
   const card = page.locator(".largest-card");
   await expect(card).toContainText(
@@ -1506,4 +1534,180 @@ test("forced colors keep the chosen view and filter visible", async ({
     path: "test-results/largest-forced-colors.png",
     fullPage: true,
   });
+});
+
+test("at 1280×720 the controls and first rows come before any chart (T5)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await prepare(page);
+  await analyze(page);
+  const table = page.getByRole("table", { name: /^Contents of Fixture/ });
+  const firstRow = table.locator("tbody tr").first();
+  await expect(firstRow).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  for (const name of ["New analysis", "Rescan Fixture", "Show in Explorer"])
+    await expect(
+      page.getByRole("button", { name, exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+  await expect(
+    page.getByRole("heading", { name: "Analysis of Fixture", level: 1 }),
+  ).toBeVisible();
+  await expect(page.locator(".state-tag")).toHaveText("Complete");
+  // The chart follows the table and can be hidden.
+  const figure = page.getByRole("figure", { name: /Fixture: 1.00 GB/ });
+  expect((await figure.boundingBox())!.y).toBeGreaterThan(
+    (await table.boundingBox())!.y,
+  );
+  const chartToggle = page.getByRole("button", { name: "Hide chart" });
+  await expect(chartToggle).toHaveAttribute("aria-expanded", "true");
+  await chartToggle.click();
+  await expect(figure).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Show chart" }),
+  ).toHaveAttribute("aria-expanded", "false");
+  // The size explanation opens from the keyboard; the essentials stay visible.
+  const summary = page.getByRole("region", { name: "Analysis summary" });
+  await expect(summary).toContainText("Logical file size, not disk usage");
+  await expect(
+    summary.getByText(/not the space they take on disk/),
+  ).toBeHidden();
+  await summary.getByText("How sizes are calculated").focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    summary.getByText(/not the space they take on disk/),
+  ).toBeVisible();
+  await checkAccessibility(page);
+  await page.screenshot({ path: "test-results/workspace-1280x720.png" });
+});
+
+test("at 390 px the compact summary does not push results below cards and a chart", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepare(page, { partialRoot: true, scanExtras: { skippedCount: 2 } });
+  await analyze(page);
+  await page.keyboard.press("Escape");
+  const summary = page.getByRole("region", { name: "Analysis summary" });
+  expect((await summary.boundingBox())!.height).toBeLessThan(200);
+  // The partial warning stays visible even though the summary is compact.
+  await expect(
+    page.getByText("Some items could not be measured"),
+  ).toBeVisible();
+  const table = page.getByRole("table", { name: /^Contents of Fixture/ });
+  const figure = page.getByRole("figure", { name: /Fixture: 1.00 GB/ });
+  expect((await figure.boundingBox())!.y).toBeGreaterThan(
+    (await table.boundingBox())!.y,
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: "test-results/workspace-390.png" });
+});
+
+test("recent folders are reachable from New analysis and can stop being saved (T5)", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page, {
+    bridge: { common: [{ id: "downloads", path: "/fixture" }] },
+  });
+  await analyze(page);
+  const toggle = page.getByRole("button", {
+    name: "Recent and common folders",
+  });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  const menu = page.getByRole("region", { name: "Recent and common folders" });
+  await expect(
+    menu.getByRole("heading", { name: "Recent folders", exact: true }),
+  ).toBeVisible();
+  await expect(
+    menu.getByRole("heading", { name: "Common folders", exact: true }),
+  ).toBeVisible();
+  await checkAccessibility(page);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+  // Analyzing from the menu closes it and starts right away.
+  await toggle.click();
+  await menu.getByRole("button", { name: "fixture /fixture" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(() => requests.starts).toBe(2);
+
+  // Turning the preference off hides the list without deleting it.
+  await page.getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const remember = settings.getByRole("checkbox", {
+    name: "Save recent folders",
+  });
+  await expect(remember).toBeChecked();
+  await expect(settings).toContainText("1 saved");
+  await remember.uncheck();
+  await settings.getByRole("button", { name: "Done" }).click();
+  await toggle.click();
+  await expect(
+    menu.getByRole("heading", { name: "Recent folders", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    menu.getByRole("heading", { name: "Common folders", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.reload();
+  const quick = page.getByRole("region", { name: "Start quickly" });
+  await expect(
+    quick.getByRole("heading", { name: "Common folders", exact: true }),
+  ).toBeVisible();
+  await expect(
+    quick.getByRole("heading", { name: "Recent folders", exact: true }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("storage-analyzer:remember-recent"),
+    ),
+  ).toBe("false");
+
+  // Clearing is a separate, named operation.
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(remember).not.toBeChecked();
+  await remember.check();
+  await expect(settings).toContainText("1 saved");
+  await settings.getByRole("button", { name: "Clear recent folders" }).click();
+  await expect(
+    settings.getByRole("status").filter({ hasText: "Recent folders cleared" }),
+  ).toBeVisible();
+  await expect(
+    settings.getByRole("button", { name: "Clear recent folders" }),
+  ).toBeDisabled();
+  await settings.getByRole("button", { name: "Done" }).click();
+  await expect(
+    quick.getByRole("heading", { name: "Recent folders", exact: true }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("storage-analyzer:recent-folders"),
+    ),
+  ).toBe("[]");
+});
+
+test("an engine that stops during a scan is reported once, by its banner", async ({
+  page,
+}) => {
+  const { state } = await prepare(page, { pending: true });
+  await selectFolder(page).click();
+  const progress = page.getByRole("region", { name: "Analysis progress" });
+  await expect(progress).toBeVisible();
+  state.health = "down";
+  await expect(page.locator(".service-banner")).toContainText(
+    "The analysis engine stopped responding",
+    { timeout: 8000 },
+  );
+  await expect(progress).toContainText(
+    "Waiting for the analysis engine to answer",
+  );
+  await expect(page.getByText("Connection interrupted")).toHaveCount(0);
 });

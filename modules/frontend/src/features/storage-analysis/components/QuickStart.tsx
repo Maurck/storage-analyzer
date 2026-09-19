@@ -7,6 +7,9 @@ import { folderName } from "../../../shared/lib/recentFolders";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 interface QuickStartProps {
+  /** Defaults to "Start quickly"; the id must be unique on the page. */
+  title?: string;
+  titleId?: string;
   recent: string[];
   common: CommonFolder[];
   disabled: boolean;
@@ -17,6 +20,8 @@ interface QuickStartProps {
 
 /** One click to analyze a recent or common folder. Nothing runs on its own. */
 export function QuickStart({
+  title,
+  titleId = "quick-start-title",
   recent,
   common,
   disabled,
@@ -27,8 +32,8 @@ export function QuickStart({
   const { t } = useTranslation();
   if (recent.length === 0 && common.length === 0) return null;
   return (
-    <section className="quick-start" aria-labelledby="quick-start-title">
-      <h2 id="quick-start-title">{t("quick.title")}</h2>
+    <section className="quick-start" aria-labelledby={titleId}>
+      <h2 id={titleId}>{title ?? t("quick.title")}</h2>
       {recent.length > 0 && (
         <div className="quick-group">
           <div className="quick-group-heading">

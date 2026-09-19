@@ -1,4 +1,4 @@
-import React, { RefObject } from "react";
+import React, { RefObject, useEffect, useState } from "react";
 import { Button } from "../../shared/ui/Button";
 import { IconButton } from "../../shared/ui/IconButton";
 import { Icon } from "../../shared/ui/Icon";
@@ -10,6 +10,10 @@ interface SettingsDialogProps {
   dialogRef: RefObject<HTMLDialogElement>;
   /** From the analysis engine once it is ready. */
   capacity?: { maxEntries: number; referencePathLength: number };
+  rememberRecent: boolean;
+  onRememberRecentChange(remember: boolean): void;
+  recentCount: number;
+  onClearRecent(): void;
 }
 
 // Key names are the same in every language on the keyboards the app supports.
@@ -20,8 +24,19 @@ const shortcuts: [string, TranslationKey][] = [
   ["Alt+←", "shortcuts.parent"],
 ];
 
-export function SettingsDialog({ dialogRef, capacity }: SettingsDialogProps) {
+export function SettingsDialog({
+  dialogRef,
+  capacity,
+  rememberRecent,
+  onRememberRecentChange,
+  recentCount,
+  onClearRecent,
+}: SettingsDialogProps) {
   const { language, setLanguage, t } = useTranslation();
+  const [cleared, setCleared] = useState(false);
+  useEffect(() => {
+    if (recentCount > 0) setCleared(false);
+  }, [recentCount]);
 
   return (
     <dialog
@@ -60,6 +75,39 @@ export function SettingsDialog({ dialogRef, capacity }: SettingsDialogProps) {
         </p>
       </div>
       <p className="settings-note">{t("settings.sizesNote")}</p>
+      <section className="settings-section" aria-labelledby="recent-title">
+        <h3 id="recent-title">{t("settings.recentTitle")}</h3>
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={rememberRecent}
+            aria-describedby="recent-hint"
+            onChange={(event) => onRememberRecentChange(event.target.checked)}
+          />
+          {t("settings.rememberRecent")}
+        </label>
+        <p id="recent-hint" className="settings-hint">
+          {t("settings.rememberRecentHint")}
+        </p>
+        <div className="settings-row">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={recentCount === 0}
+            onClick={() => {
+              onClearRecent();
+              setCleared(true);
+            }}
+          >
+            {t("quick.clear")}
+          </Button>
+          <span className="settings-hint" role="status">
+            {cleared
+              ? t("settings.recentCleared")
+              : t("settings.recentCount", { count: formatNumber(recentCount) })}
+          </span>
+        </div>
+      </section>
       <section className="settings-section" aria-labelledby="capacity-title">
         <h3 id="capacity-title">{t("capacity.title")}</h3>
         <p className="settings-hint">

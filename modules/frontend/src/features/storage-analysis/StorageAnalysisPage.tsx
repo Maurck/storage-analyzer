@@ -24,7 +24,11 @@ import { Skeleton } from "../../shared/ui/Skeleton";
 import { Alert } from "../../shared/components/Alert";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { ErrorState } from "../../shared/components/ErrorState";
-import { formatBytes, formatNumber } from "../../shared/lib/format";
+import {
+  formatBytes,
+  formatDateTime,
+  formatNumber,
+} from "../../shared/lib/format";
 import {
   describeCode,
   useErrorMessage,
@@ -37,11 +41,21 @@ import {
   clearRecentFolders,
   forgetFolder,
   readRecentFolders,
+  readRememberRecent,
   rememberFolder,
+  writeRememberRecent,
 } from "../../shared/lib/recentFolders";
 import { AppShell } from "../../layouts/AppShell";
 import { SettingsDialog } from "../settings/SettingsDialog";
+import { QuickAccessMenu } from "./components/QuickAccessMenu";
 import { useTranslation } from "../../shared/i18n/LanguageProvider";
+
+const resultStateLabels = {
+  complete: "work.stateComplete",
+  partial: "work.statePartial",
+  preserved: "work.statePreserved",
+  previous: "work.statePrevious",
+} as const;
 
 export function StorageAnalysisPage() {
   const { scan, snapshot, start, cancel, query, busy, expired } =
@@ -66,6 +80,9 @@ export function StorageAnalysisPage() {
   const [view, setView] = useState<"folder" | "largest">("folder");
   const [skippedOpen, setSkippedOpen] = useState(false);
   const [recent, setRecent] = useState(readRecentFolders);
+  const [rememberRecent, setRememberRecent] = useState(readRememberRecent);
+  // Turning the preference off hides the list; only clearing deletes it.
+  const visibleRecent = rememberRecent ? recent : [];
   const [common, setCommon] = useState<CommonFolder[]>([]);
   const skippedDialog = useRef<HTMLDialogElement>(null);
   const pathDialog = useRef<HTMLDialogElement>(null);
@@ -160,7 +177,8 @@ export function StorageAnalysisPage() {
     setPickerError("");
     cancel.reset();
     const started = await start.mutateAsync(path.trim());
-    setRecent((folders) => rememberFolder(folders, started.path));
+    if (rememberRecent)
+      setRecent((folders) => rememberFolder(folders, started.path));
     pathDialog.current?.close();
   }
 
@@ -286,6 +304,59 @@ export function StorageAnalysisPage() {
               ? t("status.cancelled")
               : t("status.ready");
 
+  // What the results on screen are: a finished analysis, or the last one kept
+  // while a new analysis runs or the engine is away.
+  const resultState = busy
+    ? "previous"
+    : !serviceReady
+      ? "preserved"
+      : root?.partial
+        ? "partial"
+        : "complete";
+  const analyzedAt = snapshot?.finishedAt ?? snapshot?.startedAt ?? undefined;
+  const pageActions = (
+    <div className="page-actions">
+      {snapshot && root && (
+        <Button
+          variant="secondary"
+          onClick={rescan}
+          disabled={busy || !serviceReady}
+          aria-keyshortcuts={SHORTCUTS.rescan}
+        >
+          <Icon name="refresh" size={17} />
+          {t("page.rescan", { name: root.name })}
+        </Button>
+      )}
+      <div className="new-analysis">
+        <Button
+          onClick={() => {
+            void chooseFolder();
+          }}
+          disabled={busy || !serviceReady}
+          loading={start.isLoading}
+          aria-keyshortcuts={SHORTCUTS.chooseFolder}
+        >
+          <Icon name="folder-open" size={18} />
+          {t("page.selectFolder")}
+        </Button>
+        {root && (
+          <QuickAccessMenu
+            recent={visibleRecent}
+            common={common}
+            disabled={busy || !serviceReady}
+            onAnalyze={(path) => {
+              void begin(path).catch(() => {});
+            }}
+            onForget={(path) =>
+              setRecent((folders) => forgetFolder(folders, path))
+            }
+            onClear={() => setRecent(clearRecentFolders())}
+          />
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <AppShell
       status={statusText}
@@ -297,7 +368,17 @@ export function StorageAnalysisPage() {
       onOpenSettings={() => settingsDialog.current?.showModal()}
       overlays={
         <>
-          <SettingsDialog dialogRef={settingsDialog} capacity={capacity.data} />
+          <SettingsDialog
+            dialogRef={settingsDialog}
+            capacity={capacity.data}
+            rememberRecent={rememberRecent}
+            onRememberRecentChange={(value) => {
+              writeRememberRecent(value);
+              setRememberRecent(value);
+            }}
+            recentCount={recent.length}
+            onClearRecent={() => setRecent(clearRecentFolders())}
+          />
           <SkippedItemsDialog
             dialogRef={skippedDialog}
             scanId={snapshot?.id}
@@ -324,42 +405,41 @@ export function StorageAnalysisPage() {
         </>
       }
     >
-      <section className="page-heading" aria-labelledby="page-title">
-        <div>
-          <div className="eyebrow">
-            <span className="eyebrow-line" /> {t("page.eyebrow")}
+      {root && snapshot ? (
+        <section className="work-header" aria-labelledby="page-title">
+          <div className="work-heading">
+            <h1 id="page-title">{t("work.title", { name: root.name })}</h1>
+            <p className="work-meta">
+              <span className={`state-tag state-tag--${resultState}`}>
+                {t(resultStateLabels[resultState])}
+              </span>
+              {analyzedAt && (
+                <time dateTime={analyzedAt}>
+                  {t("work.analyzedAt", { date: formatDateTime(analyzedAt) })}
+                </time>
+              )}
+              <span className="work-path" title={snapshot.path}>
+                {snapshot.path}
+              </span>
+            </p>
           </div>
-          <h1 id="page-title">
-            {t("page.title")}
-            <span className="heading-period">.</span>
-          </h1>
-          <p>{t("page.subtitle")}</p>
-        </div>
-        <div className="page-actions">
-          {snapshot && (
-            <Button
-              variant="secondary"
-              onClick={rescan}
-              disabled={busy || !serviceReady}
-              aria-keyshortcuts={SHORTCUTS.rescan}
-            >
-              <Icon name="refresh" size={17} />
-              {t("page.rescan")}
-            </Button>
-          )}
-          <Button
-            onClick={() => {
-              void chooseFolder();
-            }}
-            disabled={busy || !serviceReady}
-            loading={start.isLoading}
-            aria-keyshortcuts={SHORTCUTS.chooseFolder}
-          >
-            <Icon name="folder-open" size={18} />
-            {t("page.selectFolder")}
-          </Button>
-        </div>
-      </section>
+          {pageActions}
+        </section>
+      ) : (
+        <section className="page-heading" aria-labelledby="page-title">
+          <div>
+            <div className="eyebrow">
+              <span className="eyebrow-line" /> {t("page.eyebrow")}
+            </div>
+            <h1 id="page-title">
+              {t("page.title")}
+              <span className="heading-period">.</span>
+            </h1>
+            <p>{t("page.subtitle")}</p>
+          </div>
+          {pageActions}
+        </section>
+      )}
       <ServiceStatusBanner
         status={service.status}
         hasResults={!!snapshot}
@@ -382,7 +462,8 @@ export function StorageAnalysisPage() {
           />
         </div>
       )}
-      {query.isError && (
+      {/* When the engine is away, its banner already explains the failure. */}
+      {query.isError && (expired || serviceReady) && (
         <div className="page-feedback">
           <ErrorState
             title={
@@ -450,18 +531,20 @@ export function StorageAnalysisPage() {
           onChooseFolder={chooseFolder}
           disabled={!serviceReady}
           quickStart={
-            <QuickStart
-              recent={recent}
-              common={common}
-              disabled={!serviceReady}
-              onAnalyze={(path) => {
-                void begin(path).catch(() => {});
-              }}
-              onForget={(path) =>
-                setRecent((folders) => forgetFolder(folders, path))
-              }
-              onClear={() => setRecent(clearRecentFolders())}
-            />
+            (visibleRecent.length > 0 || common.length > 0) && (
+              <QuickStart
+                recent={visibleRecent}
+                common={common}
+                disabled={!serviceReady}
+                onAnalyze={(path) => {
+                  void begin(path).catch(() => {});
+                }}
+                onForget={(path) =>
+                  setRecent((folders) => forgetFolder(folders, path))
+                }
+                onClear={() => setRecent(clearRecentFolders())}
+              />
+            )
           }
         />
       )}
@@ -569,9 +652,9 @@ export function StorageAnalysisPage() {
                         </Button>
                       )}
                       {showSelected.available && (
-                        <IconButton
-                          label={t("show.itemLabel", { name: selected.name })}
+                        <Button
                           variant="ghost"
+                          size="sm"
                           onClick={() => {
                             void showSelected.show(
                               selected.name,
@@ -579,32 +662,35 @@ export function StorageAnalysisPage() {
                             );
                           }}
                         >
-                          <Icon name="folder-open" size={18} />
-                        </IconButton>
+                          <Icon name="folder-open" size={17} />
+                          {t("show.button")}
+                        </Button>
                       )}
-                      <IconButton
-                        label={t("selection.copyPath")}
+                      <Button
                         variant="ghost"
+                        size="sm"
                         onClick={() => {
                           void copyPath();
                         }}
                       >
-                        <Icon name="copy" size={18} />
-                      </IconButton>
-                      {selected.type === "FOLDER" && (
-                        <IconButton
-                          label={
-                            showChart
+                        <Icon name="copy" size={17} />
+                        {t("selection.copyPath")}
+                      </Button>
+                      {selected.type === "FOLDER" &&
+                        selected.childrenLoaded && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-expanded={showChart}
+                            aria-controls="space-distribution"
+                            onClick={() => setShowChart((value) => !value)}
+                          >
+                            <Icon name="grid" size={17} />
+                            {showChart
                               ? t("selection.hideChart")
-                              : t("selection.showChart")
-                          }
-                          aria-pressed={showChart}
-                          variant="ghost"
-                          onClick={() => setShowChart((value) => !value)}
-                        >
-                          <Icon name="grid" size={18} />
-                        </IconButton>
-                      )}
+                              : t("selection.showChart")}
+                          </Button>
+                        )}
                     </div>
                   </div>
                   <p
@@ -682,17 +768,20 @@ export function StorageAnalysisPage() {
                   />
                 ) : selected.childrenLoaded ? (
                   <>
-                    {showChart && (
-                      <SpaceDistribution
-                        node={selected}
-                        onSelect={selectNode}
-                      />
-                    )}
                     <ContentsTable
                       key={selected.absolutePath}
                       node={selected}
                       onSelect={selectNode}
                     />
+                    {/* After the table: the chart complements the list. */}
+                    <div id="space-distribution" hidden={!showChart}>
+                      {showChart && (
+                        <SpaceDistribution
+                          node={selected}
+                          onSelect={selectNode}
+                        />
+                      )}
+                    </div>
                   </>
                 ) : (
                   !branchError && (

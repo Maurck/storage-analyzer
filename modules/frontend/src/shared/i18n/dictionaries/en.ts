@@ -16,6 +16,12 @@ export const en = {
   "settings.done": "Done",
   "settings.language": "Language",
   "settings.languageHint": "Applies immediately.",
+  "settings.recentTitle": "Recent folders",
+  "settings.rememberRecent": "Save recent folders",
+  "settings.rememberRecentHint":
+    "Only on this computer. Turning this off stops saving folders and hides the list without deleting it. Nothing on the disk is deleted.",
+  "settings.recentCount": "{count} saved",
+  "settings.recentCleared": "Recent folders cleared",
   "settings.sizesNote":
     "Sizes keep the format Windows Explorer uses on this computer, whichever language you pick.",
 
@@ -28,8 +34,18 @@ export const en = {
   "page.eyebrow": "KNOW YOUR STORAGE",
   "page.title": "Storage overview",
   "page.subtitle": "See what’s taking up space. Find what matters.",
-  "page.rescan": "Rescan",
-  "page.selectFolder": "Select folder",
+  "page.rescan": "Rescan {name}",
+  "page.selectFolder": "New analysis",
+  "page.quickAccess": "Recent and common folders",
+
+  "work.title": "Analysis of {name}",
+  "work.analyzedAt": "Analyzed {date}",
+  "work.stateComplete": "Complete",
+  "work.statePartial": "Partial",
+  "work.statePreserved": "Kept from the last analysis",
+  "work.statePrevious": "Previous results",
+  "work.snapshotNote":
+    "Results are a reading of that moment, not live monitoring. Analyze again to see later changes.",
 
   "welcome.eyebrow": "A CLEARER VIEW OF YOUR FILES",
   "welcome.title": "A little clarity. A lot of space.",
@@ -83,12 +99,9 @@ export const en = {
   "summary.totalSize": "Total size",
   "summary.logicalSize": "Logical file size, not disk usage",
   "summary.filesAnalyzed": "Files analyzed",
-  "summary.filesAcross": "Across the selected folder",
+  "summary.howCalculated": "How sizes are calculated",
   "summary.subfolders": "Subfolders",
-  "summary.subfoldersHint": "A hierarchy to explore",
   "summary.skipped": "Skipped items",
-  "summary.skippedIncomplete": "Some sizes may be incomplete",
-  "summary.skippedNone": "No read errors reported",
   "summary.partialTitle": "Some items could not be measured",
   "summary.partialDescription":
     "Results show readable file bytes only. Symbolic links, inaccessible files, or scan limits may leave totals incomplete.",
@@ -115,7 +128,7 @@ export const en = {
   "selection.files": "{count} files",
   "selection.incomplete": "Incomplete",
   "selection.explorer": "Explorer",
-  "selection.copyPath": "Copy folder path",
+  "selection.copyPath": "Copy path",
   "selection.copied": "Path copied",
   "selection.copyFailed":
     "Could not copy. Select and copy the path displayed below.",

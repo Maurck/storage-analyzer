@@ -26,7 +26,7 @@ const path = require('node:path');
     expect(bridge.nodeAvailable).toBe(false);
     await page.locator('button[aria-keyshortcuts="Control+O"]').click();
     await expect(page.locator('.contents-card table')).toBeVisible({ timeout: 30000 });
-    await expect(page.locator('.metric-grid')).toContainText(String(expectedFiles.length));
+    await expect(page.locator('.summary-strip')).toContainText(String(expectedFiles.length));
     const table = page.locator('.contents-card table');
     await expect(table.locator('tbody tr')).toHaveCount(expectedFiles.length);
     const scan = await page.evaluate(async (folder) => {

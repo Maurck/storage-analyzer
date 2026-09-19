@@ -6,6 +6,7 @@ import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 interface WelcomeStateProps {
   onChooseFolder(): void;
   disabled?: boolean;
+  /** Recent or common folders; the illustration gives way to them. */
   quickStart?: ReactNode;
 }
 
@@ -17,20 +18,22 @@ export function WelcomeState({
   const { t } = useTranslation();
   return (
     <section className="welcome-panel">
-      <div className="welcome-art" aria-hidden="true">
-        <div className="art-orbit orbit-one" />
-        <div className="art-orbit orbit-two" />
-        <div className="art-file file-left">
-          <Icon name="file" size={30} />
+      {!quickStart && (
+        <div className="welcome-art" aria-hidden="true">
+          <div className="art-orbit orbit-one" />
+          <div className="art-orbit orbit-two" />
+          <div className="art-file file-left">
+            <Icon name="file" size={30} />
+          </div>
+          <div className="art-folder">
+            <Icon name="folder-open" size={64} />
+          </div>
+          <div className="art-file file-right">
+            <Icon name="grid" size={26} />
+          </div>
+          <span className="art-spark" />
         </div>
-        <div className="art-folder">
-          <Icon name="folder-open" size={64} />
-        </div>
-        <div className="art-file file-right">
-          <Icon name="grid" size={26} />
-        </div>
-        <span className="art-spark" />
-      </div>
+      )}
       <span className="eyebrow">{t("welcome.eyebrow")}</span>
       <h2>{t("welcome.title")}</h2>
       <p>{t("welcome.description")}</p>

@@ -13,6 +13,7 @@ interface ScanSummaryProps {
   onOpenSkipped?(): void;
 }
 
+/** A compact strip, so the results start within the first screen. */
 export function ScanSummary({
   root,
   skippedCount,
@@ -22,73 +23,68 @@ export function ScanSummary({
   const { t } = useTranslation();
   return (
     <>
-      <section className="metric-grid" aria-label={t("summary.label")}>
-        <div className="metric-card metric-primary">
-          <span className="metric-label">
-            <Icon name="hard-drive" size={18} />
-            {root.partial ? t("summary.knownSize") : t("summary.totalSize")}
-          </span>
-          <strong>{formatBytes(root.sizeBytes)}</strong>
-          <small>{t("summary.logicalSize")}</small>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">
-            <Icon name="file" size={18} />
-            {t("summary.filesAnalyzed")}
-          </span>
-          <strong>{formatNumber(root.fileCount)}</strong>
-          <small>{t("summary.filesAcross")}</small>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">
-            <Icon name="folder" size={18} />
-            {t("summary.subfolders")}
-          </span>
-          <strong>{formatNumber(root.directoryCount)}</strong>
-          <small>{t("summary.subfoldersHint")}</small>
-        </div>
-        <div
-          className={`metric-card ${skippedCount > 0 ? "metric-warning" : ""}`}
-        >
-          <span className="metric-label">
-            <Icon name={skippedCount > 0 ? "alert" : "check"} size={18} />
-            {t("summary.skipped")}
-          </span>
-          <strong>{formatNumber(skippedCount)}</strong>
-          <small>
-            {root.partial
-              ? t("summary.skippedIncomplete")
-              : t("summary.skippedNone")}
-          </small>
-          {skippedCount > 0 && onOpenSkipped && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="metric-action"
-              onClick={onOpenSkipped}
-            >
-              {t("skipped.open")}
-            </Button>
-          )}
+      <section className="summary-strip" aria-label={t("summary.label")}>
+        <dl className="summary-figures">
+          <div className="summary-figure summary-figure--primary">
+            <dt>
+              {root.partial ? t("summary.knownSize") : t("summary.totalSize")}
+            </dt>
+            <dd>
+              <strong>{formatBytes(root.sizeBytes)}</strong>
+              <small>{t("summary.logicalSize")}</small>
+            </dd>
+          </div>
+          <div className="summary-figure">
+            <dt>{t("summary.filesAnalyzed")}</dt>
+            <dd>
+              <strong>{formatNumber(root.fileCount)}</strong>
+            </dd>
+          </div>
+          <div
+            className={`summary-figure ${skippedCount > 0 ? "summary-figure--warning" : ""}`}
+          >
+            <dt>
+              {skippedCount > 0 && <Icon name="alert" size={15} />}
+              {t("summary.skipped")}
+            </dt>
+            <dd>
+              <strong>{formatNumber(skippedCount)}</strong>
+              {skippedCount > 0 && onOpenSkipped && (
+                <Button variant="ghost" size="sm" onClick={onOpenSkipped}>
+                  {t("skipped.open")}
+                </Button>
+              )}
+            </dd>
+          </div>
+          <div className="summary-figure summary-figure--secondary">
+            <dt>{t("summary.subfolders")}</dt>
+            <dd>
+              <strong>{formatNumber(root.directoryCount)}</strong>
+            </dd>
+          </div>
+        </dl>
+        <div className="summary-notes">
+          <p className="volume-note">
+            <Icon name="hard-drive" size={16} />
+            <span>
+              {volume
+                ? t("summary.volume", {
+                    free: formatBytes(volume.usableBytes),
+                    total: formatBytes(volume.totalBytes),
+                  })
+                : t("summary.volumeUnknown")}
+            </span>
+          </p>
+          <details className="size-help">
+            <summary>
+              <Icon name="info" size={16} />
+              {t("summary.howCalculated")}
+            </summary>
+            <p>{t("summary.sizeNote")}</p>
+            <p>{t("work.snapshotNote")}</p>
+          </details>
         </div>
       </section>
-      <div className="size-context">
-        <p className="size-note">
-          <Icon name="info" size={16} />
-          <span>{t("summary.sizeNote")}</span>
-        </p>
-        <p className="volume-note">
-          <Icon name="hard-drive" size={16} />
-          <span>
-            {volume
-              ? t("summary.volume", {
-                  free: formatBytes(volume.usableBytes),
-                  total: formatBytes(volume.totalBytes),
-                })
-              : t("summary.volumeUnknown")}
-          </span>
-        </p>
-      </div>
       {root.partial && (
         <div className="page-feedback">
           <Alert variant="warning" title={t("summary.partialTitle")}>

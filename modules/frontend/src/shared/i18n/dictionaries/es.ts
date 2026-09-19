@@ -15,6 +15,12 @@ export const es: Dictionary = {
   "settings.done": "Listo",
   "settings.language": "Idioma",
   "settings.languageHint": "Se aplica al instante.",
+  "settings.recentTitle": "Carpetas recientes",
+  "settings.rememberRecent": "Guardar carpetas recientes",
+  "settings.rememberRecentHint":
+    "Solo en este equipo. Desactivarlo deja de guardar carpetas y oculta la lista sin borrarla. No se borra nada del disco.",
+  "settings.recentCount": "{count} guardadas",
+  "settings.recentCleared": "Carpetas recientes borradas",
   "settings.sizesNote":
     "Los tamaños mantienen el formato que usa el Explorador de Windows en este equipo, sea cual sea el idioma que elijas.",
 
@@ -27,8 +33,18 @@ export const es: Dictionary = {
   "page.eyebrow": "CONOCE TU ALMACENAMIENTO",
   "page.title": "Resumen de almacenamiento",
   "page.subtitle": "Mira qué ocupa espacio. Encuentra lo que importa.",
-  "page.rescan": "Volver a analizar",
-  "page.selectFolder": "Elegir carpeta",
+  "page.rescan": "Volver a analizar {name}",
+  "page.selectFolder": "Nuevo análisis",
+  "page.quickAccess": "Carpetas recientes y habituales",
+
+  "work.title": "Análisis de {name}",
+  "work.analyzedAt": "Analizado el {date}",
+  "work.stateComplete": "Completo",
+  "work.statePartial": "Parcial",
+  "work.statePreserved": "Conservado del último análisis",
+  "work.statePrevious": "Resultados anteriores",
+  "work.snapshotNote":
+    "Los resultados son una lectura de ese momento, no una supervisión en vivo. Vuelve a analizar para ver cambios posteriores.",
 
   "welcome.eyebrow": "UNA VISTA MÁS CLARA DE TUS ARCHIVOS",
   "welcome.title": "Un poco de claridad. Mucho espacio.",
@@ -84,12 +100,9 @@ export const es: Dictionary = {
   "summary.totalSize": "Tamaño total",
   "summary.logicalSize": "Tamaño lógico de los archivos, no espacio en disco",
   "summary.filesAnalyzed": "Archivos analizados",
-  "summary.filesAcross": "En toda la carpeta elegida",
+  "summary.howCalculated": "Cómo se calculan los tamaños",
   "summary.subfolders": "Subcarpetas",
-  "summary.subfoldersHint": "Una jerarquía para explorar",
   "summary.skipped": "Elementos omitidos",
-  "summary.skippedIncomplete": "Algunos tamaños pueden estar incompletos",
-  "summary.skippedNone": "Sin errores de lectura",
   "summary.partialTitle": "No se pudieron medir algunos elementos",
   "summary.partialDescription":
     "Los resultados solo incluyen los bytes legibles. Los enlaces simbólicos, los archivos inaccesibles o los límites del análisis pueden dejar los totales incompletos.",
@@ -116,7 +129,7 @@ export const es: Dictionary = {
   "selection.files": "{count} archivos",
   "selection.incomplete": "Incompleto",
   "selection.explorer": "Explorador",
-  "selection.copyPath": "Copiar la ruta de la carpeta",
+  "selection.copyPath": "Copiar ruta",
   "selection.copied": "Ruta copiada",
   "selection.copyFailed":
     "No se pudo copiar. Selecciona y copia la ruta que aparece abajo.",

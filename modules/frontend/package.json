@@ -1,7 +1,7 @@
 {
   "name": "storage-analyzer",
   "private": true,
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "productName": "Storage Analyzer",
   "description": "See what takes up space in a folder, locally and read-only.",
   "main": "main.js",

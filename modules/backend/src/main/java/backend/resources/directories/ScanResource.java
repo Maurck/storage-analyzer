@@ -2,6 +2,7 @@ package backend.resources.directories;
 
 import backend.models.Ancestry;
 import backend.models.Directory;
+import backend.models.FileSearch;
 import backend.models.LargestFiles;
 import backend.models.ScanStatus;
 import backend.models.SkippedItems;
@@ -55,6 +56,16 @@ public class ScanResource {
                                 @RequestParam(defaultValue = "100") int limit,
                                 @RequestParam(defaultValue = "0") long minSizeBytes) {
         return scanService.largest(id, limit, minSizeBytes);
+    }
+
+    @GetMapping("/{id}/files")
+    public FileSearch files(@PathVariable String id,
+                            @RequestParam(defaultValue = "") String query,
+                            @RequestParam(required = false) String scope,
+                            @RequestParam(defaultValue = "0") long minSizeBytes,
+                            @RequestParam(defaultValue = "0") int offset,
+                            @RequestParam(defaultValue = "50") int limit) {
+        return scanService.search(id, query, scope, minSizeBytes, offset, limit);
     }
 
     @GetMapping("/{id}/skipped")

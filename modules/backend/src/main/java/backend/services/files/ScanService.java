@@ -5,6 +5,7 @@ import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
 import backend.models.Ancestry;
 import backend.models.Directory;
+import backend.models.FileSearch;
 import backend.models.LargestFiles;
 import backend.models.SkippedItems;
 import backend.models.ScanStatus;
@@ -39,6 +40,13 @@ public class ScanService {
     static final int MAX_RANKED_FILES = 500;
     /** Skipped items listed per snapshot; the count beyond it is still reported. */
     static final int MAX_RECORDED_SKIPS = 10_000;
+    /** Longest page of search results, and how far into the matches pages may reach. */
+    static final int MAX_SEARCH_PAGE = 100;
+    static final int MAX_SEARCH_WINDOW = 10_000;
+    static final int MAX_QUERY_LENGTH = 1_024;
+    /** Largest first; equal sizes by path so the order never depends on hashing. */
+    private static final Comparator<Entry> SIZE_ORDER = Comparator.comparingLong((Entry entry) -> entry.sizeBytes)
+            .reversed().thenComparing(entry -> entry.path.toString());
     private final ExecutorService executor;
     private final int maximumEntries;
     private final int maximumDepth;
@@ -181,95 +189,214 @@ public class ScanService {
         return snapshot(session);
     }
 
-    public synchronized Directory directory(String id, String requestedPath) {
-        return toDirectory(findEntry(completed(id), requestedPath), true);
+    // Queries below read a completed snapshot outside the service monitor: it never
+    // changes once published, and the monitor stays free for the progress and
+    // cancellation of other scans while a query walks millions of entries.
+
+    public Directory directory(String id, String requestedPath) {
+        Snapshot snapshot = completedSnapshot(id);
+        return toDirectory(findEntry(snapshot, requestedPath), true);
     }
 
     /** One node of a completed scan without its children, e.g. to confirm it belongs to the scan. */
-    public synchronized Directory entry(String id, String requestedPath) {
-        return toDirectory(findEntry(completed(id), requestedPath), false);
+    public Directory entry(String id, String requestedPath) {
+        Snapshot snapshot = completedSnapshot(id);
+        return toDirectory(findEntry(snapshot, requestedPath), false);
     }
 
     /**
      * An entry of a completed scan and the folders that lead to it, root first, each with
      * its direct children: only what a client needs to open the entry's folder.
      */
-    public synchronized Ancestry ancestors(String id, String requestedPath) {
-        Session session = completed(id);
-        Entry entry = findEntry(session, requestedPath);
+    public Ancestry ancestors(String id, String requestedPath) {
+        Snapshot snapshot = completedSnapshot(id);
+        Entry entry = findEntry(snapshot, requestedPath);
         LinkedList<Directory> ancestors = new LinkedList<>();
-        for (Path path = entry.path; !path.equals(session.path); ) {
+        for (Path path = entry.path; !path.equals(snapshot.session.path); ) {
             path = path.getParent();
-            ancestors.addFirst(toDirectory(session.entries.get(path), true));
+            ancestors.addFirst(toDirectory(snapshot.entries.get(path), true));
         }
-        return new Ancestry(session.id, toDirectory(entry, false), List.copyOf(ancestors));
+        return new Ancestry(snapshot.session.id, toDirectory(entry, false), List.copyOf(ancestors));
     }
 
     /**
      * The largest files of a completed scan. The first request ranks the snapshot once
      * with a bounded heap; later ones only filter that ranking.
      */
-    public synchronized LargestFiles largest(String id, int limit, long minSizeBytes) {
+    public LargestFiles largest(String id, int limit, long minSizeBytes) {
         if (limit < 1 || limit > MAX_RANKED_FILES || minSizeBytes < 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
                     "Ask for 1 to " + MAX_RANKED_FILES + " files and a minimum size of 0 bytes or more.");
         }
-        Session session = completed(id);
-        if (session.ranked == null) session.ranked = rank(session);
+        Snapshot snapshot = completedSnapshot(id);
+        Session session = snapshot.session;
+        List<Entry> ranked;
+        synchronized (this) {
+            ranked = session.ranked;
+        }
+        if (ranked == null) {
+            ranked = rank(snapshot.entries.values());
+            synchronized (this) {
+                // Kept only while its snapshot is; an evicted session must not hold it.
+                if (session.entries == snapshot.entries) session.ranked = ranked;
+            }
+        }
         long matching = 0;
-        for (Entry entry : session.entries.values()) {
+        for (Entry entry : snapshot.entries.values()) {
             if (entry.type == DirectoryType.FILE && entry.sizeBytes >= minSizeBytes) matching++;
         }
-        List<LargestFiles.RankedFile> files = session.ranked.stream()
+        List<LargestFiles.RankedFile> files = ranked.stream()
                 .filter(entry -> entry.sizeBytes >= minSizeBytes)
                 .limit(limit)
-                .map(entry -> new LargestFiles.RankedFile(name(entry.path), entry.path.toString(),
-                        session.path.relativize(entry.path).toString(), entry.sizeBytes))
+                .map(entry -> rankedFile(session, entry))
                 .toList();
-        return new LargestFiles(session.id, session.path.toString(), session.entries.get(session.path).partial,
+        return new LargestFiles(session.id, session.path.toString(), snapshot.root().partial,
                 limit, minSizeBytes, matching, files);
     }
 
+    /**
+     * A page of the files under a folder of a completed scan, subfolders included, whose
+     * path from the root contains the query, largest first. Every file under the scope is
+     * filtered before the page is cut, so the count is exact and nothing depends on the
+     * ranking's bounded list. Case and the kind of path separator are ignored.
+     */
+    public FileSearch search(String id, String query, String scopePath, long minSizeBytes, int offset, int limit) {
+        String needle = query == null ? "" : query.strip();
+        if (limit < 1 || limit > MAX_SEARCH_PAGE || offset < 0 || offset > MAX_SEARCH_WINDOW - limit
+                || minSizeBytes < 0 || needle.length() > MAX_QUERY_LENGTH) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
+                    "Ask for 1 to " + MAX_SEARCH_PAGE + " files within the first " + MAX_SEARCH_WINDOW
+                            + " matches, a minimum size of 0 bytes or more and a query of at most "
+                            + MAX_QUERY_LENGTH + " characters.");
+        }
+        Snapshot snapshot = completedSnapshot(id);
+        Session session = snapshot.session;
+        Entry scope = scopePath == null || scopePath.isBlank() ? snapshot.root() : findEntry(snapshot, scopePath);
+        if (scope.type != DirectoryType.FOLDER) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.NOT_A_FOLDER, "Search within a folder of the scan, not a file.");
+        }
+        String root = session.path.toString();
+        // Roots such as C:\ already end with a separator.
+        int relativeStart = session.path.getNameCount() == 0 ? root.length() : root.length() + 1;
+        int window = offset + limit;
+        PriorityQueue<Entry> smallestKept = new PriorityQueue<>(window + 1, SIZE_ORDER.reversed());
+        long matching = 0;
+        ArrayDeque<Entry> pending = new ArrayDeque<>();
+        pending.push(scope);
+        while (!pending.isEmpty()) {
+            Entry entry = pending.pop();
+            searchStep();
+            if (entry.type == DirectoryType.FOLDER) {
+                for (Entry child : entry.children) pending.push(child);
+            } else if (entry.type == DirectoryType.FILE && entry.sizeBytes >= minSizeBytes
+                    && containsIgnoringCase(entry.path.toString(), relativeStart, needle)) {
+                matching++;
+                if (smallestKept.size() < window) {
+                    smallestKept.add(entry);
+                } else if (SIZE_ORDER.compare(entry, smallestKept.peek()) < 0) {
+                    smallestKept.poll();
+                    smallestKept.add(entry);
+                }
+            }
+        }
+        List<Entry> kept = new ArrayList<>(smallestKept);
+        kept.sort(SIZE_ORDER);
+        List<LargestFiles.RankedFile> files = kept.stream().skip(offset).map(entry -> rankedFile(session, entry)).toList();
+        return new FileSearch(session.id, root, scope.path.toString(), scope.partial, needle, minSizeBytes,
+                offset, limit, matching, files);
+    }
+
+    /** Test seam: runs on the requesting thread for each entry a search visits, outside the service monitor. */
+    void searchStep() { }
+
+    /** Whether {@code text}, from {@code from} on, contains {@code needle} ignoring case and separator kind. */
+    static boolean containsIgnoringCase(String text, int from, String needle) {
+        for (int start = from, last = text.length() - needle.length(); start <= last; start++) {
+            int i = 0;
+            while (i < needle.length() && sameCharacter(text.charAt(start + i), needle.charAt(i))) i++;
+            if (i == needle.length()) return true;
+        }
+        return false;
+    }
+
+    private static boolean sameCharacter(char a, char b) {
+        if (a == b) return true;
+        if ((a == '/' || a == '\\') && (b == '/' || b == '\\')) return true;
+        // Both directions, as String.regionMatches does, for scripts whose cases do not round-trip.
+        char upperA = Character.toUpperCase(a), upperB = Character.toUpperCase(b);
+        return upperA == upperB || Character.toLowerCase(upperA) == Character.toLowerCase(upperB);
+    }
+
+    private static LargestFiles.RankedFile rankedFile(Session session, Entry entry) {
+        return new LargestFiles.RankedFile(name(entry.path), entry.path.toString(),
+                session.path.relativize(entry.path).toString(), entry.sizeBytes);
+    }
+
     /** A page of the items a completed scan skipped or could not fully read, ordered by path. */
-    public synchronized SkippedItems skipped(String id, int offset, int limit) {
+    public SkippedItems skipped(String id, int offset, int limit) {
         if (offset < 0 || limit < 1 || limit > 500) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
                     "Ask for 1 to 500 items from an offset of 0 or more.");
         }
-        Session session = completed(id);
-        if (session.flagged == null) {
+        Snapshot snapshot = completedSnapshot(id);
+        Session session = snapshot.session;
+        List<Entry> recorded;
+        long total;
+        synchronized (this) {
+            recorded = session.flagged;
+            total = session.flaggedTotal;
+        }
+        if (recorded == null) {
             List<Entry> flagged = new ArrayList<>();
-            long total = 0;
-            for (Entry entry : session.entries.values()) {
+            total = 0;
+            for (Entry entry : snapshot.entries.values()) {
                 if (entry.errorCode == null) continue;
                 total++;
                 flagged.add(entry);
             }
             flagged.sort(Comparator.comparing(entry -> entry.path.toString()));
-            session.flaggedTotal = total;
-            session.flagged = flagged.size() > maximumRecordedSkips
+            recorded = flagged.size() > maximumRecordedSkips
                     ? List.copyOf(flagged.subList(0, maximumRecordedSkips)) : flagged;
+            synchronized (this) {
+                if (session.entries == snapshot.entries) {
+                    session.flagged = recorded;
+                    session.flaggedTotal = total;
+                }
+            }
         }
-        List<SkippedItems.SkippedItem> items = session.flagged.stream().skip(offset).limit(limit)
+        List<SkippedItems.SkippedItem> items = recorded.stream().skip(offset).limit(limit)
                 .map(entry -> new SkippedItems.SkippedItem(name(entry.path), entry.path.toString(),
                         session.path.relativize(entry.path).toString(), entry.type, entry.errorCode))
                 .toList();
-        return new SkippedItems(session.id, session.flaggedTotal, session.flagged.size(), offset, items);
+        return new SkippedItems(session.id, total, recorded.size(), offset, items);
     }
 
-    private static List<Entry> rank(Session session) {
-        // Largest first; equal sizes by path so the order never depends on hashing.
-        Comparator<Entry> order = Comparator.comparingLong((Entry entry) -> entry.sizeBytes).reversed()
-                .thenComparing(entry -> entry.path.toString());
-        PriorityQueue<Entry> smallestKept = new PriorityQueue<>(order.reversed());
-        for (Entry entry : session.entries.values()) {
+    private static List<Entry> rank(Collection<Entry> entries) {
+        PriorityQueue<Entry> smallestKept = new PriorityQueue<>(SIZE_ORDER.reversed());
+        for (Entry entry : entries) {
             if (entry.type != DirectoryType.FILE) continue;
             smallestKept.add(entry);
             if (smallestKept.size() > MAX_RANKED_FILES) smallestKept.poll();
         }
         List<Entry> ranked = new ArrayList<>(smallestKept);
-        ranked.sort(order);
+        ranked.sort(SIZE_ORDER);
         return ranked;
+    }
+
+    /**
+     * A completed snapshot with the entries it held when captured under the monitor. Its
+     * entries and their fields are final once the scan completes: the worker's writes
+     * happen before the volatile write of COMPLETE that {@link #completed} reads. Eviction
+     * swaps the session's map for an empty one without touching this one, so a query that
+     * has started keeps a consistent view until it returns.
+     */
+    private record Snapshot(Session session, Map<Path, Entry> entries) {
+        Entry root() { return entries.get(session.path); }
+    }
+
+    private synchronized Snapshot completedSnapshot(String id) {
+        Session session = completed(id);
+        return new Snapshot(session, session.entries);
     }
 
     private Session completed(String id) {
@@ -280,13 +407,13 @@ public class ScanService {
         return session;
     }
 
-    private static Entry findEntry(Session session, String requestedPath) {
+    private static Entry findEntry(Snapshot snapshot, String requestedPath) {
         Path path = parsePath(requestedPath);
         // Path.startsWith compares whole name elements, never a text prefix.
-        if (!path.startsWith(session.path)) {
+        if (!path.startsWith(snapshot.session.path)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.PATH_OUTSIDE_SCAN, "The directory must belong to this scan.");
         }
-        Entry entry = session.entries.get(path);
+        Entry entry = snapshot.entries.get(path);
         if (entry == null) throw new ApiException(HttpStatus.NOT_FOUND, ApiErrorCode.PATH_NOT_IN_SCAN, "This path was not found in the scan.");
         return entry;
     }
@@ -559,7 +686,8 @@ public class ScanService {
         ScanErrorCode errorCode;
         Map<String, Long> errorParams;
         Future<?> future;
-        // Derived from a completed snapshot on first use; guarded by the service monitor.
+        // Derived from a completed snapshot on first use, outside the service monitor;
+        // the fields themselves are guarded by it.
         List<Entry> ranked;
         List<Entry> flagged;
         long flaggedTotal;

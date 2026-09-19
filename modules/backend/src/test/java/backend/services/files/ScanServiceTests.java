@@ -4,6 +4,7 @@ import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
 import backend.models.Ancestry;
 import backend.models.Directory;
+import backend.models.FileSearch;
 import backend.models.LargestFiles;
 import backend.models.SkippedItems;
 import backend.models.ScanStatus;
@@ -648,6 +649,148 @@ class ScanServiceTests {
                 () -> service.ancestors(id, deep.resolve("missing.bin").toString())).getCode());
         assertEquals(ApiErrorCode.SCAN_NOT_FOUND, assertThrows(ApiException.class,
                 () -> service.ancestors("missing", target.toString())).getCode());
+    }
+
+    @Test
+    void searchesEveryFileOfTheScanNotOnlyTheRankingOrLoadedFolders() throws Exception {
+        for (int i = 0; i < ScanService.MAX_RANKED_FILES + 10; i++) {
+            Files.write(temporary.resolve("large-" + i + ".bin"), new byte[100]);
+        }
+        // Small, deep and never opened: outside any ranking and any loaded folder.
+        Path target = Files.write(Files.createDirectories(temporary.resolve("a/b/Vacation")).resolve("Report.txt"), new byte[1]);
+        Path sibling = Files.write(target.resolveSibling("beach.jpg"), new byte[2]);
+        String id = finish(service.start(temporary.toString()).id()).id();
+        assertTrue(service.largest(id, ScanService.MAX_RANKED_FILES, 0).files().stream()
+                .noneMatch(file -> file.absolutePath().equals(target.toString())));
+
+        FileSearch found = service.search(id, "report", null, 0, 0, 50);
+        assertEquals(1, found.matchingFiles());
+        assertEquals(List.of(target.toString()), found.files().stream().map(LargestFiles.RankedFile::absolutePath).toList());
+        assertEquals(temporary.relativize(target).toString(), found.files().get(0).relativePath());
+        assertEquals(temporary.toString(), found.scope());
+        assertEquals("report", found.query());
+        // Case, surrounding spaces and either separator do not matter; folders in the path match.
+        assertEquals(1, service.search(id, "  REPORT.TXT ", null, 0, 0, 50).matchingFiles());
+        assertEquals(1, service.search(id, "vacation/report", null, 0, 0, 50).matchingFiles());
+        assertEquals(1, service.search(id, "vacation\\report", null, 0, 0, 50).matchingFiles());
+        assertEquals(List.of(sibling.toString(), target.toString()), service.search(id, "vacation", null, 0, 0, 50)
+                .files().stream().map(LargestFiles.RankedFile::absolutePath).toList());
+        // The path is matched from the root, so the root's own name matches nothing.
+        assertEquals(0, service.search(id, temporary.getFileName().toString(), null, 0, 0, 50).matchingFiles());
+        // An empty query lists every file, and the count is exact beyond the ranking's bound.
+        assertEquals(ScanService.MAX_RANKED_FILES + 12, service.search(id, "", null, 0, 0, 1).matchingFiles());
+        assertEquals(0, service.search(id, "missing", null, 0, 0, 50).matchingFiles());
+    }
+
+    @Test
+    void searchesOneFolderWithItsSubfoldersPageByPage() throws Exception {
+        Path music = Files.createDirectory(temporary.resolve("music"));
+        Files.write(music.resolve("song-a.mp3"), new byte[30]);
+        Files.write(music.resolve("song-b.mp3"), new byte[30]);
+        Files.write(Files.createDirectory(music.resolve("live")).resolve("song-c.mp3"), new byte[50]);
+        Files.write(music.resolve("song-d.mp3"), new byte[10]);
+        Files.write(temporary.resolve("song-outside.mp3"), new byte[90]);
+        String id = finish(service.start(temporary.toString()).id()).id();
+
+        FileSearch first = service.search(id, "song", music.toString(), 0, 0, 2);
+        assertEquals(music.toString(), first.scope());
+        assertEquals(4, first.matchingFiles());
+        assertEquals(List.of("song-c.mp3", "song-a.mp3"), first.files().stream().map(LargestFiles.RankedFile::name).toList());
+        // Equal sizes by path, so pages never overlap or skip.
+        FileSearch second = service.search(id, "song", music.toString(), 0, 2, 2);
+        assertEquals(List.of("song-b.mp3", "song-d.mp3"), second.files().stream().map(LargestFiles.RankedFile::name).toList());
+        assertEquals(2, second.offset());
+        assertTrue(service.search(id, "song", music.toString(), 0, 4, 2).files().isEmpty());
+        // The minimum is inclusive and applies before the page is cut.
+        FileSearch large = service.search(id, "song", music.toString(), 30, 0, 1);
+        assertEquals(3, large.matchingFiles());
+        assertEquals(List.of("song-c.mp3"), large.files().stream().map(LargestFiles.RankedFile::name).toList());
+        assertEquals(5, service.search(id, "song", "", 0, 0, 10).matchingFiles());
+
+        assertEquals(ApiErrorCode.NOT_A_FOLDER, assertThrows(ApiException.class,
+                () -> service.search(id, "", music.resolve("song-a.mp3").toString(), 0, 0, 10)).getCode());
+        assertEquals(ApiErrorCode.PATH_OUTSIDE_SCAN, assertThrows(ApiException.class,
+                () -> service.search(id, "", temporary + "-sibling", 0, 0, 10)).getCode());
+        assertEquals(ApiErrorCode.PATH_NOT_IN_SCAN, assertThrows(ApiException.class,
+                () -> service.search(id, "", music.resolve("missing").toString(), 0, 0, 10)).getCode());
+        String tooLong = "x".repeat(ScanService.MAX_QUERY_LENGTH + 1);
+        for (Runnable invalid : List.<Runnable>of(
+                () -> service.search(id, "", null, 0, 0, 0),
+                () -> service.search(id, "", null, 0, 0, ScanService.MAX_SEARCH_PAGE + 1),
+                () -> service.search(id, "", null, 0, -1, 10),
+                () -> service.search(id, "", null, -1, 0, 10),
+                () -> service.search(id, "", null, 0, ScanService.MAX_SEARCH_WINDOW - 9, 10),
+                () -> service.search(id, tooLong, null, 0, 0, 10))) {
+            assertEquals(ApiErrorCode.INVALID_PARAMETER, assertThrows(ApiException.class, invalid::run).getCode());
+        }
+        assertEquals(ScanService.MAX_SEARCH_WINDOW, service.search(id, "", null, 0,
+                ScanService.MAX_SEARCH_WINDOW - 10, 10).offset() + 10, "the last reachable page is allowed");
+        assertEquals(ApiErrorCode.SCAN_NOT_FOUND, assertThrows(ApiException.class,
+                () -> service.search("missing", "", null, 0, 0, 10)).getCode());
+    }
+
+    @Test
+    void aPartialScopeSaysItsSearchMayMissFiles() throws Exception {
+        service.close();
+        service = new ScanService(Executors.newSingleThreadExecutor(), 100, 3);
+        Path child = Files.createDirectory(temporary.resolve("child"));
+        Files.write(Files.createDirectories(child.resolve("deep/deeper")).resolve("hidden.bin"), new byte[8]);
+        Path whole = Files.createDirectory(temporary.resolve("whole"));
+        Files.write(whole.resolve("visible.bin"), new byte[4]);
+        String id = finish(service.start(temporary.toString()).id()).id();
+        assertTrue(service.search(id, "", null, 0, 0, 10).partial());
+        assertTrue(service.search(id, "", child.toString(), 0, 0, 10).partial());
+        assertFalse(service.search(id, "", whole.toString(), 0, 0, 10).partial());
+    }
+
+    @Test
+    void queriesLeaveTheServiceFreeForOtherScans() throws Exception {
+        service.close();
+        CountDownLatch searching = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean paused = new AtomicBoolean();
+        service = new ScanService(Executors.newFixedThreadPool(2)) {
+            @Override
+            void searchStep() {
+                if (paused.getAndSet(true)) return;
+                searching.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        Files.write(Files.createDirectory(temporary.resolve("first")).resolve("a.bin"), new byte[3]);
+        Files.write(Files.createDirectory(temporary.resolve("second")).resolve("b.bin"), new byte[5]);
+        String first = finish(service.start(temporary.resolve("first").toString()).id()).id();
+        ExecutorService requester = Executors.newSingleThreadExecutor();
+        try {
+            var search = requester.submit(() -> service.search(first, "a", null, 0, 0, 10));
+            assertTrue(searching.await(5, TimeUnit.SECONDS));
+            // While the search is stopped halfway, another scan starts, reports progress,
+            // completes and can be cancelled or queried.
+            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+                String second = finish(service.start(temporary.resolve("second").toString()).id()).id();
+                assertEquals(1, service.largest(second, 10, 0).files().size());
+                assertEquals(ScanStatus.State.COMPLETE, service.cancel(second).status());
+                assertEquals(1, service.directory(first, temporary.resolve("first").toString()).getSubdirectories().size());
+            });
+            release.countDown();
+            assertEquals(1, search.get(5, TimeUnit.SECONDS).matchingFiles());
+        } finally {
+            release.countDown();
+            requester.shutdownNow();
+        }
+    }
+
+    @Test
+    void matchesTextIgnoringCaseAndSeparatorKind() {
+        assertTrue(ScanService.containsIgnoringCase("Photos\\Summer\\IMG.JPG", 0, "summer/img"));
+        assertTrue(ScanService.containsIgnoringCase("Fotos/Canción.mp3", 0, "CANCIÓN"));
+        assertTrue(ScanService.containsIgnoringCase("anything", 0, ""));
+        assertFalse(ScanService.containsIgnoringCase("root\\file", 5, "root"), "text before the start is ignored");
+        assertFalse(ScanService.containsIgnoringCase("short", 0, "longer text"));
     }
 
     private void assertRejected(String path, ApiErrorCode code) {

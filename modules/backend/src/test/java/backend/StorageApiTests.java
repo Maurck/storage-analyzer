@@ -96,6 +96,12 @@ class StorageApiTests {
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCAN_NOT_FOUND"));
         mvc.perform(get("/scans/missing/ancestors").param("path", temporary.toString()))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCAN_NOT_FOUND"));
+        mvc.perform(get("/scans/missing/files").param("offset", "many"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+        mvc.perform(get("/scans/missing/files").param("limit", "101"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+        mvc.perform(get("/scans/missing/files").param("query", "report"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCAN_NOT_FOUND"));
     }
 
     @Test

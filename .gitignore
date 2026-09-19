@@ -7,3 +7,6 @@ modules/backend/target/
 .idea
 example.jpg
 node_modules
+modules/frontend/package-resources/
+modules/frontend/dist/
+modules/frontend/dist-update/

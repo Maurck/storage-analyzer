@@ -1,8 +1,9 @@
 {
   "name": "storage-analyzer",
   "private": true,
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.0.0-beta.1",
+  "productName": "Storage Analyzer",
+  "description": "See what takes up space in a folder, locally and read-only.",
   "main": "main.js",
   "scripts": {
     "test": "playwright test",
@@ -11,27 +12,82 @@
     "typecheck": "tsc --noEmit",
     "build:watch": "webpack --config webpack.common.js --mode development --watch",
     "build": "webpack --config webpack.common.js",
-    "start": "electron . --start-backend"
+    "start": "electron . --start-backend",
+    "package:resources": "node scripts/prepare-package.cjs",
+    "dist": "npm run build && npm run package:resources && electron-builder --win nsis --x64"
   },
   "keywords": [],
-  "author": "",
+  "author": "Mauricio Linares",
   "license": "ISC",
-  "dependencies": {
-    "electron": "^44.3.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-query": "^3.39.3"
-  },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
-    "axe-core": "^4.11.1",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
+    "axe-core": "^4.11.1",
     "css-loader": "^6.8.1",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-query": "^3.39.3",
     "style-loader": "^3.3.3",
     "ts-loader": "^9.4.4",
     "typescript": "^5.1.6",
     "webpack": "^5.88.1",
     "webpack-cli": "^5.1.4"
+  },
+  "homepage": "https://github.com/Maurck/storage-analyzer",
+  "build": {
+    "appId": "io.github.maurck.storageanalyzer",
+    "productName": "Storage Analyzer",
+    "copyright": "Copyright © 2026 Mauricio Linares",
+    "directories": {
+      "output": "dist",
+      "buildResources": "installer"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "backend-process.js",
+      "index.html",
+      "icon.ico",
+      "build/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "package-resources/runtime",
+        "to": "runtime"
+      },
+      {
+        "from": "package-resources/backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "installer/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": true,
+      "shortcutName": "Storage Analyzer",
+      "artifactName": "Storage-Analyzer-Setup-${version}.${ext}"
+    },
+    "electronLanguages": [
+      "en-US",
+      "es",
+      "es-419"
+    ]
   }
 }

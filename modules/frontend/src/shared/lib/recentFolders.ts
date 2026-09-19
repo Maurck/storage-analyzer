@@ -57,3 +57,23 @@ export function clearRecentFolders(): string[] {
   write([]);
   return [];
 }
+
+const rememberKey = "storage-analyzer:remember-recent";
+
+/** On unless the person turned it off; storage failures keep the default. */
+export function readRememberRecent(): boolean {
+  try {
+    return window.localStorage.getItem(rememberKey) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+/** Only the preference: turning it off hides the list but does not clear it. */
+export function writeRememberRecent(remember: boolean) {
+  try {
+    window.localStorage.setItem(rememberKey, String(remember));
+  } catch {
+    // The choice still applies for this session.
+  }
+}

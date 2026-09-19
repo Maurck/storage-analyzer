@@ -404,7 +404,7 @@ test('scan validation accepts the supported lifecycle and requires a root when c
     volume: { totalBytes: 500, usableBytes: 200 },
   });
   assert.equal(validateScan(detailed), detailed);
-  const dated = scan({ status: 'COMPLETE', root: directory(), startedAt: '2026-03-04T05:06:07.123Z', finishedAt: '2026-03-04T05:07:00Z' });
+  const dated = scan({ status: 'COMPLETE', root: directory(), startedAt: '2026-03-04T05:06:07.123Z', finishedAt: '2026-03-04T05:07:00.330417700Z' });
   assert.equal(validateScan(dated), dated);
   const running = scan({ startedAt: '2026-03-04T05:06:07Z', finishedAt: null });
   assert.equal(validateScan(running), running);
@@ -576,4 +576,25 @@ test('recent folders keep five, most recent first, and survive blocked storage',
   assert.equal(folderName('C:\\Users\\me\\Downloads\\'), 'Downloads');
   assert.equal(folderName('/home/me/Videos'), 'Videos');
   assert.equal(folderName('C:\\'), 'C:\\');
+});
+
+test('saving recent folders is a preference that is on by default and does not clear the list', t => {
+  const oldWindow = globalThis.window;
+  const store = new Map();
+  globalThis.window = { localStorage: {
+    getItem: key => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, value),
+  } };
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const { readRememberRecent, writeRememberRecent, rememberFolder, readRecentFolders } = recentFolders;
+  assert.equal(readRememberRecent(), true);
+  rememberFolder([], 'A');
+  writeRememberRecent(false);
+  assert.equal(readRememberRecent(), false);
+  assert.deepEqual(readRecentFolders(), ['A'], 'turning it off is not the same as clearing');
+  writeRememberRecent(true);
+  assert.equal(readRememberRecent(), true);
+  globalThis.window = { localStorage: { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } } };
+  assert.equal(readRememberRecent(), true);
+  assert.doesNotThrow(() => writeRememberRecent(false));
 });

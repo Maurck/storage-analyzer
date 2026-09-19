@@ -24,6 +24,11 @@ contextBridge.exposeInMainWorld(
     getBackendStatus: () =>
       ipcRenderer.invoke("storage-analyzer:get-backend-status"),
     retryBackend: () => ipcRenderer.invoke("storage-analyzer:retry-backend"),
+    // The main process confirms with the backend that the path was scanned.
+    showItemInFolder: (scanId, path) =>
+      ipcRenderer.invoke("storage-analyzer:show-item", scanId, path),
+    getCommonFolders: () =>
+      ipcRenderer.invoke("storage-analyzer:common-folders"),
     onBackendStatus: (callback) => {
       if (typeof callback !== "function") return () => {};
       // Pass only the status, never the IPC event, to the page.

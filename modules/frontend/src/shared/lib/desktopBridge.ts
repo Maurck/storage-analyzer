@@ -20,6 +20,35 @@ export interface DesktopBridge {
   getBackendStatus?(): Promise<BackendLifecycle>;
   retryBackend?(): Promise<BackendLifecycle>;
   onBackendStatus?(callback: (status: BackendLifecycle) => void): () => void;
+  showItemInFolder?(scanId: string, path: string): Promise<ShowItemResult>;
+  getCommonFolders?(): Promise<CommonFolder[]>;
+}
+
+/** `code` is a backend API code or one of the desktop codes below. */
+export type ShowItemResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code:
+        | "ITEM_MISSING"
+        | "ITEM_UNAVAILABLE"
+        | "SERVICE_UNAVAILABLE"
+        | "INVALID_REQUEST"
+        | string;
+    };
+
+export type CommonFolderId =
+  | "home"
+  | "desktop"
+  | "documents"
+  | "downloads"
+  | "pictures"
+  | "music"
+  | "videos";
+
+export interface CommonFolder {
+  id: CommonFolderId;
+  path: string;
 }
 
 declare global {

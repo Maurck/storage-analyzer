@@ -11,9 +11,11 @@ const frontendPath = path.resolve(__dirname, '..');
 const mainSource = fs.readFileSync(path.join(frontendPath, 'main.js'), 'utf8');
 const preloadSource = fs.readFileSync(path.join(frontendPath, 'preload.js'), 'utf8');
 
-async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, launch = {}, systemLocale = 'es-PE' } = {}) {
+async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, launch = {}, systemLocale = 'es-PE', fetchImpl, paths = {} } = {}) {
     const windows = [];
     const sent = [];
+    const shown = [];
+    const fetches = [];
     const handlers = new Map();
     const appEvents = new Map();
     const dialogCalls = [];
@@ -42,6 +44,10 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, l
         on: (name, handler) => appEvents.set(name, handler),
         quit: () => { quitCount += 1; },
         getSystemLocale: () => systemLocale,
+        getPath: name => {
+            if (!(name in paths)) throw new Error(`Unknown path ${name}`);
+            return paths[name];
+        },
     };
     const backendCalls = [];
     const outcomes = [...(launch.outcomes ?? ['started'])];
@@ -64,6 +70,7 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, l
     };
     const electron = {
         app, BrowserWindow,
+        shell: { showItemInFolder: item => shown.push(item) },
         ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
         dialog: { showOpenDialog: (window, options) => {
             dialogCalls.push({ window, options });
@@ -76,10 +83,15 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, l
             : require(name),
         __dirname: frontendPath,
         process: { env: backendUrl === undefined ? {} : { STORAGE_ANALYZER_API_URL: backendUrl }, platform, argv },
-        URL, console,
+        URL, console, AbortSignal,
+        fetch: async (url, init) => {
+            fetches.push(url);
+            if (!fetchImpl) throw new TypeError('fetch failed');
+            return fetchImpl(url, init);
+        },
     });
     await settle();
-    return { windows, handlers, appEvents, dialogCalls, backendCalls, backend, sent, quitCount: () => quitCount };
+    return { windows, handlers, appEvents, dialogCalls, backendCalls, backend, sent, shown, fetches, quitCount: () => quitCount };
 }
 
 function settle() {
@@ -208,18 +220,24 @@ test('preload exposes only backend configuration, service status and fixed opera
         '--storage-analyzer-number-locale=es-PE',
     ]);
     assert.equal(exposed.name, 'storageAnalyzer');
-    assert.deepEqual(Object.keys(exposed.api),
-        ['backendUrl', 'numberLocale', 'selectDirectory', 'getBackendStatus', 'retryBackend', 'onBackendStatus']);
+    assert.deepEqual(Object.keys(exposed.api), [
+        'backendUrl', 'numberLocale', 'selectDirectory', 'getBackendStatus', 'retryBackend',
+        'showItemInFolder', 'getCommonFolders', 'onBackendStatus',
+    ]);
     assert.equal(Object.isFrozen(exposed.api), true);
     assert.equal(exposed.api.backendUrl, 'http://localhost:5050');
     assert.equal(exposed.api.numberLocale, 'es-PE');
     assert.equal(await exposed.api.selectDirectory('untrusted-channel'), 'C:\\Selected');
     await exposed.api.getBackendStatus('ignored');
     await exposed.api.retryBackend('ignored');
+    await exposed.api.showItemInFolder('scan-id', 'C:\\Data\\file.bin', 'ignored');
+    await exposed.api.getCommonFolders('ignored');
     assert.deepEqual(calls, [
         ['storage-analyzer:select-directory'],
         ['storage-analyzer:get-backend-status'],
         ['storage-analyzer:retry-backend'],
+        ['storage-analyzer:show-item', 'scan-id', 'C:\\Data\\file.bin'],
+        ['storage-analyzer:common-folders'],
     ]);
 
     const received = [];
@@ -465,4 +483,76 @@ test('waiting for the backend is bounded and never restarts it', async () => {
     assert.equal(await run([unreachable], { alive: () => false }), 'exited');
     assert.equal(await run([unreachable, { state: 'incompatible', reason: 'other-service' }]), 'port-in-use');
     assert.equal(await run([{ state: 'incompatible', reason: 'api-version' }]), 'incompatible');
+});
+
+const scanId = '0f8b5f0e-3c4a-4d8e-9f10-1234567890ab';
+
+function jsonResponse(body, status = 200) {
+    return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+test('showing an item uses the path the backend scanned, and only if it still exists', async () => {
+    const existing = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'sa-show-'));
+    try {
+        const desktop = await loadDesktop({ fetchImpl: async () => jsonResponse({ absolutePath: existing }) });
+        const show = desktop.handlers.get('storage-analyzer:show-item');
+        const result = await show(windowEvent(desktop.windows[0]), scanId, existing + path.sep + '.' + path.sep);
+        assert.deepEqual({ ...result }, { ok: true });
+        assert.deepEqual(desktop.shown, [existing], 'the canonical path from the backend is shown');
+        const requested = new URL(desktop.fetches[0]);
+        assert.equal(requested.pathname, `/scans/${scanId}/entry`);
+        assert.equal(requested.searchParams.get('path'), existing + path.sep + '.' + path.sep);
+    } finally {
+        fs.rmSync(existing, { recursive: true, force: true });
+    }
+});
+
+test('showing an item explains why it cannot, without opening anything', async () => {
+    const missing = path.join(require('node:os').tmpdir(), 'sa-show-missing-' + Date.now());
+    const cases = [
+        [async () => jsonResponse({ code: 'PATH_NOT_IN_SCAN', message: 'x' }, 404), 'PATH_NOT_IN_SCAN'],
+        [async () => jsonResponse({ code: 'SCAN_NOT_FOUND', message: 'x' }, 404), 'SCAN_NOT_FOUND'],
+        [async () => jsonResponse({ code: '<bad>' }, 500), 'SERVICE_UNAVAILABLE'],
+        [async () => jsonResponse({ unexpected: true }), 'SERVICE_UNAVAILABLE'],
+        [undefined, 'SERVICE_UNAVAILABLE'],
+        [async () => jsonResponse({ absolutePath: missing }), 'ITEM_MISSING'],
+    ];
+    for (const [fetchImpl, code] of cases) {
+        const desktop = await loadDesktop({ fetchImpl });
+        const result = await desktop.handlers.get('storage-analyzer:show-item')(windowEvent(desktop.windows[0]), scanId, missing);
+        assert.deepEqual({ ...result }, { ok: false, code });
+        assert.deepEqual(desktop.shown, []);
+    }
+});
+
+test('show-item requests are validated before anything is asked of the backend', async () => {
+    const desktop = await loadDesktop({ fetchImpl: async () => assert.fail('no request') });
+    const show = desktop.handlers.get('storage-analyzer:show-item');
+    const event = windowEvent(desktop.windows[0]);
+    for (const [id, item] of [
+        ['not-a-scan', 'C:\\Data'], [scanId, ''], [scanId, 7], [42, 'C:\\Data'], [scanId, 'x'.repeat(32768)],
+    ]) {
+        assert.deepEqual({ ...(await show(event, id, item)) }, { ok: false, code: 'INVALID_REQUEST' });
+    }
+    await assert.rejects(async () => show({ ...event, sender: {} }, scanId, 'C:\\Data'), /only available to the application window/);
+    assert.deepEqual(desktop.fetches, []);
+    assert.deepEqual(desktop.shown, []);
+});
+
+test('common folders come from the system and only when they exist', async () => {
+    const home = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'sa-home-'));
+    try {
+        const desktop = await loadDesktop({
+            paths: { home, desktop: home, documents: path.join(home, 'missing'), downloads: home + path.sep },
+        });
+        const folders = await desktop.handlers.get('storage-analyzer:common-folders')(windowEvent(desktop.windows[0]));
+        assert.deepEqual(Array.from(folders, folder => ({ ...folder })), [
+            { id: 'home', path: home },
+            { id: 'downloads', path: home + path.sep },
+        ]);
+        await assert.rejects(async () => desktop.handlers.get('storage-analyzer:common-folders')({ ...windowEvent(desktop.windows[0]), sender: {} }),
+            /only available to the application window/);
+    } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+    }
 });

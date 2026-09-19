@@ -1,4 +1,5 @@
-const { BrowserWindow, app, dialog, ipcMain } = require("electron");
+const { BrowserWindow, app, dialog, ipcMain, shell } = require("electron");
+const fs = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const {
@@ -14,6 +15,20 @@ const selectDirectoryChannel = "storage-analyzer:select-directory";
 const backendStatusChannel = "storage-analyzer:backend-status";
 const getBackendStatusChannel = "storage-analyzer:get-backend-status";
 const retryBackendChannel = "storage-analyzer:retry-backend";
+const showItemChannel = "storage-analyzer:show-item";
+const commonFoldersChannel = "storage-analyzer:common-folders";
+const scanIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Folders the system itself resolves; their names differ by language and user.
+const commonFolderIds = [
+  "home",
+  "desktop",
+  "documents",
+  "downloads",
+  "pictures",
+  "music",
+  "videos",
+];
 const backendUrl = getBackendUrl(process.env.STORAGE_ANALYZER_API_URL);
 // `npm start` passes this flag. Launching Electron without it leaves the
 // backend to be started separately, which is what the test harness does.
@@ -161,6 +176,93 @@ function launchBackend() {
   return backendLaunch;
 }
 
+/**
+ * Asks the backend whether a path belongs to a scan. The renderer's path is never
+ * trusted on its own: only a node the backend scanned, matched by whole name
+ * elements rather than a text prefix, is used, and in its canonical form.
+ */
+async function scannedPath(scanId, itemPath) {
+  let response;
+  try {
+    response = await fetch(
+      `${backendUrl}/scans/${encodeURIComponent(scanId)}/entry?path=${encodeURIComponent(itemPath)}`,
+      {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(3000),
+      },
+    );
+  } catch {
+    return { ok: false, code: "SERVICE_UNAVAILABLE" };
+  }
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    // Handled below as an unusable answer.
+  }
+  if (!response.ok) {
+    const code = body?.code;
+    return {
+      ok: false,
+      code:
+        typeof code === "string" && /^[A-Z_]{1,64}$/.test(code)
+          ? code
+          : "SERVICE_UNAVAILABLE",
+    };
+  }
+  return typeof body?.absolutePath === "string"
+    ? { ok: true, path: body.absolutePath }
+    : { ok: false, code: "SERVICE_UNAVAILABLE" };
+}
+
+/** Shows a scanned item in the file manager. Never opens or runs it. */
+async function showScannedItem(scanId, itemPath) {
+  if (
+    typeof scanId !== "string" ||
+    !scanIdPattern.test(scanId) ||
+    typeof itemPath !== "string" ||
+    !itemPath ||
+    itemPath.length > 32767
+  ) {
+    return { ok: false, code: "INVALID_REQUEST" };
+  }
+  const found = await scannedPath(scanId, itemPath);
+  if (!found.ok) return found;
+  // The snapshot can be older than the disk: check the item is still there.
+  try {
+    await fs.promises.lstat(found.path);
+  } catch (error) {
+    return {
+      ok: false,
+      code:
+        error.code === "ENOENT" || error.code === "ENOTDIR"
+          ? "ITEM_MISSING"
+          : "ITEM_UNAVAILABLE",
+    };
+  }
+  shell.showItemInFolder(found.path);
+  return { ok: true };
+}
+
+function commonFolders() {
+  const folders = [];
+  for (const id of commonFolderIds) {
+    try {
+      const folder = app.getPath(id);
+      if (
+        folder &&
+        fs.existsSync(folder) &&
+        !folders.some((entry) => entry.path === folder)
+      ) {
+        folders.push({ id, path: folder });
+      }
+    } catch {
+      // Not every system defines every folder.
+    }
+  }
+  return folders;
+}
+
 function assertAppSender(event, action) {
   const window = mainWindow;
   if (
@@ -196,6 +298,14 @@ app.whenReady().then(() => {
       if (found.state === "unreachable") await launchBackend();
     }
     return backendStatus;
+  });
+  ipcMain.handle(showItemChannel, async (event, scanId, itemPath) => {
+    assertAppSender(event, "Showing items");
+    return showScannedItem(scanId, itemPath);
+  });
+  ipcMain.handle(commonFoldersChannel, (event) => {
+    assertAppSender(event, "Common folders");
+    return commonFolders();
   });
   ipcMain.handle(selectDirectoryChannel, async (event) => {
     const window = assertAppSender(event, "Folder selection");

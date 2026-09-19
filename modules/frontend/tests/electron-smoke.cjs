@@ -21,7 +21,7 @@ const path = require('node:path');
     page.on('pageerror', error => errors.push(error.message));
     await expect(page.getByRole('heading', { name: 'Storage overview.' })).toBeVisible();
     const bridge = await page.evaluate(() => ({ keys: Object.keys(window.storageAnalyzer), nodeAvailable: typeof window.require !== 'undefined' }));
-    expect(bridge.keys.sort()).toEqual(['backendUrl', 'getBackendStatus', 'numberLocale', 'onBackendStatus', 'retryBackend', 'selectDirectory']);
+    expect(bridge.keys.sort()).toEqual(['backendUrl', 'getBackendStatus', 'getCommonFolders', 'numberLocale', 'onBackendStatus', 'retryBackend', 'selectDirectory', 'showItemInFolder']);
     expect(bridge.nodeAvailable).toBe(false);
     await page.getByRole('button', { name: 'Select folder', exact: true }).click();
     await expect(page.getByRole('table', { name: /^Contents of ui/ })).toBeVisible({ timeout: 30000 });

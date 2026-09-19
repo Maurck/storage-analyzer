@@ -1205,8 +1205,12 @@
     color: var(--color-text-muted);
   }
   .action-column {
-    width: 52px;
+    width: 68px;
     text-align: right;
+  }
+  /* Room for the focus ring of the last button in a row. */
+  td.action-column {
+    padding-inline-end: 16px;
   }
   .location-inline {
     display: none;

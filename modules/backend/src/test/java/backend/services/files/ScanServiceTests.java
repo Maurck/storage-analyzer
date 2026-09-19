@@ -297,6 +297,8 @@ class ScanServiceTests {
             Thread.sleep(60);
             ScanStatus scanning = service.status(id);
             assertEquals(ScanStatus.State.SCANNING, scanning.status());
+            assertNotNull(scanning.startedAt());
+            assertNull(scanning.finishedAt(), "a running scan has no end yet");
             assertEquals(nested.toString(), scanning.currentPath());
             assertTrue(scanning.millisSinceActivity() >= 50, "idle for " + scanning.millisSinceActivity());
             assertTrue(scanning.elapsedMillis() >= scanning.millisSinceActivity());
@@ -306,11 +308,15 @@ class ScanServiceTests {
 
         ScanStatus done = finish(id);
         assertEquals(ScanStatus.State.COMPLETE, done.status());
+        assertNotNull(done.startedAt());
+        assertNotNull(done.finishedAt());
+        assertFalse(done.finishedAt().isBefore(done.startedAt()));
         assertNull(done.currentPath());
         assertNull(done.millisSinceActivity());
         assertNull(done.errorCode());
         Thread.sleep(30);
         assertEquals(done.elapsedMillis(), service.status(id).elapsedMillis());
+        assertEquals(done.finishedAt(), service.status(id).finishedAt(), "the end time is fixed once");
     }
 
     @Test

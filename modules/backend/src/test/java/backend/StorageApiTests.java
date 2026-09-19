@@ -35,6 +35,8 @@ class StorageApiTests {
                 .andExpect(jsonPath("$.processedBytes").isNumber())
                 .andExpect(jsonPath("$.skippedCount").isNumber())
                 .andExpect(jsonPath("$.elapsedMillis").isNumber())
+                // ISO-8601 instants, not epoch numbers.
+                .andExpect(jsonPath("$.startedAt").value(org.hamcrest.Matchers.matchesPattern("\\d{4}-\\d{2}-\\d{2}T.*Z")))
                 .andExpect(jsonPath("$.errorCode").doesNotExist())
                 .andExpect(jsonPath("$.volume.totalBytes").isNumber())
                 .andExpect(jsonPath("$.volume.usableBytes").isNumber());

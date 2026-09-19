@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -483,6 +484,7 @@ public class ScanService {
             return new ScanStatus(session.id, session.path.toString(), session.state, session.files.get(),
                     session.directories.get(), session.bytes.get(), session.skipped.get(),
                     session.error, session.errorCode, session.errorParams,
+                    session.startedAt, session.finishedAt,
                     TimeUnit.NANOSECONDS.toMillis(end - session.startedNanos),
                     scanning ? TimeUnit.NANOSECONDS.toMillis(now - session.lastActivityNanos) : null,
                     scanning ? session.currentPath : null,
@@ -529,6 +531,9 @@ public class ScanService {
         final AtomicLong skipped = new AtomicLong();
         final Volume volume;
         final long startedNanos = System.nanoTime();
+        // Wall-clock identity of the result for people; durations use nanoTime.
+        final Instant startedAt = Instant.now();
+        Instant finishedAt;
         volatile long lastActivityNanos = startedNanos;
         volatile String currentPath;
         volatile State state = State.SCANNING;
@@ -550,7 +555,10 @@ public class ScanService {
 
         /** Moves to a terminal state; the first transition fixes the elapsed time. */
         void end(State terminal) {
-            if (state == State.SCANNING) finishedNanos = System.nanoTime();
+            if (state == State.SCANNING) {
+                finishedNanos = System.nanoTime();
+                finishedAt = Instant.now();
+            }
             state = terminal;
         }
 

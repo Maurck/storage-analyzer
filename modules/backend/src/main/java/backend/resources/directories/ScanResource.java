@@ -1,5 +1,6 @@
 package backend.resources.directories;
 
+import backend.models.Ancestry;
 import backend.models.Directory;
 import backend.models.LargestFiles;
 import backend.models.ScanStatus;
@@ -42,6 +43,11 @@ public class ScanResource {
     @GetMapping("/{id}/entry")
     public Directory entry(@PathVariable String id, @RequestParam String path) {
         return scanService.entry(id, path);
+    }
+
+    @GetMapping("/{id}/ancestors")
+    public Ancestry ancestors(@PathVariable String id, @RequestParam String path) {
+        return scanService.ancestors(id, path);
     }
 
     @GetMapping("/{id}/largest")

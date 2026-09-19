@@ -2,6 +2,7 @@ package backend.services.files;
 
 import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
+import backend.models.Ancestry;
 import backend.models.Directory;
 import backend.models.LargestFiles;
 import backend.models.SkippedItems;
@@ -608,6 +609,45 @@ class ScanServiceTests {
                 () -> service.entry(id, temporary + "-sibling")).getCode());
         assertEquals(ApiErrorCode.PATH_NOT_IN_SCAN, assertThrows(ApiException.class,
                 () -> service.entry(id, folder.resolve("missing.bin").toString())).getCode());
+    }
+
+    @Test
+    void leadsToADeepFileThroughItsAncestorsOnly() throws Exception {
+        Path deep = Files.createDirectories(temporary.resolve("a/b/c/d/e/f"));
+        Path target = Files.write(deep.resolve("video.bin"), new byte[900]);
+        // Siblings along the way are listed as previews, never expanded.
+        Files.write(Files.createDirectories(temporary.resolve("a/side/inner")).resolve("other.bin"), new byte[5]);
+        String id = finish(service.start(temporary.toString()).id()).id();
+
+        Ancestry ancestry = service.ancestors(id, target.toString());
+        assertEquals(id, ancestry.scanId());
+        assertEquals(target.toString(), ancestry.entry().getAbsolutePath());
+        assertEquals(900, ancestry.entry().getSizeBytes());
+        assertTrue(ancestry.entry().getSubdirectories().isEmpty());
+        List<String> chain = ancestry.ancestors().stream().map(Directory::getAbsolutePath).toList();
+        List<String> expected = new ArrayList<>(List.of(temporary.toString()));
+        for (Path path = temporary.relativize(deep); path != null; path = path.getParent()) {
+            expected.add(1, temporary.resolve(path).toString());
+        }
+        assertEquals(expected, chain);
+        for (int i = 0; i < ancestry.ancestors().size(); i++) {
+            Directory ancestor = ancestry.ancestors().get(i);
+            assertTrue(ancestor.isChildrenLoaded());
+            String next = i + 1 < chain.size() ? chain.get(i + 1) : target.toString();
+            assertTrue(ancestor.getSubdirectories().stream().anyMatch(child -> child.getAbsolutePath().equals(next)));
+            assertTrue(ancestor.getSubdirectories().stream().allMatch(child -> child.getSubdirectories().isEmpty()));
+        }
+
+        assertTrue(service.ancestors(id, temporary.toString()).ancestors().isEmpty());
+        // The requested spelling is normalized to the snapshot's own path.
+        Ancestry normalized = service.ancestors(id, deep.resolve("../f/video.bin").toString());
+        assertEquals(target.toString(), normalized.entry().getAbsolutePath());
+        assertEquals(ApiErrorCode.PATH_OUTSIDE_SCAN, assertThrows(ApiException.class,
+                () -> service.ancestors(id, temporary + "-sibling")).getCode());
+        assertEquals(ApiErrorCode.PATH_NOT_IN_SCAN, assertThrows(ApiException.class,
+                () -> service.ancestors(id, deep.resolve("missing.bin").toString())).getCode());
+        assertEquals(ApiErrorCode.SCAN_NOT_FOUND, assertThrows(ApiException.class,
+                () -> service.ancestors("missing", target.toString())).getCode());
     }
 
     private void assertRejected(String path, ApiErrorCode code) {

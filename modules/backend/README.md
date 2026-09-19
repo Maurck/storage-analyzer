@@ -29,7 +29,7 @@ On macOS/Linux, use `./mvnw` instead; the start script is Windows-only. Maven is
 java -jar target/sa-backend.jar
 ```
 
-The tests use temporary folders and cover the health document, error codes, progress timing, current path and volume, byte totals, lazy expansion, snapshot consistency, cancellation (including a worker that outlives its evicted session), two simultaneous scans, the shared memory budget and its eviction, recovery after limit failures, wide folders, scan expiry, invalid paths, item/depth limits, HTTP errors, CORS and the retired routes. A symbolic-link test is skipped when the operating system does not permit creating links.
+The tests use temporary folders and cover the health document, error codes, progress timing, current path and volume, byte totals, lazy expansion, the chain of folders leading to an entry, snapshot consistency, cancellation (including a worker that outlives its evicted session), two simultaneous scans, the shared memory budget and its eviction, recovery after limit failures, wide folders, scan expiry, invalid paths, item/depth limits, HTTP errors, CORS and the retired routes. A symbolic-link test is skipped when the operating system does not permit creating links.
 
 ## Scan API
 
@@ -40,6 +40,7 @@ The tests use temporary folders and cover the health document, error codes, prog
 | `DELETE /scans/{id}`                                           | Cancels active work; repeated cancellation is safe                             |
 | `GET /scans/{id}/directory?path=...`                           | Completed snapshot node with its direct children; URL-encode the absolute path |
 | `GET /scans/{id}/entry?path=...`                               | One node of a completed scan without children; confirms the path belongs to it |
+| `GET /scans/{id}/ancestors?path=...`                           | An entry and the folders leading to it, each with its direct children          |
 | `GET /scans/{id}/largest?limit=100&minSizeBytes=0`             | Largest files of a completed scan (see below)                                  |
 | `GET /scans/{id}/skipped?offset=0&limit=100`                   | Items a completed scan skipped or only partly read, by path                    |
 | `GET /capacity`                                                | How much one analysis can hold on this computer                                |
@@ -115,7 +116,9 @@ Errors use JSON `{"code":"...","message":"..."}`. Clients translate `code`; `mes
 
 `GET /scans/{id}/entry` answers one node without its children. The desktop app uses it before showing an item in Explorer: the path must belong to the scan by whole name elements, never by a text prefix, and the canonical path from the snapshot is the one shown.
 
-All three need a completed scan (`409 SCAN_NOT_COMPLETE` otherwise) and answer `400 INVALID_PARAMETER` for malformed or out-of-range parameters.
+`GET /scans/{id}/ancestors` returns `scanId`, `entry` (the node without children, with the snapshot's own path) and `ancestors`: the folders from the root down to the entry's parent, root first, each with its direct children, so a client can open the folder of a ranked file without expanding anything else. The chain is empty for the root. The path is checked like `entry`, and the whole chain comes from one snapshot under one lock; its size is the sum of those folders' direct children, as if each had been requested with `directory`.
+
+All four need a completed scan (`409 SCAN_NOT_COMPLETE` otherwise) and answer `400 INVALID_PARAMETER` for malformed or out-of-range parameters.
 
 ## Health and compatibility
 

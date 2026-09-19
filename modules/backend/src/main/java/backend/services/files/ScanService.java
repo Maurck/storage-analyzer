@@ -3,6 +3,7 @@ package backend.services.files;
 import backend.enums.DirectoryType;
 import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
+import backend.models.Ancestry;
 import backend.models.Directory;
 import backend.models.LargestFiles;
 import backend.models.SkippedItems;
@@ -187,6 +188,21 @@ public class ScanService {
     /** One node of a completed scan without its children, e.g. to confirm it belongs to the scan. */
     public synchronized Directory entry(String id, String requestedPath) {
         return toDirectory(findEntry(completed(id), requestedPath), false);
+    }
+
+    /**
+     * An entry of a completed scan and the folders that lead to it, root first, each with
+     * its direct children: only what a client needs to open the entry's folder.
+     */
+    public synchronized Ancestry ancestors(String id, String requestedPath) {
+        Session session = completed(id);
+        Entry entry = findEntry(session, requestedPath);
+        LinkedList<Directory> ancestors = new LinkedList<>();
+        for (Path path = entry.path; !path.equals(session.path); ) {
+            path = path.getParent();
+            ancestors.addFirst(toDirectory(session.entries.get(path), true));
+        }
+        return new Ancestry(session.id, toDirectory(entry, false), List.copyOf(ancestors));
     }
 
     /**

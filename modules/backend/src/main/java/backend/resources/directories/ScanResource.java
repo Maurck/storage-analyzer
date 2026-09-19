@@ -1,7 +1,9 @@
 package backend.resources.directories;
 
 import backend.models.Directory;
+import backend.models.LargestFiles;
 import backend.models.ScanStatus;
+import backend.models.SkippedItems;
 import backend.services.files.ScanService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -35,5 +37,24 @@ public class ScanResource {
     @GetMapping("/{id}/directory")
     public Directory directory(@PathVariable String id, @RequestParam String path) {
         return scanService.directory(id, path);
+    }
+
+    @GetMapping("/{id}/entry")
+    public Directory entry(@PathVariable String id, @RequestParam String path) {
+        return scanService.entry(id, path);
+    }
+
+    @GetMapping("/{id}/largest")
+    public LargestFiles largest(@PathVariable String id,
+                                @RequestParam(defaultValue = "100") int limit,
+                                @RequestParam(defaultValue = "0") long minSizeBytes) {
+        return scanService.largest(id, limit, minSizeBytes);
+    }
+
+    @GetMapping("/{id}/skipped")
+    public SkippedItems skipped(@PathVariable String id,
+                                @RequestParam(defaultValue = "0") int offset,
+                                @RequestParam(defaultValue = "100") int limit) {
+        return scanService.skipped(id, offset, limit);
     }
 }

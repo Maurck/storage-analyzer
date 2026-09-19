@@ -4,6 +4,8 @@ import backend.enums.DirectoryType;
 import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
 import backend.models.Directory;
+import backend.models.LargestFiles;
+import backend.models.SkippedItems;
 import backend.models.ScanStatus;
 import backend.models.ScanStatus.State;
 import backend.models.ScanStatus.Volume;
@@ -23,10 +25,18 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Bounded, read-only scans. Completed snapshots are immutable and expanded on demand. */
 @Service
 public class ScanService {
-    static final int MAX_ENTRIES = 250_000;
     static final int MAX_DEPTH = 512;
     static final int MAX_SESSIONS = 3;
-    private static final long MAX_SNAPSHOT_BYTES = 256L * 1024 * 1024;
+    /** Share of the JVM's maximum heap that snapshots may hold, by estimate. */
+    static final double SNAPSHOT_HEAP_SHARE = 0.5;
+    /** Path length used to turn the byte budget into an item count people can read. */
+    static final int REFERENCE_PATH_LENGTH = 120;
+    static final int MIN_ENTRIES = 100_000;
+    static final int MAX_ENTRIES_CEILING = 50_000_000;
+    /** Longest ranking any request may ask for; computed once per snapshot. */
+    static final int MAX_RANKED_FILES = 500;
+    /** Skipped items listed per snapshot; the count beyond it is still reported. */
+    static final int MAX_RECORDED_SKIPS = 10_000;
     private final ExecutorService executor;
     private final int maximumEntries;
     private final int maximumDepth;
@@ -34,6 +44,11 @@ public class ScanService {
     // Guarded by the service monitor; includes active work and retained snapshots.
     private long retainedSnapshotBytes;
     private final LinkedHashMap<String, Session> sessions = new LinkedHashMap<>();
+    // Not final so tests can lower it without creating thousands of files.
+    int maximumRecordedSkips = MAX_RECORDED_SKIPS;
+
+    /** What this computer can hold, derived from the heap the JVM was given. */
+    public record Capacity(long maxHeapBytes, long snapshotBudgetBytes, int maxEntries, int referencePathLength) { }
 
     public ScanService() {
         this(new ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS,
@@ -41,11 +56,15 @@ public class ScanService {
                     Thread thread = new Thread(runnable, "storage-scan");
                     thread.setDaemon(true);
                     return thread;
-                }));
+                }), capacityFor(Runtime.getRuntime().maxMemory()));
+    }
+
+    private ScanService(ExecutorService executor, Capacity capacity) {
+        this(executor, capacity.maxEntries(), MAX_DEPTH, capacity.snapshotBudgetBytes());
     }
 
     ScanService(ExecutorService executor) {
-        this(executor, MAX_ENTRIES, MAX_DEPTH);
+        this(executor, capacityFor(Runtime.getRuntime().maxMemory()));
     }
 
     ScanService(ExecutorService executor, int maximumEntries, int maximumDepth) {
@@ -62,15 +81,44 @@ public class ScanService {
         this.maximumSnapshotBytes = maximumSnapshotBytes;
     }
 
+    /**
+     * The JVM sizes its heap from the machine's memory (a quarter of it unless -Xmx
+     * says otherwise), so limits derived from it follow the computer running the app.
+     */
+    static Capacity capacityFor(long maximumHeapBytes) {
+        long budget = snapshotBudget(maximumHeapBytes);
+        long entries = budget / estimatedEntryBytes("x".repeat(REFERENCE_PATH_LENGTH));
+        int maxEntries = (int) Math.max(MIN_ENTRIES, Math.min(MAX_ENTRIES_CEILING, entries));
+        return new Capacity(maximumHeapBytes, budget, maxEntries, REFERENCE_PATH_LENGTH);
+    }
+
     static long snapshotBudget(long maximumHeapBytes) {
-        // Leave headroom for Spring, traversal, response DTOs/JSON and garbage collection.
-        return Math.min(MAX_SNAPSHOT_BYTES, maximumHeapBytes / 4);
+        // Estimates carry a ~30% margin, so this keeps well over half of the heap for
+        // Spring, the traversal, response DTOs/JSON and garbage collection.
+        return (long) (Math.max(0, maximumHeapBytes) * SNAPSHOT_HEAP_SHARE);
     }
 
     static long estimatedEntryBytes(Path path) {
-        // Conservative accounting, not an object-layout measurement. Include map/list
-        // overhead and path strings/caches; long paths must not cost a single flat unit.
-        return 512L + 4L * path.toString().length();
+        return estimatedEntryBytes(path.toString());
+    }
+
+    static long estimatedEntryBytes(String path) {
+        // Calibrated on JDK 17 with 40,801 entries at average path lengths of 62, 114 and
+        // 234 characters: about 307 bytes plus one byte per character, measured after GC.
+        // Characters outside Latin-1 make Java store the string in UTF-16, twice the size.
+        // Both terms carry a ~30% margin.
+        int tenthsPerChar = 13;
+        for (int i = 0; i < path.length(); i++) {
+            if (path.charAt(i) > 0xFF) {
+                tenthsPerChar = 26;
+                break;
+            }
+        }
+        return 400L + (long) path.length() * tenthsPerChar / 10;
+    }
+
+    public Capacity capacity() {
+        return new Capacity(Runtime.getRuntime().maxMemory(), maximumSnapshotBytes, maximumEntries, REFERENCE_PATH_LENGTH);
     }
 
     public ScanStatus start(String requestedPath) {
@@ -132,17 +180,103 @@ public class ScanService {
     }
 
     public synchronized Directory directory(String id, String requestedPath) {
+        return toDirectory(findEntry(completed(id), requestedPath), true);
+    }
+
+    /** One node of a completed scan without its children, e.g. to confirm it belongs to the scan. */
+    public synchronized Directory entry(String id, String requestedPath) {
+        return toDirectory(findEntry(completed(id), requestedPath), false);
+    }
+
+    /**
+     * The largest files of a completed scan. The first request ranks the snapshot once
+     * with a bounded heap; later ones only filter that ranking.
+     */
+    public synchronized LargestFiles largest(String id, int limit, long minSizeBytes) {
+        if (limit < 1 || limit > MAX_RANKED_FILES || minSizeBytes < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
+                    "Ask for 1 to " + MAX_RANKED_FILES + " files and a minimum size of 0 bytes or more.");
+        }
+        Session session = completed(id);
+        if (session.ranked == null) session.ranked = rank(session);
+        long matching = 0;
+        for (Entry entry : session.entries.values()) {
+            if (entry.type == DirectoryType.FILE && entry.sizeBytes >= minSizeBytes) matching++;
+        }
+        List<LargestFiles.RankedFile> files = session.ranked.stream()
+                .filter(entry -> entry.sizeBytes >= minSizeBytes)
+                .limit(limit)
+                .map(entry -> new LargestFiles.RankedFile(name(entry.path), entry.path.toString(),
+                        session.path.relativize(entry.path).toString(), entry.sizeBytes))
+                .toList();
+        return new LargestFiles(session.id, session.path.toString(), session.entries.get(session.path).partial,
+                limit, minSizeBytes, matching, files);
+    }
+
+    /** A page of the items a completed scan skipped or could not fully read, ordered by path. */
+    public synchronized SkippedItems skipped(String id, int offset, int limit) {
+        if (offset < 0 || limit < 1 || limit > 500) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
+                    "Ask for 1 to 500 items from an offset of 0 or more.");
+        }
+        Session session = completed(id);
+        if (session.flagged == null) {
+            List<Entry> flagged = new ArrayList<>();
+            long total = 0;
+            for (Entry entry : session.entries.values()) {
+                if (entry.errorCode == null) continue;
+                total++;
+                flagged.add(entry);
+            }
+            flagged.sort(Comparator.comparing(entry -> entry.path.toString()));
+            session.flaggedTotal = total;
+            session.flagged = flagged.size() > maximumRecordedSkips
+                    ? List.copyOf(flagged.subList(0, maximumRecordedSkips)) : flagged;
+        }
+        List<SkippedItems.SkippedItem> items = session.flagged.stream().skip(offset).limit(limit)
+                .map(entry -> new SkippedItems.SkippedItem(name(entry.path), entry.path.toString(),
+                        session.path.relativize(entry.path).toString(), entry.type, entry.errorCode))
+                .toList();
+        return new SkippedItems(session.id, session.flaggedTotal, session.flagged.size(), offset, items);
+    }
+
+    private static List<Entry> rank(Session session) {
+        // Largest first; equal sizes by path so the order never depends on hashing.
+        Comparator<Entry> order = Comparator.comparingLong((Entry entry) -> entry.sizeBytes).reversed()
+                .thenComparing(entry -> entry.path.toString());
+        PriorityQueue<Entry> smallestKept = new PriorityQueue<>(order.reversed());
+        for (Entry entry : session.entries.values()) {
+            if (entry.type != DirectoryType.FILE) continue;
+            smallestKept.add(entry);
+            if (smallestKept.size() > MAX_RANKED_FILES) smallestKept.poll();
+        }
+        List<Entry> ranked = new ArrayList<>(smallestKept);
+        ranked.sort(order);
+        return ranked;
+    }
+
+    private Session completed(String id) {
         Session session = findSession(id);
         if (session.state != State.COMPLETE) {
             throw new ApiException(HttpStatus.CONFLICT, ApiErrorCode.SCAN_NOT_COMPLETE, "Directory details are available after the scan completes.");
         }
+        return session;
+    }
+
+    private static Entry findEntry(Session session, String requestedPath) {
         Path path = parsePath(requestedPath);
+        // Path.startsWith compares whole name elements, never a text prefix.
         if (!path.startsWith(session.path)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.PATH_OUTSIDE_SCAN, "The directory must belong to this scan.");
         }
         Entry entry = session.entries.get(path);
         if (entry == null) throw new ApiException(HttpStatus.NOT_FOUND, ApiErrorCode.PATH_NOT_IN_SCAN, "This path was not found in the scan.");
-        return toDirectory(entry, true);
+        return entry;
+    }
+
+    private static String name(Path path) {
+        Path filename = path.getFileName();
+        return filename == null ? path.toString() : filename.toString();
     }
 
     private Session findSession(String id) {
@@ -333,6 +467,8 @@ public class ScanService {
         retainedSnapshotBytes -= session.retainedBytes;
         session.retainedBytes = 0;
         session.entries = Map.of();
+        session.ranked = null;
+        session.flagged = null;
     }
 
     private static void checkCancelled(Session session) {
@@ -402,6 +538,10 @@ public class ScanService {
         ScanErrorCode errorCode;
         Map<String, Long> errorParams;
         Future<?> future;
+        // Derived from a completed snapshot on first use; guarded by the service monitor.
+        List<Entry> ranked;
+        List<Entry> flagged;
+        long flaggedTotal;
 
         Session(Path path, Volume volume) {
             this.path = path;

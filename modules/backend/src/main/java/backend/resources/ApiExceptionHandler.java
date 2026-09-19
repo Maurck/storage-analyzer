@@ -5,6 +5,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.Map;
 
@@ -18,6 +19,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler({HttpMessageNotReadableException.class, MissingServletRequestParameterException.class})
     public ResponseEntity<Map<String, String>> handleInvalidRequest(Exception exception) {
         return ResponseEntity.badRequest().body(body(ApiErrorCode.INVALID_REQUEST, "A valid path is required."));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidParameter(Exception exception) {
+        return ResponseEntity.badRequest().body(body(ApiErrorCode.INVALID_PARAMETER, "A request parameter is not valid."));
     }
 
     private static Map<String, String> body(ApiErrorCode code, String message) {

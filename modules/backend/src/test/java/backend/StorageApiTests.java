@@ -71,6 +71,30 @@ class StorageApiTests {
     }
 
     @Test
+    void reportsThisComputersCapacity() throws Exception {
+        mvc.perform(get("/capacity"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maxHeapBytes").isNumber())
+                .andExpect(jsonPath("$.snapshotBudgetBytes").isNumber())
+                .andExpect(jsonPath("$.maxEntries").isNumber())
+                .andExpect(jsonPath("$.referencePathLength").value(120));
+    }
+
+    @Test
+    void rejectsMalformedRankingParametersWithACode() throws Exception {
+        mvc.perform(get("/scans/missing/largest").param("limit", "many"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+        mvc.perform(get("/scans/missing/largest").param("limit", "0"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+        mvc.perform(get("/scans/missing/largest"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCAN_NOT_FOUND"));
+        mvc.perform(get("/scans/missing/skipped").param("offset", "-1"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+        mvc.perform(get("/scans/missing/entry").param("path", temporary.toString()))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCAN_NOT_FOUND"));
+    }
+
+    @Test
     void doesNotExposeRetiredDirectoryAndMockEndpoints() throws Exception {
         mvc.perform(get("/directory"))
                 .andExpect(status().isNotFound());

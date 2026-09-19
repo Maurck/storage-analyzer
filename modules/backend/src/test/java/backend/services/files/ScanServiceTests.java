@@ -3,6 +3,8 @@ package backend.services.files;
 import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
 import backend.models.Directory;
+import backend.models.LargestFiles;
+import backend.models.SkippedItems;
 import backend.models.ScanStatus;
 import backend.resources.ApiErrorCode;
 import backend.resources.ApiException;
@@ -141,6 +143,10 @@ class ScanServiceTests {
                     () -> service.start(temporary.toString())).getStatus());
             assertEquals(HttpStatus.CONFLICT, assertThrows(ApiException.class,
                     () -> service.directory(first.id(), temporary.toString())).getStatus());
+            assertEquals(ApiErrorCode.SCAN_NOT_COMPLETE, assertThrows(ApiException.class,
+                    () -> service.largest(first.id(), 100, 0)).getCode());
+            assertEquals(ApiErrorCode.SCAN_NOT_COMPLETE, assertThrows(ApiException.class,
+                    () -> service.skipped(first.id(), 0, 100)).getCode());
             assertEquals(ScanStatus.State.CANCELLED, service.cancel(first.id()).status());
             assertEquals(ScanStatus.State.CANCELLED, service.cancel(first.id()).status());
             assertNull(service.status(first.id()).root());
@@ -160,12 +166,32 @@ class ScanServiceTests {
     }
 
     @Test
-    void sizesTheSharedBudgetFromHeapWithAnAbsoluteCeiling() {
-        long mebibyte = 1024L * 1024;
-        assertEquals(64 * mebibyte, ScanService.snapshotBudget(256 * mebibyte));
-        assertEquals(256 * mebibyte, ScanService.snapshotBudget(8 * 1024 * mebibyte));
+    void sizesTheSharedBudgetAndEntryLimitFromTheHeap() {
+        long gibibyte = 1024L * 1024 * 1024;
+        assertEquals(gibibyte, ScanService.snapshotBudget(2 * gibibyte));
+        assertEquals(0, ScanService.snapshotBudget(-1));
+        // 1 GiB over 556 estimated bytes for a 120-character path.
+        ScanService.Capacity eightGigabyteMachine = ScanService.capacityFor(2 * gibibyte);
+        assertEquals(gibibyte, eightGigabyteMachine.snapshotBudgetBytes());
+        assertEquals(1_931_190, eightGigabyteMachine.maxEntries());
+        assertEquals(2 * eightGigabyteMachine.maxEntries(), ScanService.capacityFor(4 * gibibyte).maxEntries(), 1);
+        assertEquals(ScanService.MIN_ENTRIES, ScanService.capacityFor(64L * 1024 * 1024).maxEntries());
+        assertEquals(ScanService.MAX_ENTRIES_CEILING, ScanService.capacityFor(1024 * gibibyte).maxEntries());
+    }
+
+    @Test
+    void entryEstimatesStayAboveTheCalibratedMeasurement() {
+        // Measured on JDK 17: about 307 bytes plus one byte per character.
+        for (int length : new int[]{3, 40, 62, 114, 234, 400, 1024}) {
+            long measured = 307 + Math.round(1.02 * length);
+            long estimate = ScanService.estimatedEntryBytes("a".repeat(length));
+            assertTrue(estimate >= measured * 1.2, length + ": " + estimate + " vs " + measured);
+        }
         assertTrue(ScanService.estimatedEntryBytes(temporary.resolve("longer-filename"))
                 > ScanService.estimatedEntryBytes(temporary));
+        // UTF-16 strings cost twice as much per character.
+        assertEquals(400 + 260, ScanService.estimatedEntryBytes("文".repeat(100)));
+        assertEquals(400 + 130, ScanService.estimatedEntryBytes("é".repeat(100)));
     }
 
     @Test
@@ -456,6 +482,126 @@ class ScanServiceTests {
 
     private void assertBadPath(String path) {
         assertEquals(HttpStatus.BAD_REQUEST, assertThrows(ApiException.class, () -> service.start(path)).getStatus());
+    }
+
+    @Test
+    void ranksTheLargestFilesOfTheWholeScanWithoutOpeningFolders() throws Exception {
+        Path deep = Files.createDirectories(temporary.resolve("a/b/c/d/e/f"));
+        Path target = Files.write(deep.resolve("video.bin"), new byte[900]);
+        Files.write(temporary.resolve("root.bin"), new byte[100]);
+        // Same name and size in two places: ties are ordered by path.
+        Path left = Files.write(Files.createDirectory(temporary.resolve("left")).resolve("copy.bin"), new byte[500]);
+        Path right = Files.write(Files.createDirectory(temporary.resolve("right")).resolve("copy.bin"), new byte[500]);
+        Files.write(temporary.resolve("empty.bin"), new byte[0]);
+        String id = finish(service.start(temporary.toString()).id()).id();
+
+        LargestFiles all = service.largest(id, 100, 0);
+        assertEquals(List.of(target.toString(), left.toString(), right.toString(),
+                        temporary.resolve("root.bin").toString(), temporary.resolve("empty.bin").toString()),
+                all.files().stream().map(LargestFiles.RankedFile::absolutePath).toList());
+        LargestFiles.RankedFile first = all.files().get(0);
+        assertEquals("video.bin", first.name());
+        assertEquals(temporary.relativize(target).toString(), first.relativePath());
+        assertEquals(900, first.sizeBytes());
+        assertEquals(5, all.matchingFiles());
+        assertEquals(temporary.toString(), all.root());
+        assertFalse(all.partial());
+
+        // The minimum is inclusive; opening folders does not change the ranking.
+        service.directory(id, deep.toString());
+        LargestFiles filtered = service.largest(id, 2, 500);
+        assertEquals(List.of(900L, 500L), filtered.files().stream().map(LargestFiles.RankedFile::sizeBytes).toList());
+        assertEquals(3, filtered.matchingFiles());
+        assertEquals(left.toString(), filtered.files().get(1).absolutePath());
+        LargestFiles none = service.largest(id, 100, 901);
+        assertTrue(none.files().isEmpty());
+        assertEquals(0, none.matchingFiles());
+    }
+
+    @Test
+    void theRankingIsBoundedAndItsParametersValidated() throws Exception {
+        for (int i = 0; i < ScanService.MAX_RANKED_FILES + 20; i++) {
+            Files.write(temporary.resolve("file-" + i + ".bin"), new byte[i % 50]);
+        }
+        String id = finish(service.start(temporary.toString()).id()).id();
+        LargestFiles most = service.largest(id, ScanService.MAX_RANKED_FILES, 0);
+        assertEquals(ScanService.MAX_RANKED_FILES, most.files().size());
+        assertEquals(ScanService.MAX_RANKED_FILES + 20, most.matchingFiles());
+        for (int[] invalid : new int[][]{{0, 0}, {ScanService.MAX_RANKED_FILES + 1, 0}, {10, -1}}) {
+            assertEquals(ApiErrorCode.INVALID_PARAMETER, assertThrows(ApiException.class,
+                    () -> service.largest(id, invalid[0], invalid[1])).getCode());
+        }
+        assertEquals(ApiErrorCode.SCAN_NOT_FOUND, assertThrows(ApiException.class,
+                () -> service.largest("missing", 10, 0)).getCode());
+    }
+
+    @Test
+    void aPartialScanSaysItsRankingMayMissFiles() throws Exception {
+        service.close();
+        service = new ScanService(Executors.newSingleThreadExecutor(), 100, 2);
+        Files.write(Files.createDirectories(temporary.resolve("child/deep")).resolve("hidden.bin"), new byte[8]);
+        Files.write(temporary.resolve("visible.bin"), new byte[4]);
+        String id = finish(service.start(temporary.toString()).id()).id();
+        LargestFiles largest = service.largest(id, 10, 0);
+        assertTrue(largest.partial());
+        assertEquals(List.of("visible.bin"), largest.files().stream().map(LargestFiles.RankedFile::name).toList());
+    }
+
+    @Test
+    void listsSkippedItemsThatReconcileWithTheCount() throws Exception {
+        service.close();
+        service = new ScanService(Executors.newSingleThreadExecutor(), 1000, 2);
+        for (String name : new String[]{"c", "a", "b"}) {
+            Files.write(Files.createDirectories(temporary.resolve(name).resolve("too-deep")).resolve("x.bin"), new byte[1]);
+        }
+        ScanStatus complete = finish(service.start(temporary.toString()).id());
+        SkippedItems page = service.skipped(complete.id(), 0, 100);
+        assertEquals(complete.skippedCount(), page.total());
+        assertEquals(3, page.recorded());
+        assertEquals(List.of("a", "b", "c"), page.items().stream()
+                .map(item -> Path.of(item.relativePath()).getName(0).toString()).toList());
+        assertTrue(page.items().stream().allMatch(item -> item.code() == NodeIssueCode.DEPTH_LIMIT));
+        assertEquals("too-deep", page.items().get(0).name());
+
+        SkippedItems second = service.skipped(complete.id(), 2, 1);
+        assertEquals(1, second.items().size());
+        assertEquals(2, second.offset());
+        assertTrue(service.skipped(complete.id(), 3, 100).items().isEmpty());
+        for (int[] invalid : new int[][]{{-1, 10}, {0, 0}, {0, 501}}) {
+            assertEquals(ApiErrorCode.INVALID_PARAMETER, assertThrows(ApiException.class,
+                    () -> service.skipped(complete.id(), invalid[0], invalid[1])).getCode());
+        }
+    }
+
+    @Test
+    void aTruncatedSkipListStillReportsEveryItem() throws Exception {
+        service.close();
+        service = new ScanService(Executors.newSingleThreadExecutor(), 1000, 2);
+        service.maximumRecordedSkips = 2;
+        for (String name : new String[]{"a", "b", "c", "d"}) {
+            Files.createDirectories(temporary.resolve(name).resolve("too-deep"));
+        }
+        SkippedItems page = service.skipped(finish(service.start(temporary.toString()).id()).id(), 0, 100);
+        assertEquals(4, page.total());
+        assertEquals(2, page.recorded());
+        assertEquals(2, page.items().size());
+    }
+
+    @Test
+    void confirmsAnEntryBelongsToTheScanWithoutItsChildren() throws Exception {
+        Path folder = Files.createDirectory(temporary.resolve("folder"));
+        Path file = Files.write(folder.resolve("file.bin"), new byte[3]);
+        String id = finish(service.start(temporary.toString()).id()).id();
+        Directory entry = service.entry(id, folder.toString());
+        assertEquals(folder.toString(), entry.getAbsolutePath());
+        assertTrue(entry.getSubdirectories().isEmpty());
+        assertFalse(entry.isChildrenLoaded());
+        assertEquals(3, service.entry(id, file.toString()).getSizeBytes());
+        // A path that only shares a text prefix with the root is outside the scan.
+        assertEquals(ApiErrorCode.PATH_OUTSIDE_SCAN, assertThrows(ApiException.class,
+                () -> service.entry(id, temporary + "-sibling")).getCode());
+        assertEquals(ApiErrorCode.PATH_NOT_IN_SCAN, assertThrows(ApiException.class,
+                () -> service.entry(id, folder.resolve("missing.bin").toString())).getCode());
     }
 
     private void assertRejected(String path, ApiErrorCode code) {

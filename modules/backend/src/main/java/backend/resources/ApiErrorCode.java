@@ -15,4 +15,5 @@ public enum ApiErrorCode {
     SCAN_NOT_COMPLETE,
     PATH_OUTSIDE_SCAN,
     PATH_NOT_IN_SCAN,
+    INVALID_PARAMETER,
 }

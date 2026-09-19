@@ -118,6 +118,9 @@ function createWindow() {
     },
     icon: path.join(__dirname, "icon.ico"),
   });
+  // Start maximized: the window keeps its title bar and the taskbar stays
+  // visible. Restoring it falls back to the size above.
+  window.maximize();
   mainWindow = window;
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {

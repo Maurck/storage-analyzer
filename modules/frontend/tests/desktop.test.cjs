@@ -36,6 +36,7 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, l
         }
         on(name, handler) { this.events.set(name, handler); }
         isDestroyed() { return this.destroyed; }
+        maximize() { this.maximized = true; }
         loadFile(filename) { this.loadedFile = filename; return Promise.resolve(); }
         static getAllWindows() { return windows.filter(window => !window.destroyed); }
     }
@@ -117,6 +118,7 @@ test('renderer is isolated and only receives a loopback API origin', async () =>
     assert.equal(window.options.webPreferences.additionalArguments[1], '--storage-analyzer-number-locale=es-PE');
     assert.equal(window.loadedFile, path.join(frontendPath, 'index.html'));
     assert.equal(window.options.minWidth, 360);
+    assert.equal(window.maximized, true, 'the window starts maximized');
 });
 
 test('unsupported backend origins, credentials, paths, queries or fragments are rejected', async () => {

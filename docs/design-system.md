@@ -36,7 +36,7 @@ src/
     components/                explorer, chart, contents and scan presentation
     StorageAnalysisPage.tsx    feature composition and selection
   features/settings/
-    SettingsDialog.tsx         language picker in a modal dialog
+    SettingsDialog.tsx         language, recent-folder preference, capacity and shortcuts
   shared/
     ui/                        Button, IconButton, Icon, Text, Spinner, Skeleton, SegmentedControl
     components/                Alert, EmptyState, ErrorState
@@ -50,6 +50,10 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 
 ## States and navigation
 
+- Results first: with results, a compact work header (the root, its state as text, "Analyzed {date}" from the scan contract, the path and the actions) and a summary strip replace the welcome heading and cards. Long explanations go in a native `<details>`; warnings that change how to read the numbers (logical size, partial analysis, drive capacity) stay visible. Charts follow the table they complement and can be hidden. Acceptance: at 1280×720 and 100 % the actions and the first row are visible without scrolling.
+- Commands name their object ("Rescan {name}", "Show in Explorer" with text) and never depend on a tooltip. A menu button such as the one next to "New analysis" is a disclosure: `aria-expanded`, Escape returns focus to it, and a click outside or tabbing away closes it.
+- One cause, one message: when the engine's banner explains a failure, the page does not repeat it in another alert.
+- Personal data: remembering recent folders can be turned off, which hides the list without deleting it; clearing it is a separate, named action.
 - Service readiness: actions that need the analysis engine stay disabled until its health check answers. Explain the reason (connecting, starting, not responding, stopped, another program or version on the port, unsupported platform) with a real recovery action. Never restart the engine without the person asking; checks may repeat with a growing interval.
 - Loading: preserve geometry, show a status message and expose busy state. No invented percentage for indeterminate scans. Long scans show elapsed time and the folder being read outside live regions; only fixed sentences (a quiet period, no response) are announced.
 - Empty: distinguish no scan, an empty folder, no filter results and no measurable bytes.

@@ -43,7 +43,7 @@ Todo queda en el equipo; la app no envía nada por red.
 | Registro del backend                           | `%APPDATA%\Storage Analyzer\logs\backend.log`                   | 5 MB; al superarlo pasa a `backend.old.log` y se empieza de nuevo |
 | Resultados de los análisis                     | Solo en memoria del backend                                     | Se pierden al cerrar la app                                       |
 
-Las rutas de las carpetas recientes y el registro pueden contener nombres de carpetas del usuario. Las carpetas recientes se pueden borrar desde la bienvenida.
+Las rutas de las carpetas recientes y el registro pueden contener nombres de carpetas del usuario. En Configuración, «Guardar carpetas recientes» se puede desactivar: la app deja de guardarlas y oculta la lista, pero no la borra. «Borrar carpetas recientes» (en Configuración y en la bienvenida) la vacía. Ninguna de las dos opciones borra nada del disco.
 
 ## Actualización
 

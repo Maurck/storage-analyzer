@@ -501,16 +501,16 @@ No se fijan fechas sin capacidad estimada. Una entrega principal y, como máximo
 
 ### 5.2 Estado real y evidencia conservada
 
-| Hito                                 | Estado al 2026-09-19                   | Qué sigue                                                                                                                    |
-| ------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| H0 · Limpieza y límites              | Cerrado según verificación registrada. | Mantener regresiones; límites evolucionados en H2.                                                                           |
-| H1 · Motor, errores y progreso       | Cerrado según verificación registrada. | Revisar accesibilidad manual pendiente; diálogo nativo ya corregido en H3.                                                   |
-| H2 · Primer hallazgo                 | Cerrado según verificación registrada. | Integrar ranking/contexto; no rehacer F1a/F2a/F6a/F10/F14a.                                                                  |
-| H3 · Distribución interna y claridad | Instalador entregado; hito abierto.    | Entorno limpio/offline, cuenta estándar, matriz Windows y accesibilidad; UX de consolidación propuesta, aún no implementada. |
-| H4 · Encontrar y comprender          | Propuesto, ordenado en incrementos.    | Contexto → búsqueda global → fechas/categorías → comodidad.                                                                  |
-| H5 · Retomar y comparar              | Propuesto.                             | Resúmenes locales compatibles, comparación, informes y revisión manual.                                                      |
-| H6 · Orientación y precisión         | Propuesto, alcance acotado.            | Catálogo explicable y precisión Windows verificada.                                                                          |
-| H7 · Apuestas de mayor riesgo        | Diferido.                              | Papelera, mapa, monitor e iniciativas sin retorno suficientemente claro.                                                     |
+| Hito                                 | Estado al 2026-09-19                             | Qué sigue                                                                                                                                             |
+| ------------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H0 · Limpieza y límites              | Cerrado según verificación registrada.           | Mantener regresiones; límites evolucionados en H2.                                                                                                    |
+| H1 · Motor, errores y progreso       | Cerrado según verificación registrada.           | Revisar accesibilidad manual pendiente; diálogo nativo ya corregido en H3.                                                                            |
+| H2 · Primer hallazgo                 | Cerrado según verificación registrada.           | Integrar ranking/contexto; no rehacer F1a/F2a/F6a/F10/F14a.                                                                                           |
+| H3 · Distribución interna y claridad | Instalador y UX de H3b entregados; hito abierto. | H3a: entorno limpio/offline, cuenta estándar y Windows 10 no verificados. H3b: falta la revisión manual con lector de pantalla y alto contraste real. |
+| H4 · Encontrar y comprender          | Propuesto, ordenado en incrementos.              | Contexto → búsqueda global → fechas/categorías → comodidad.                                                                                           |
+| H5 · Retomar y comparar              | Propuesto.                                       | Resúmenes locales compatibles, comparación, informes y revisión manual.                                                                               |
+| H6 · Orientación y precisión         | Propuesto, alcance acotado.                      | Catálogo explicable y precisión Windows verificada.                                                                                                   |
+| H7 · Apuestas de mayor riesgo        | Diferido.                                        | Papelera, mapa, monitor e iniciativas sin retorno suficientemente claro.                                                                              |
 
 **Alcance de la evidencia:** las tablas siguientes registran ejecuciones anteriores, conservadas como historial. Esta revisión comprobó código, documentación y capturas existentes; no volvió a ejecutar instaladores, suites ni pruebas manuales. Los pendientes históricos resueltos posteriormente se anotan para no duplicar trabajo.
 
@@ -624,6 +624,44 @@ No se fijan fechas sin capacidad estimada. Una entrega principal y, como máximo
 3. Completar revisión interna manual con lector de pantalla y alto contraste de Windows.
 4. Firma/procedencia antes de distribución pública. No es requisito para diseñar H4 ni para pruebas internas autorizadas; tampoco se pide desactivar protecciones.
 5. Aplicar y verificar, en entregas separadas, la consolidación UX añadida a H3. No confundirla con las correcciones del instalador que ya se entregaron.
+
+#### Evidencia de H3b (2026-09-19) — entregado, salida pendiente de revisión manual
+
+**Entregado** en la rama `feat/h3b-workspace-clarity`, con fixtures y sin rutas personales:
+
+- **UX6 · Fecha en el contrato.** `GET /scans/{id}` devuelve `startedAt` y `finishedAt` (ISO-8601; `finishedAt` es nulo mientras analiza y se fija una sola vez). El frontend los valida, los acepta con precisión de nanosegundos y los muestra con el formato regional del sistema. No se deducen de la duración.
+- **UX1 · Resultados antes que decoración.** Con resultados, la cabecera grande se sustituye por «Análisis de {carpeta}» con estado, «Analizado el {fecha}», ruta y acciones. Las cuatro tarjetas pasan a una franja: tamaño lógico (con «Tamaño lógico de los archivos, no espacio en disco» siempre visible), archivos, omitidos con su acceso y subcarpetas como dato secundario. La capacidad de la unidad sigue visible; la explicación larga y la aclaración «lectura de ese momento, no supervisión en vivo» están en «Cómo se calculan los tamaños», un `<details>` nativo operable con teclado. La dona va después de la tabla y se oculta con un botón con texto y `aria-expanded`. En la bienvenida, si hay carpetas recientes o habituales, la ilustración cede su sitio y los accesos quedan junto al botón.
+- **UX2 · Acciones con alcance.** «Nuevo análisis» (Ctrl+O) sustituye a «Elegir carpeta»; «Volver a analizar {carpeta}» (F5) nombra la raíz. La barra de selección ofrece «Mostrar en el Explorador», «Copiar ruta» y «Ocultar/Mostrar el gráfico» con texto visible. Si el motor se detiene durante un análisis, solo lo explica su aviso: se retiró la alerta duplicada «Conexión interrumpida».
+- **UX6 · Estado del resultado.** Etiqueta con texto: «Completo», «Parcial», «Resultados anteriores» (mientras corre otro análisis) o «Conservado del último análisis» (motor no disponible). «Histórico» no se usa porque aún no existe historial.
+- **UX7 · Recientes bajo control.** Un botón desplegable junto a «Nuevo análisis» muestra recientes y habituales (`aria-expanded`; Escape, clic fuera o tabular fuera lo cierran y Escape devuelve el foco). Configuración añade «Guardar carpetas recientes»: desactivarlo deja de guardar y oculta la lista **sin borrarla**; «Borrar carpetas recientes» es una operación aparte que anuncia su resultado con un mensaje de estado. Un almacenamiento bloqueado no impide analizar.
+
+**Medición de jerarquía (Chromium, fixture completo, 100 %, inglés):**
+
+| Vista                             | Antes                                                           | Después                                                                             |
+| --------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 1280 × 720                        | La primera fila empezaba en y = 1200 (página de 1510 px).       | La primera fila termina en y = 679, sin desplazar; página de 1277 px.               |
+| 390 × 844                         | La primera fila empezaba en y = 1022, tras 4 tarjetas en 2 × 2. | La primera fila termina en y = 892; resumen de < 200 px y dona después de la tabla. |
+| Bienvenida 1280 × 720 con accesos | Accesos rápidos en y = 736, bajo el pliegue.                    | Accesos en y = 534.                                                                 |
+
+Los avisos (parcial, errores) y el zoom pueden aumentar la altura; no se retiraron para ganar espacio.
+
+**Recorridos internos (§5.5).** Operador: automatización con fixtures. No hubo recorrido manual del responsable en esta entrega; se anota como tal.
+
+| Caso | Resultado                | Evidencia y límites                                                                                                                                                                                                                                                             |
+| ---- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1   | **No ejecutado** en H3b. | Sin cambios en el instalador. Siguen pendientes Sandbox/VM limpia sin red, cuenta estándar y Windows 10 (ver H3).                                                                                                                                                               |
+| T2   | Aprobado (automatizado). | Ranking y nombres duplicados en pruebas de UI; `electron-first-finding.cjs` con el JAR nuevo: archivo profundo primero, mostrado con teclado y archivo movido explicado.                                                                                                        |
+| T3   | Aprobado (automatizado). | Parcial con advertencia y etiqueta «Parcial»; motor detenido con resultados conservados, etiqueta «Conservado…» y un solo aviso; archivo movido; sesión caducada.                                                                                                               |
+| T4   | **Parcial.**             | Automatizado: teclado, axe WCAG 2.2 AA en bienvenida, resultados, menú de recientes, omitidos, errores y español; colores forzados emulados; 390 px y 200 % de texto sin desbordamiento. **No ejecutado:** lector de pantalla (Narrador/NVDA) y alto contraste real de Windows. |
+| T5   | Aprobado (automatizado). | Prueba a 1280×720: primera fila, comandos y estado visibles sin desplazar; ayuda de tamaños abierta con teclado; preferencia de recientes respetada tras recargar y borrado aparte.                                                                                             |
+
+**Revisión F15a aplicable:** queda cubierta la parte automatizable. La revisión manual con lector de pantalla y alto contraste real **no se ejecutó** y no se da por aprobada; es la condición pendiente para cerrar H3b.
+
+**Regresiones:** backend 38 pruebas (1 omitida por enlaces simbólicos). Frontend: `tsc`, webpack sin avisos, 35 pruebas de datos, 29 de escritorio y 47 de UI (4 nuevas). Integración real con Electron (`electron-smoke.cjs`, `electron-first-finding.cjs`) contra el backend empaquetado.
+
+**Límites conocidos:** la visibilidad de la dona no se recuerda entre sesiones; la fecha es la del reloj del equipo que analiza; las mediciones de altura son de Chromium en el equipo de desarrollo, no de todas las escalas de Windows.
+
+**Pendientes de H3a registrados como no verificados:** ejecución en Windows Sandbox o VM limpia sin red (Sandbox no está activado en este equipo y activarlo requiere administrador y reinicio), prueba con una cuenta estándar real (la cuenta disponible es administradora), Windows 10 y firma del instalador. No se extrapolan resultados de Windows 11 ni de una cuenta administradora.
 
 ### 5.3 Secuencia de entregas
 

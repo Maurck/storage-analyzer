@@ -45,8 +45,9 @@ The tests use temporary folders and cover the health document, error codes, prog
 | `GET /capacity`                                                | How much one analysis can hold on this computer                                |
 | `GET /health`                                                  | `{"application":"storage-analyzer","apiVersion":1,"status":"UP"}`              |
 
-The status object contains `id`, `path`, `status`, `processedFiles`, `processedDirectories`, `processedBytes`, `skippedCount`, `error`, `errorCode`, `errorParams`, `elapsedMillis`, `millisSinceActivity`, `currentPath`, `volume` and `root`. `status` is `SCANNING`, `COMPLETE`, `CANCELLED` or `ERROR`. `root` is present only for completed scans; it contains one level of children. Poll progress while the status is `SCANNING`.
+The status object contains `id`, `path`, `status`, `processedFiles`, `processedDirectories`, `processedBytes`, `skippedCount`, `error`, `errorCode`, `errorParams`, `startedAt`, `finishedAt`, `elapsedMillis`, `millisSinceActivity`, `currentPath`, `volume` and `root`. `status` is `SCANNING`, `COMPLETE`, `CANCELLED` or `ERROR`. `root` is present only for completed scans; it contains one level of children. Poll progress while the status is `SCANNING`.
 
+- `startedAt` and `finishedAt`: ISO-8601 instants in UTC. `finishedAt` is `null` while scanning and is set once, when the scan completes, fails or is cancelled. The interface shows it as "Analyzed {date}".
 - `elapsedMillis`: time since the scan started, frozen once it ends (including when it is cancelled).
 - `millisSinceActivity` and `currentPath`: time since the last recorded entry and the folder being read, only while scanning; otherwise `null`. A long quiet period can be a slow folder, not a hang.
 - `volume`: `{"totalBytes", "usableBytes"}` of the scanned volume when the scan started, or `null` when the platform cannot tell. It is not the space the scanned files take.

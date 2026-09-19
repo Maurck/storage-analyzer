@@ -692,6 +692,11 @@
     font-weight: 600;
     transition: filter 120ms ease;
   }
+  /* At most five of them, so the WCAG 2.5.8 minimum always fits; the share is
+     slightly overstated for tiny items, and the table keeps the exact value. */
+  button.bar-segment {
+    min-width: 24px;
+  }
   button.bar-segment:hover {
     filter: brightness(1.12);
     box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.35);

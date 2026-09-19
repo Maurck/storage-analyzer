@@ -1,4 +1,5 @@
 // Requires the real backend at http://localhost:5000 and a production build.
+// Selectors avoid visible text so the check works in any interface language.
 // Native dialog selection is stubbed; Electron's isolated IPC bridge and the
 // complete HTTP scan path run unchanged against the real application.
 const { _electron: electron, expect } = require('@playwright/test');
@@ -19,14 +20,14 @@ const path = require('node:path');
     const page = await app.firstWindow();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await expect(page.getByRole('heading', { name: 'Storage overview.' })).toBeVisible();
+    await expect(page.locator('#page-title')).toBeVisible();
     const bridge = await page.evaluate(() => ({ keys: Object.keys(window.storageAnalyzer), nodeAvailable: typeof window.require !== 'undefined' }));
     expect(bridge.keys.sort()).toEqual(['backendUrl', 'getBackendStatus', 'getCommonFolders', 'numberLocale', 'onBackendStatus', 'retryBackend', 'selectDirectory', 'showItemInFolder']);
     expect(bridge.nodeAvailable).toBe(false);
-    await page.getByRole('button', { name: 'Select folder', exact: true }).click();
-    await expect(page.getByRole('table', { name: /^Contents of ui/ })).toBeVisible({ timeout: 30000 });
-    await expect(page.getByRole('region', { name: 'Analysis summary' })).toContainText(String(expectedFiles.length));
-    const table = page.getByRole('table', { name: /^Contents of ui/ });
+    await page.locator('button[aria-keyshortcuts="Control+O"]').click();
+    await expect(page.locator('.contents-card table')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('.metric-grid')).toContainText(String(expectedFiles.length));
+    const table = page.locator('.contents-card table');
     await expect(table.locator('tbody tr')).toHaveCount(expectedFiles.length);
     const scan = await page.evaluate(async (folder) => {
       const response = await fetch(`${window.storageAnalyzer.backendUrl}/scans`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: folder }) });

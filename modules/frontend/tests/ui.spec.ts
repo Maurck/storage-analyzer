@@ -1097,6 +1097,15 @@ test("forced colors keep the selection and share bars distinguishable", async ({
   expect(
     await row.evaluate((element) => getComputedStyle(element).borderTopWidth),
   ).toBe("2px");
+  // Unselected rows blend their border into the background.
+  const other = treeNode(page, "Photos").locator(".tree-row").first();
+  expect(
+    await other.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const canvas = getComputedStyle(document.body).backgroundColor;
+      return style.borderTopColor === canvas;
+    }),
+  ).toBe(true);
   const bar = page.locator(".share-bar").first();
   expect(
     await bar.evaluate((element) => getComputedStyle(element).borderTopStyle),
@@ -1234,6 +1243,36 @@ test("a browser preview never offers to show items in Explorer", async ({
   await expect(page.getByRole("columnheader", { name: "Actions" })).toHaveCount(
     0,
   );
+});
+
+test("the ranking says it is loading until the files arrive", async ({
+  page,
+}) => {
+  await prepare(page);
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  // Registered last, so it runs first and then hands over to the fixture.
+  await page.route(
+    (url) => url.pathname.endsWith("/largest"),
+    async (route) => {
+      await gate;
+      await route.fallback();
+    },
+  );
+  await analyze(page);
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  const loading = page.getByRole("status").filter({ hasText: "Ranking files" });
+  await expect(loading).toBeAttached();
+  await expect(
+    page.getByRole("table", { name: /^Largest files in Fixture/ }),
+  ).toHaveCount(0);
+  release();
+  await expect(
+    page.getByRole("table", { name: /^Largest files in Fixture/ }),
+  ).toBeVisible();
+  await expect(loading).toHaveCount(0);
 });
 
 test("an expired analysis explains why the ranking is unavailable", async ({

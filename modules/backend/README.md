@@ -29,7 +29,7 @@ On macOS/Linux, use `./mvnw` instead; the start script is Windows-only. Maven is
 java -jar target/sa-backend.jar
 ```
 
-The tests use temporary folders and cover the health document, error codes, progress timing, current path and volume, byte totals, lazy expansion, the chain of folders leading to an entry, snapshot consistency, cancellation (including a worker that outlives its evicted session), two simultaneous scans, the shared memory budget and its eviction, recovery after limit failures, wide folders, scan expiry, invalid paths, item/depth limits, HTTP errors, CORS and the retired routes. A symbolic-link test is skipped when the operating system does not permit creating links.
+The tests use temporary folders and cover the health document, error codes, progress timing, current path and volume, byte totals, lazy expansion, the chain of folders leading to an entry, searches over the whole snapshot (case, separators, scope, paging, counts and the bounds of each parameter) and that they leave the service free for another scan's progress and cancellation, snapshot consistency, cancellation (including a worker that outlives its evicted session), two simultaneous scans, the shared memory budget and its eviction, recovery after limit failures, wide folders, scan expiry, invalid paths, item/depth limits, HTTP errors, CORS and the retired routes. A symbolic-link test is skipped when the operating system does not permit creating links.
 
 ## Scan API
 
@@ -42,6 +42,7 @@ The tests use temporary folders and cover the health document, error codes, prog
 | `GET /scans/{id}/entry?path=...`                               | One node of a completed scan without children; confirms the path belongs to it |
 | `GET /scans/{id}/ancestors?path=...`                           | An entry and the folders leading to it, each with its direct children          |
 | `GET /scans/{id}/largest?limit=100&minSizeBytes=0`             | Largest files of a completed scan (see below)                                  |
+| `GET /scans/{id}/files?query=&scope=&minSizeBytes=0&offset=0&limit=50` | One page of the files matching a search, largest first (see below)     |
 | `GET /scans/{id}/skipped?offset=0&limit=100`                   | Items a completed scan skipped or only partly read, by path                    |
 | `GET /capacity`                                                | How much one analysis can hold on this computer                                |
 | `GET /health`                                                  | `{"application":"storage-analyzer","apiVersion":1,"status":"UP"}`              |
@@ -92,7 +93,7 @@ Shorter paths reach the entry limit first; longer ones reach the budget first.
 What the budget does **not** bound:
 
 - The rest of the JVM: Spring, the traversal itself, garbage-collection headroom and any other allocation. An `OutOfMemoryError` during a scan is reported as a constant `ERROR` message on a best-effort basis; the JVM may still be unstable afterwards, and restarting the backend is the recovery.
-- Response size. `GET /scans/{id}` and `GET /scans/{id}/directory` return every direct child of the requested folder; a folder with 100,000 files produces a 100,000-item response, built while the service lock is held. Paginating direct children is a separate decision.
+- Response size. `GET /scans/{id}` and `GET /scans/{id}/directory` return every direct child of the requested folder; a folder with 100,000 files produces a 100,000-item response. Paginating direct children is a separate decision. Searches are paged, at most 100 files at a time.
 - The heap size. `-Xmx` (or the platform default) decides the budget; raising the limits in code without raising the heap only moves the failure.
 - Available memory. The heap is a ceiling, not a reservation: on a computer already short of memory, a scan near the limit can make the system page before the budget is reached.
 
@@ -108,17 +109,27 @@ Errors use JSON `{"code":"...","message":"..."}`. Clients translate `code`; `mes
 | `409`  | `SCAN_NOT_COMPLETE`                                                                                                                                   |
 | `429`  | `SCANS_AT_CAPACITY`, `SCANNER_BUSY`                                                                                                                   |
 
-## Ranking, skipped items and entries
+## Ranking, search, skipped items and entries
+
+Queries over a completed scan take the service monitor only to find the session and its entries; the walk, the sorting and the response are built outside it, because a completed snapshot never changes. Progress, cancellation and other scans are therefore not delayed by a long query. Measured on this computer (48 GB of RAM, heap 11.8 GiB) with a synthetic fixture of 177,075 entries, 10 runs each: ranking 97 ms the first time and 7 ms afterwards; a search over the whole analysis 89 ms (p95 97 ms), 8 ms within one folder, 93 ms for the hundredth page; one folder of 20,000 children 32 ms; the ancestors of a file four levels down 1 ms. While a second scan of the same fixture ran under 24 concurrent searches, its status answered in 1 ms (p95 3 ms, max 3 ms), it reached 92,601 files in 600 ms and it cancelled in 1 ms. The JVM held 617 MiB with two snapshots and 631 MiB after 30 more searches.
 
 `GET /scans/{id}/largest` returns `scanId`, `root`, `partial`, `limit`, `minSizeBytes`, `matchingFiles` and `files`, each with `name`, `absolutePath`, `relativePath` (from the root, including the name) and `sizeBytes`. Only files are ranked, largest first, ties by path, so the order never depends on hashing. `limit` goes from 1 to 500 and `minSizeBytes` is inclusive. The first request ranks the snapshot once with a bounded heap of 500; later ones only filter that ranking and count matching files, so `matchingFiles` can exceed `files.length`. `partial` means files inside skipped items are missing from the ranking.
+
+`GET /scans/{id}/files` searches the files of one scope: it returns `scanId`, `root`, `scope`, `partial`, `query`, `minSizeBytes`, `offset`, `limit`, `matchingFiles` and one page of `files`, shaped as the ranking's. Only files are listed, largest first, ties by path, so pages never overlap or skip.
+
+- `query` is matched against each file's path from the root, name included, ignoring case and treating `/` and `\` as the same separator. Surrounding spaces are stripped and an empty query matches every file. At most 1,024 characters.
+- `scope` is a folder of the scan, searched with all its subfolders; without it the whole analysis is searched. A path outside the scan answers `PATH_OUTSIDE_SCAN`, one that is not in it `PATH_NOT_IN_SCAN` and a file `NOT_A_FOLDER`.
+- `minSizeBytes` is inclusive. Every file under the scope is filtered before the page is cut, so `matchingFiles` counts all of them, not the page, and a match is found wherever it sits: beyond the ranking's 500 and inside branches no client ever expanded.
+- `limit` goes from 1 to 100 and `offset + limit` may not exceed 10,000, so a client narrows a search instead of paging through millions of rows.
+- `partial` refers to the scope: something under it was skipped, so files there cannot match.
 
 `GET /scans/{id}/skipped` lists the items flagged with a node code, by path: `total` equals the scan's `skippedCount`, `recorded` is how many can be listed (at most 10,000) and each item has `name`, `absolutePath`, `relativePath`, `type` and `code`. `limit` goes from 1 to 500.
 
 `GET /scans/{id}/entry` answers one node without its children. The desktop app uses it before showing an item in Explorer: the path must belong to the scan by whole name elements, never by a text prefix, and the canonical path from the snapshot is the one shown.
 
-`GET /scans/{id}/ancestors` returns `scanId`, `entry` (the node without children, with the snapshot's own path) and `ancestors`: the folders from the root down to the entry's parent, root first, each with its direct children, so a client can open the folder of a ranked file without expanding anything else. The chain is empty for the root. The path is checked like `entry`, and the whole chain comes from one snapshot under one lock; its size is the sum of those folders' direct children, as if each had been requested with `directory`.
+`GET /scans/{id}/ancestors` returns `scanId`, `entry` (the node without children, with the snapshot's own path) and `ancestors`: the folders from the root down to the entry's parent, root first, each with its direct children, so a client can open the folder of a ranked file without expanding anything else. The chain is empty for the root. The path is checked like `entry`, and the whole chain comes from one snapshot; its size is the sum of those folders' direct children, as if each had been requested with `directory`.
 
-All four need a completed scan (`409 SCAN_NOT_COMPLETE` otherwise) and answer `400 INVALID_PARAMETER` for malformed or out-of-range parameters.
+All five need a completed scan (`409 SCAN_NOT_COMPLETE` otherwise) and answer `400 INVALID_PARAMETER` for malformed or out-of-range parameters.
 
 ## Health and compatibility
 

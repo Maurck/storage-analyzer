@@ -9,7 +9,7 @@
 - **Observado:** comportamiento o estructura comprobable en el repositorio.
 - **Propuesto:** decisión de producto recomendada, pendiente de implementación y validación.
 - **[Suposición]:** hipótesis sobre usuarios, impacto o demanda; no equivale a evidencia de uso.
-- **Estado de ejecución:** H0 (limpieza técnica y límites) y H1 (motor listo, errores traducibles y progreso) están **cerrados y verificados** a fecha 2026-09-17; la evidencia figura en §5.2. H2 y los hitos posteriores siguen sin empezar.
+- **Estado de ejecución:** H0 (limpieza técnica y límites), H1 (motor listo, errores traducibles y progreso) y H2 (primer hallazgo, con límites dinámicos) están **cerrados y verificados**; la evidencia figura en §5.2. H3 y los hitos posteriores siguen sin empezar.
 
 ---
 
@@ -61,6 +61,8 @@ El primer resultado útil será **«instalar → analizar una carpeta → encont
 Hoy, cuando encuentra un elemento relevante, el usuario solo puede copiar su ruta (`StorageAnalysisPage.tsx`, `copyPath`): no puede mostrarlo en el Explorador, abrirlo ni enviarlo a la papelera desde la app. **[Suposición]** Parte del público quiere liberar espacio, no solo comprenderlo. Mostrar la ubicación permite probar esa necesidad con menor riesgo; no implica que el producto deba incorporar borrado propio.
 
 ### 2.2 La bienvenida promete algo que la app no cumple
+
+> **Resuelto en H2 (F2a):** la vista «Archivos más grandes» ordena los archivos de todo el análisis sin abrir el árbol.
 
 `WelcomeState` anuncia **"Encontrar archivos grandes"**, pero la tabla solo muestra los hijos directos de la carpeta seleccionada. Para encontrar un archivo de 20 GB que está 6 niveles más abajo hay que bajar nivel por nivel. La búsqueda del árbol dice "Buscar en elementos cargados", así que el usuario tiene que haber abierto antes la rama donde está lo que busca.
 
@@ -122,7 +124,7 @@ Es indeterminado a propósito (correcto según el design system), pero ni siquie
 - Las métricas del resumen incluyen textos de relleno ("Una jerarquía para explorar") que podrían ser datos útiles (la carpeta más grande, el archivo más grande).
 - El contador de "elementos omitidos" no lleva a ninguna parte: falta una lista de motivos y rutas. Elevar permisos no debe ser la respuesta automática a esta carencia.
 - El backend admite 2 escaneos simultáneos, pero la interfaz solo gestiona uno.
-- Robustez (resuelto en H0): el límite anterior de 100 millones de entradas y 5 sesiones era desproporcionado para snapshots en memoria. Ahora hay 250.000 entradas por escaneo, 3 sesiones y un presupuesto estimado compartido de `min(256 MiB, heap máximo / 4)`, con pruebas de concurrencia, cancelación, evicción, recuperación y carpetas anchas. **Consecuencia de producto:** analizar una unidad de sistema completa (normalmente más de 250.000 entradas) falla con un mensaje que pide elegir una carpeta más pequeña. El presupuesto no limita el consumo total de la JVM ni el tamaño de las respuestas de carpetas anchas.
+- Robustez (resuelto en H0 y H2): el límite anterior de 100 millones de entradas y 5 sesiones era desproporcionado para snapshots en memoria. H0 lo acotó a 250.000 entradas y a `min(256 MiB, heap máximo / 4)`, lo que impedía analizar `C:\` completo. **H2 hace el límite dinámico:** el presupuesto es la mitad del heap de la JVM (que se dimensiona según la RAM) con una estimación por entrada calibrada, y el máximo de entradas se deriva de él (unos 1,9 millones con 8 GB de RAM y 11,4 millones en el equipo de desarrollo). El presupuesto sigue sin limitar el consumo total de la JVM ni el tamaño de las respuestas de carpetas anchas.
 
 ### 2.12 Deuda que afecta a la evolución del producto
 
@@ -398,13 +400,14 @@ No hay evidencia suficiente para comprometer «0–6 semanas» o «4–12 meses�
 
 ### 5.2 Estado real del trabajo
 
-| Hito                             | Estado al 2026-09-17         | Evidencia / siguiente acción                                                         |
-| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------ |
-| H0 · Limpieza y límites          | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H0» debajo.                                              |
-| H1 · Motor listo y comprensible  | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H1» debajo. F15a queda iniciada, no cerrada.             |
-| H2–H3 · Primer hallazgo y beta   | **Propuestos**               | Decidir antes el alcance del límite de entradas (pendientes de H0).                  |
-| H4 · Profundidad/recurrencia     | **Backlog condicionado**     | Elegir la siguiente necesidad a partir de pruebas con usuarios.                      |
-| H5–H6 · Acciones y largo alcance | **Investigación o diferido** | Requieren evidencia y garantías adicionales; no autorizan implementación automática. |
+| Hito                             | Estado al 2026-09-17         | Evidencia / siguiente acción                                                          |
+| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| H0 · Limpieza y límites          | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H0» debajo.                                               |
+| H1 · Motor listo y comprensible  | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H1» debajo. F15a queda iniciada, no cerrada.              |
+| H2 · Primer hallazgo             | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H2» debajo. F15a: automatizada; falta la revisión manual. |
+| H3 · Beta instalable             | **Propuesto**                | Empaquetado F19a sin investigar todavía.                                              |
+| H4 · Profundidad/recurrencia     | **Backlog condicionado**     | Elegir la siguiente necesidad a partir de pruebas con usuarios.                       |
+| H5–H6 · Acciones y largo alcance | **Investigación o diferido** | Requieren evidencia y garantías adicionales; no autorizan implementación automática.  |
 
 Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No marcar un hito como completado solo porque exista código.
 
@@ -427,7 +430,7 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 **Pendientes detectados, fuera del alcance de H0:**
 
 - `tests/electron-smoke.cjs` espera textos en inglés, pero Electron toma el idioma del sistema. En un Windows en español falla antes de probar nada. Recargar la página tras fijar el idioma con CDP cierra la ventana, así que hay que resolverlo aparte (por ejemplo, con un perfil `userData` temporal para las pruebas). La verificación de H0 se hizo con una copia temporal adaptada al español.
-- **Decisión de producto antes de H2/H3:** con 250.000 entradas y el heap por defecto, analizar `C:\` completo falla. Hay que decidir entre aceptar ese alcance y explicarlo en la interfaz, aumentar el heap y los límites tras medir, o cambiar el almacenamiento del snapshot (§5.6, «Tamaño de datasets objetivo»).
+- ~~**Decisión de producto antes de H2/H3:** con 250.000 entradas, analizar `C:\` completo falla.~~ **Resuelto en H2** con límites derivados del heap (ver evidencia de H2).
 - Las respuestas de carpetas anchas se construyen con el lock del servicio tomado y sin paginar. Con los fixtures actuales (2.000 hijos) no bloquean; conviene revisarlas si H2 usa fixtures más anchos.
 
 #### Evidencia de cierre de H1 (2026-09-17)
@@ -456,6 +459,35 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 - Con colores forzados, las filas no seleccionadas del árbol también muestran borde (el borde transparente se vuelve visible). La selección se distingue por grosor y color, pero el aspecto es recargado.
 - F19a (prueba de empaquetado en una máquina limpia) no se investigó en este hito.
 - `tests/electron-smoke.cjs` sigue dependiendo del idioma del sistema (pendiente de H0); en H1 se actualizó la lista de claves del puente y se verificó con la copia en español.
+
+#### Evidencia de cierre de H2 (2026-09-19)
+
+**Entregado:** F2a (ranking global), F1a («Mostrar en el Explorador»), F10 mínimo (lista de omitidos), F6a (recientes y carpetas habituales) y F14a (atajos). Además, por petición expresa, el máximo de entradas se calcula según la capacidad del equipo.
+
+**Límite dinámico de entradas.** El presupuesto de snapshots es la mitad del heap máximo de la JVM, que la JVM dimensiona a partir de la RAM (un cuarto por defecto). La estimación por entrada se recalibró midiendo 40.801 entradas con rutas medias de 62, 114 y 234 caracteres (370, 420 y 545 bytes reales): se usa `400 + 1,3 × longitud` (el doble por carácter fuera de Latin-1), con un margen de alrededor del 30 %. El máximo de entradas es el presupuesto dividido por la estimación de una ruta de 120 caracteres, entre 100.000 y 50 millones, y se consulta en `GET /capacity` y en Ajustes.
+
+| Criterio de salida                                                       | Evidencia                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| El archivo objetivo de un fixture profundo aparece sin expandir el árbol | Backend: `ranksTheLargestFilesOfTheWholeScanWithoutOpeningFolders` (seis niveles). UI: se comprueba que no se pide ninguna rama. Recorrido real con Electron y el JAR (`tests/electron-first-finding.cjs`): `target.bin` a seis niveles encabeza la lista y solo la raíz está expandida. |
+| Nombres duplicados distinguidos por ubicación                            | Backend (`left/copy.bin` y `right/copy.bin`), UI y recorrido real. En ventanas estrechas la ubicación pasa debajo del nombre en lugar de truncarse.                                                                                                                                      |
+| Filtros y empates deterministas                                          | Empates por ruta; mínimo inclusivo; límite de 1 a 500 con `400 INVALID_PARAMETER` fuera de rango; conteo de coincidencias aunque se listen 100.                                                                                                                                          |
+| Mostrarlo con teclado                                                    | UI: foco y Enter en el botón de la fila. Recorrido real: `shell.showItemInFolder` recibe la ruta canónica del backend.                                                                                                                                                                   |
+| Rutas inexistentes y snapshot caducado                                   | Escritorio: `ITEM_MISSING`, `PATH_NOT_IN_SCAN`, `SCAN_NOT_FOUND`, servicio caído y peticiones mal formadas, sin abrir nada. UI y recorrido real: un archivo borrado tras el análisis se explica. Ranking caducado: error traducido.                                                      |
+| Seguridad del objetivo                                                   | El proceso principal no confía en la ruta del renderer: la confirma con `GET /scans/{id}/entry` (pertenencia por componentes de ruta, no por prefijo de texto) y comprueba que sigue existiendo. Nunca abre ni ejecuta el elemento.                                                      |
+| F10 mínimo                                                               | Lista paginada por ruta con el motivo traducido; `total` cuadra con `skippedCount` y se avisa cuando la lista se truncó (máximo 10.000 registrados).                                                                                                                                     |
+| F6a y F14a                                                               | Recientes (5, borrables uno a uno o todos, tolerantes a `localStorage` bloqueado) y carpetas del sistema existentes. Atajos Ctrl+O, F5, Ctrl+F y Alt+←, inactivos al escribir o con un diálogo abierto, anunciados con `aria-keyshortcuts` y listados en Ajustes.                        |
+| Escala real                                                              | `C:\` completo de este equipo (48 GB de RAM, heap de 11,8 GiB): **741.495 entradas en 38 s**, 481 omitidas, pico de 651 MiB de memoria del proceso. Antes fallaba al pasar de 250.000. Ranking: 319 ms la primera vez y 65 ms al filtrar. Solo se registraron cifras agregadas.          |
+| Regresiones                                                              | Backend: 35 pruebas (1 omitida por los enlaces simbólicos). Frontend: `tsc`, webpack sin avisos (paquete inicial de 235 KiB), 33 pruebas de datos, 26 de escritorio y 42 de UI, más el recorrido real.                                                                                   |
+
+**F15a en las vistas entregadas:** hay pruebas automáticas con colores forzados para la selección, las barras, el control segmentado y la vista de ranking, y axe sin infracciones en inglés, en español, en ventana estrecha y en los diálogos nuevos. **No se hizo la revisión manual con el alto contraste real de Windows ni con un lector de pantalla**, así que F15a no se da por cerrada.
+
+**Pendientes detectados en H2:**
+
+- Desde el ranking no se puede ir a la carpeta que contiene el archivo en el árbol (es F2b).
+- Calcular el ranking de un análisis grande bloquea el servicio unos 300 ms la primera vez; mientras tanto, el progreso de otro análisis simultáneo se retrasa.
+- El estado de carga del ranking existe, pero ninguna prueba lo comprueba.
+- Las carpetas recientes guardan rutas completas en `localStorage` del perfil local; se pueden borrar, pero no hay una opción para no guardarlas.
+- Siguen abiertos los pendientes de H1: el diálogo nativo en inglés, el borde de las filas con colores forzados y el smoke dependiente del idioma. El recorrido nuevo evita ese problema porque no usa texto.
 
 ### 5.3 Secuencia de entregas
 
@@ -570,4 +602,4 @@ Registrar notas y tiempos localmente con consentimiento. No capturar rutas perso
 | Mantenimiento de reglas y formatos históricos.       | Responsable y capacidad de pruebas/migración definidos.    | Limitar F3/F4 al alcance sostenible.                                                             |
 | Tamaño de datasets objetivo.                         | Mediciones en árboles profundos/anchos con heap declarado. | Decidir paginación, almacenamiento persistente o cambio de arquitectura antes de aumentar topes. |
 
-**Siguiente paso recomendado:** H0 y H1 están cerrados. Antes de H2, tomar la decisión de alcance sobre el límite de entradas y decidir si se completa F15a con una revisión manual de alto contraste. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.
+**Siguiente paso recomendado:** H0, H1 y H2 están cerrados. Antes de H3, completar F15a con una revisión manual (alto contraste de Windows y lector de pantalla) e iniciar la investigación de empaquetado F19a. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.

@@ -75,7 +75,7 @@ El ranking presenta nombre y ubicación como texto y una acción de Explorador. 
 
 ### 2.3 No sé qué está buscando cada buscador
 
-Árbol = elementos cargados; tabla = hijos directos; ranking = tamaño mínimo. Ctrl+F en ranking puede dirigir al árbol, que en compacto está dentro de un diálogo cerrado. Proponer una búsqueda con **ámbito visible y consistente**, no un cuarto buscador. Las consultas globales han de recorrer el snapshot observado, no filtrar los primeros 100/500 resultados.
+Árbol = elementos cargados; tabla = hijos directos; ranking = tamaño mínimo. Ctrl+F en ranking puede dirigir al árbol, que en compacto está dentro de un diálogo cerrado. Proponer una búsqueda con **ámbito visible y consistente**, no un cuarto buscador. Las consultas globales han de recorrer el snapshot observado, no filtrar los primeros 100/500 resultados. **Atendido en H4b** (§5.2): una sola búsqueda de archivos con ámbito escrito al lado, el filtro de la tabla declarado como «solo esta carpeta» con paso explícito a la búsqueda recursiva, y Ctrl+F siempre hacia el buscador visible.
 
 ### 2.4 Pierdo contexto al cambiar de vista
 
@@ -99,7 +99,7 @@ Recientes y comunes están en bienvenida, no en un selector accesible también d
 
 ### 2.9 Un análisis grande puede producir una vista costosa
 
-La tabla pagina 25 filas en el cliente, pero recibe todos los hijos; el árbol muestra todos los hijos de ramas abiertas. Las consultas y la materialización bajo el monitor del servicio pueden afectar al progreso de otro scan. La memoria dinámica mejoró el recorrido del disco, no resolvió automáticamente el coste de mostrar o consultar millones de entradas.
+La tabla pagina 25 filas en el cliente, pero recibe todos los hijos; el árbol muestra todos los hijos de ramas abiertas. Las consultas y la materialización bajo el monitor del servicio pueden afectar al progreso de otro scan. La memoria dinámica mejoró el recorrido del disco, no resolvió automáticamente el coste de mostrar o consultar millones de entradas. **Medido en H4b** (§5.2) con un fixture sintético de 177.075 entradas: las consultas salieron del monitor del servicio y dejaron de retener progreso y cancelación. La paginación de hijos directos sigue pendiente y la medición es de este equipo, no de todos.
 
 ### 2.10 Comodidad, privacidad y confianza aún pueden mejorar
 
@@ -140,7 +140,7 @@ El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta e
 
 ### F2. Los archivos más grandes de todo el análisis
 
-**Estado al 2026-09-19:** F2a implementada en H2. F2b.1 entregada en H4a (detalle, carpeta contenedora y regreso). Siguen F2b.2 (H4b) y F2b.3 (H4c).
+**Estado al 2026-09-19:** F2a implementada en H2. F2b.1 entregada en H4a (detalle, carpeta contenedora y regreso) y F2b.2 en H4b (consulta global con ámbito, conteo y páginas). Sigue F2b.3 (H4c).
 
 **Necesidad:** encontrar un archivo grande sin abrir sus carpetas antecesoras. **Impacto esperado: alto. Complejidad: M.**
 
@@ -149,7 +149,7 @@ El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta e
 - **Aceptación:** encuentra un archivo situado seis niveles abajo aunque el árbol esté contraído; abrir ramas no cambia el ranking. Probar empates, cero bytes, cero coincidencias, límites exactos del filtro, análisis parcial y sesión caducada. La etiqueta dice «del análisis», nunca «de todo el disco» si no se analizó todo.
 - **UI:** reutilizar primitivas de tabla y selección sin forzar el contrato de hijos directos. Mostrar ubicación incluso con nombres duplicados. El top 100 es un límite visible, no una supuesta lista completa.
 - **F2b.1 · H4a:** seleccionar un resultado, inspeccionar un detalle y «Ver carpeta en el análisis» cargando solo los ancestros necesarios. «Volver a resultados» restaura filtros, fila, foco y desplazamiento.
-- **F2b.2 · H4b:** nombre/ruta y tamaño sobre todo el análisis, con ámbito explícito, coincidencias reales y paginación acotada. Aplicar filtros **antes** de top-N/paginación; la caché actual de 500 archivos no cubre una búsqueda global.
+- **F2b.2 · H4b (entregado):** `GET /scans/{id}/files` recorre todas las entradas del ámbito, filtra antes de ordenar y paginar, y devuelve el número exacto de coincidencias. La caché de 500 del ranking no interviene. Páginas de 50 hasta la coincidencia 10.000; más allá se pide precisar la búsqueda.
 - **F2b.3 · H4c:** integrar fecha (F7), extensión/categoría (F5) con filtros AND, chips eliminables y «Limpiar filtros». Las carpetas agregadas van separadas para no duplicar bytes de descendientes.
 - **Fuera del MVP:** deduplicación por contenido, búsqueda en el disco en tiempo real, carpeta+archivo en un mismo total y expansión masiva del árbol.
 - **Dependencias:** H0 validado y contrato de errores F11. F1a complementa el hallazgo, pero no bloquea calcular el ranking.
@@ -435,7 +435,7 @@ Las siguientes decisiones son **propuestas de diseño para este producto**, no m
 - En compacto, detalle como vista con regreso explícito; el explorador debe poder abrirse desde ambas vistas y devolver foco al disparador.
 - **Aceptación:** volver conserva exactamente el conjunto y posición; una respuesta tardía del análisis anterior no altera la selección actual. No introducir un router si estado local bien definido basta.
 
-#### UX4 · Una consulta comprensible — H4b/c
+#### UX4 · Una consulta comprensible — H4b (entregado; evidencia en §5.2) y H4c
 
 - Búsqueda visible por nombre/ruta y selector «Todo el análisis / Esta carpeta y subcarpetas». La tabla de contenido sin búsqueda conserva sus hijos directos; la consulta en carpeta es recursiva y lo dice explícitamente. No cambiar de alcance silenciosamente al usar Ctrl+F.
 - Filtros por tamaño, extensión/categoría y fecha en una barra común; chips con eliminación individual y «Limpiar filtros». Mantener consulta mientras llegan resultados nuevos, con estado de carga claro y sin mostrar filas viejas como si coincidieran.
@@ -507,7 +507,7 @@ No se fijan fechas sin capacidad estimada. Una entrega principal y, como máximo
 | H1 · Motor, errores y progreso       | Cerrado según verificación registrada.           | Revisar accesibilidad manual pendiente; diálogo nativo ya corregido en H3.                                                                            |
 | H2 · Primer hallazgo                 | Cerrado según verificación registrada.           | Integrar ranking/contexto; no rehacer F1a/F2a/F6a/F10/F14a.                                                                                           |
 | H3 · Distribución interna y claridad | Instalador y UX de H3b entregados; hito abierto. | H3a: entorno limpio/offline, cuenta estándar y Windows 10 no verificados. H3b: falta la revisión manual con lector de pantalla y alto contraste real. |
-| H4 · Encontrar y comprender          | H4a entregado; H4b–d propuestos.                 | H4b: consulta global real. H4a queda sin revisión manual con lector de pantalla, como H3b. Después fechas/categorías y comodidad.                     |
+| H4 · Encontrar y comprender          | H4a y H4b entregados; H4c–d propuestos.          | H4c: fechas y categorías con filtros combinables. H4a y H4b quedan sin revisión manual con lector de pantalla, como H3b. Después comodidad (H4d).     |
 | H5 · Retomar y comparar              | Propuesto.                                       | Resúmenes locales compatibles, comparación, informes y revisión manual.                                                                               |
 | H6 · Orientación y precisión         | Propuesto, alcance acotado.                      | Catálogo explicable y precisión Windows verificada.                                                                                                   |
 | H7 · Apuestas de mayor riesgo        | Diferido.                                        | Papelera, mapa, monitor e iniciativas sin retorno suficientemente claro.                                                                              |
@@ -689,6 +689,46 @@ Los avisos (parcial, errores) y el zoom pueden aumentar la altura; no se retirar
 
 **Límites conocidos:** volver desde la carpeta lleva a la lista, no al detalle abierto; el detalle solo existe para archivos del ranking (la vista de carpeta conserva su ficha de archivo); Ctrl+F en el ranking sigue enfocando la búsqueda del árbol, que en compacto está en un diálogo cerrado (se corrige con H4b); la marca «Desde los más grandes» desaparece al volver al ranking; el estado de vista no se guarda entre sesiones.
 
+#### Evidencia de H4b (2026-09-19) — entregado, revisión manual pendiente
+
+**Entregado** en la rama `feat/h4b-global-search` (F2b.2 + UX4), con fixtures sintéticos y sin rutas personales:
+
+- **Contrato nuevo, aditivo:** `GET /scans/{id}/files?query=&scope=&minSizeBytes=&offset=&limit=` devuelve una página de archivos del ámbito, de mayor a menor y con desempate por ruta, junto al número exacto de coincidencias. Recorre **todas** las entradas del ámbito —también ramas que nadie abrió y archivos fuera del top 500— y filtra antes de ordenar y paginar. La consulta se compara con la ruta desde la raíz (nombre incluido) ignorando mayúsculas y el tipo de separador; el ámbito es la raíz o una carpeta del análisis con sus subcarpetas. Límites: página de 1 a 100, `offset + limit` hasta 10.000 y consulta de 1.024 caracteres. No cambia `apiVersion`.
+- **Consultas fuera del monitor del servicio (T9):** un snapshot completo ya no cambia, así que `files`, `largest`, `skipped`, `directory`, `entry` y `ancestors` toman el monitor solo para localizar la sesión y sus entradas, y construyen la respuesta fuera. Esto corrige el pendiente de H2 («el ranking bloquea el servicio unos 300 ms») y el T9 que H4a dejó abierto.
+- **Una sola búsqueda con ámbito visible (UX4):** el campo vive en la vista «Archivos más grandes»; encima, «Buscar en» ofrece «Todo el análisis» y «{carpeta} y subcarpetas» cuando hay una carpeta seleccionada, y una línea escribe qué se está recorriendo. Sin texto ni ámbito, la vista sigue siendo el ranking de 100 etiquetado como tal; con texto o ámbito pasa a resultados paginados de 50 con «1–50 de N archivos que coinciden». El tamaño mínimo se aplica a ambos y siempre antes de paginar.
+- **El filtro de carpeta dice lo que abarca:** el campo de la tabla se llama «Filtrar los elementos de esta carpeta» y, al escribir, ofrece «Buscar “…” en {carpeta} y subcarpetas», que lleva a la búsqueda con ese ámbito. Ctrl+F enfoca el buscador visible de la vista y, cuando no hay ninguno (un archivo, una carpeta vacía o el detalle), abre la búsqueda de archivos con su ámbito a la vista; ya no enfoca el buscador del árbol, que en compacto está dentro de un diálogo cerrado. Los atajos dejan de anularse cuando el foco está en un radio o casilla, no solo al escribir.
+- **Sin filas viejas que parezcan coincidencias:** escribir espera 250 ms antes de preguntar; mientras llega la respuesta, las filas anteriores quedan atenuadas, la tabla marcada `aria-busy`, sus botones inactivos y el pie dice «Buscando…». Una respuesta tardía de una consulta anterior no sustituye a la actual.
+- **Continuidad:** el detalle y «Ver carpeta en el análisis» funcionan igual desde la búsqueda; la posición se lee «N.º 55 de 60 archivos que coinciden, por tamaño», el regreso se llama «Volver a los resultados» y la fila revelada se marca «Desde la búsqueda». Volver restaura texto, ámbito, página, umbral, fila, foco y desplazamiento sin repetir la consulta. Texto, ámbito y página viven en la página por análisis; un análisis nuevo empieza limpio.
+- **Vacíos con salida concreta:** distinguen «ningún archivo de {ámbito} tiene “x” en su nombre o ruta» de «no hay archivos» y ofrecen buscar en todo el análisis, quitar el tamaño mínimo o borrar la búsqueda, según el filtro que esté restringiendo.
+
+**Medición T9 (equipo de desarrollo: 48 GB de RAM, heap de 11,8 GiB; fixture sintético de 177.075 entradas y 172.001 archivos; 10 repeticiones salvo la primera vez):**
+
+| Operación                            | p50    | p95    | Nota                                         |
+| ------------------------------------ | ------ | ------ | -------------------------------------------- |
+| Ranking, primera vez                 | 97 ms  | —      | Una ejecución; antes bloqueaba el servicio.  |
+| Ranking, ya calculado                | 7 ms   | 8 ms   | Recuento de coincidencias incluido.          |
+| Búsqueda en todo el análisis         | 89 ms  | 97 ms  | 2 coincidencias entre 172.001 archivos.      |
+| Búsqueda con consulta vacía          | 18 ms  | 35 ms  | 172.001 coincidencias.                       |
+| Búsqueda, página 100 (offset 5.000)  | 93 ms  | 98 ms  | 144.400 coincidencias.                       |
+| Búsqueda en una carpeta              | 8 ms   | 8 ms   | 634 coincidencias.                           |
+| Carpeta de 20.000 hijos (`directory`) | 32 ms | 43 ms | Respuesta completa, sin paginar.            |
+| `ancestors` de un archivo profundo  | 1 ms   | 1 ms   | Cadena de cuatro niveles.                    |
+
+Con un segundo análisis del mismo fixture en curso y 24 búsquedas concurrentes, su estado respondió en 1 ms (p95 3 ms, máximo 3 ms), avanzó hasta 92.601 archivos en 600 ms y se canceló en 1 ms. La JVM sostenía 617 MiB con dos snapshots y 631 MiB tras 30 búsquedas más. No se midieron equipos distintos ni rutas de red.
+
+**Recorridos internos (§5.5).** Operador: automatización con fixtures. No hubo recorrido manual del responsable en esta entrega.
+
+| Caso | Resultado                | Evidencia y límites                                                                                                                                                                                                                                                                                                                      |
+| ---- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T7   | Aprobado (automatizado). | Backend: coincidencia fuera del ranking de 500 y en una rama sin abrir, mayúsculas, separadores, ámbito, mínimo inclusivo, páginas sin solapamiento y límites de cada parámetro. UI: conteo sobre 60 coincidencias con páginas de 50, ámbito de carpeta, vacíos con salida, consulta tardía retenida y una sola petición por pausa al escribir. Recorrido real con Electron y el JAR: `needle-report.txt` (6 bytes, seis niveles) hallado entre 115 archivos cuando el ranking lista 100, y por parte de la ruta. |
+| T9   | Aprobado (automatizado). | Prueba de backend que bloquea una búsqueda a mitad y comprueba que otro análisis arranca, progresa, se consulta y se cancela; falla por timeout si la búsqueda vuelve a tomar el monitor (comprobado con una mutación). Medición de la tabla anterior. **No medido:** DOM de páginas grandes, equipos con menos memoria y volúmenes de red. |
+| T6   | Aprobado (automatizado). | El regreso desde la carpeta conserva texto, ámbito y página de la búsqueda, además de fila, foco y desplazamiento; las pruebas de H4a siguen pasando.                                                                                                                                                                                     |
+| T4   | **Parcial.**             | Automatizado: teclado y foco de la búsqueda, axe WCAG 2.2 AA en resultados, vacíos, ámbito de carpeta y español; colores forzados emulados; 390 px sin desbordamiento horizontal. **No ejecutado:** lector de pantalla (Narrador/NVDA) y alto contraste real de Windows.                                                                  |
+
+**Regresiones:** backend 44 pruebas (1 omitida por enlaces simbólicos; 5 nuevas). Frontend: `tsc`, webpack sin avisos, 38 pruebas de datos (2 nuevas), 29 de escritorio y 57 de UI (5 nuevas). Integración real con Electron (`electron-smoke.cjs`, `electron-first-finding.cjs` ampliado con la búsqueda) contra el backend real.
+
+**Límites conocidos:** la búsqueda compara texto, no palabras sueltas ni acentos equivalentes («cancion» no encuentra «canción»); más allá de 10.000 coincidencias hay que precisar la consulta; solo se buscan archivos, no carpetas por nombre; el buscador del árbol sigue cubriendo únicamente lo cargado; el ámbito se elige entre la carpeta seleccionada y la ya fijada, no en un selector de carpetas propio; una búsqueda en curso sigue trabajando en el servidor aunque el cliente la descarte; y el estado de la búsqueda no se guarda entre sesiones.
+
 ### 5.3 Secuencia de entregas
 
 **H0–H2 se conservan como planificación histórica, no como una nueva lista de trabajo.** Su cierre y excepciones constan en §5.2. La revisión manual restante de F15a se traslada expresamente a H3a/b; no se considera aprobada por el cierre de H2.
@@ -854,6 +894,6 @@ No se recluta ni contacta a nadie. El responsable de desarrollo/producto realiza
 | Necesidad de mutaciones       | Identificar una tarea concreta no resuelta con inspección/Explorador y demostrar seguridad. | Papelera permanece diferida; no es meta obligatoria.                  |
 | Preferencia/impacto comercial | No hay estudio externo ni datos longitudinales ahora.                                       | No justificar prioridades con conversiones o satisfacción inventadas. |
 
-**Siguiente paso recomendado:** H4a (conectar ranking, detalle y carpeta sin perder contexto) está entregado con verificación automatizada. Lo siguiente es **H4b: consulta global real** (nombre/ruta/tamaño sobre todo el análisis, ámbito visible y Ctrl+F hacia la búsqueda visible), con la medición T9 de consultas bajo el lock del servicio. Siguen abiertos, en paralelo y sin bloquear H4b, los pendientes de H3a y la revisión manual con lector de pantalla y alto contraste real de H3b y H4a.
+**Siguiente paso recomendado:** H4b (consulta global con ámbito visible) está entregado con verificación automatizada, incluida la medición T9 que confirma que las consultas ya no retienen el monitor del servicio. Lo siguiente es **H4c: explicar y filtrar** (F7 fechas → F5 extensión/categoría → F2b.3 filtros AND en la misma superficie), que exige retener `lastModifiedTime` en el snapshot y recalibrar memoria, DTO y validadores. Siguen abiertos, en paralelo y sin bloquear H4c, los pendientes de H3a y la revisión manual con lector de pantalla y alto contraste real de H3b, H4a y H4b.
 
 Esta revisión actualiza el plan y sus criterios; no autoriza implementar automáticamente todas las funcionalidades ni publicar o distribuir el producto.

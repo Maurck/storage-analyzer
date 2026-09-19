@@ -38,7 +38,7 @@ src/
   features/settings/
     SettingsDialog.tsx         language picker in a modal dialog
   shared/
-    ui/                        Button, IconButton, Icon, Text, Spinner, Skeleton
+    ui/                        Button, IconButton, Icon, Text, Spinner, Skeleton, SegmentedControl
     components/                Alert, EmptyState, ErrorState
     hooks/                     media query subscription
     i18n/                      language context, dictionaries and error wording
@@ -58,6 +58,10 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 - Success: update the persistent status; avoid toasts for routine expansion/selection.
 - Partial: explain exclusions and prefix affected table sizes with a lower-bound marker.
 - Search: use visible scope, native search input, persistent label and a reset action.
+- Views and filters with a few exclusive options use `SegmentedControl`: native radio buttons, so arrow keys and forms work, with a visible or screen-reader legend. The chosen option is marked with an outline in forced colors.
+- Rankings say what they cover ("in this analysis", the root, partial coverage) and that the list is limited; they never claim to cover a whole disk.
+- Native actions on items exist only in the desktop app; a browser preview hides them rather than pretending. Their failures are explained next to where they were triggered.
+- Shortcuts are window-level, ignored while typing or with a dialog open, listed in Settings and announced with `aria-keyshortcuts`.
 - Sorting: expose `aria-sort`; preserve stable path identities.
 - Folder navigation: breadcrumbs describe the filesystem hierarchy. No application router is needed until a second feature exists.
 - Modal: use `<dialog>.showModal()`, a named dialog, Escape, and focus restoration. Keep lengthy exploration in the workspace.

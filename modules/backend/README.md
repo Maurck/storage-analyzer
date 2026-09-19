@@ -39,6 +39,10 @@ The tests use temporary folders and cover the health document, error codes, prog
 | `GET /scans/{id}`                                              | Progress, completion or failure                                                |
 | `DELETE /scans/{id}`                                           | Cancels active work; repeated cancellation is safe                             |
 | `GET /scans/{id}/directory?path=...`                           | Completed snapshot node with its direct children; URL-encode the absolute path |
+| `GET /scans/{id}/entry?path=...`                               | One node of a completed scan without children; confirms the path belongs to it |
+| `GET /scans/{id}/largest?limit=100&minSizeBytes=0`             | Largest files of a completed scan (see below)                                  |
+| `GET /scans/{id}/skipped?offset=0&limit=100`                   | Items a completed scan skipped or only partly read, by path                    |
+| `GET /capacity`                                                | How much one analysis can hold on this computer                                |
 | `GET /health`                                                  | `{"application":"storage-analyzer","apiVersion":1,"status":"UP"}`              |
 
 The status object contains `id`, `path`, `status`, `processedFiles`, `processedDirectories`, `processedBytes`, `skippedCount`, `error`, `errorCode`, `errorParams`, `elapsedMillis`, `millisSinceActivity`, `currentPath`, `volume` and `root`. `status` is `SCANNING`, `COMPLETE`, `CANCELLED` or `ERROR`. `root` is present only for completed scans; it contains one level of children. Poll progress while the status is `SCANNING`.
@@ -62,33 +66,55 @@ Scans read filesystem metadata and never open file contents. Symbolic links and 
 
 ### Resource limits
 
-| Limit                  | Value                                                | When it is reached                                                                     |
-| ---------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Active scans           | 2                                                    | `429`; cancel one or wait.                                                             |
-| Entries per scan       | 250,000 files, folders and skipped items             | The scan fails with `ERROR` and asks for a smaller folder. No totals are shown.        |
-| Depth                  | 512                                                  | The affected subtree is marked partial.                                                |
-| Retained sessions      | 3                                                    | The oldest finished session expires when a new scan starts.                            |
-| Shared snapshot budget | a quarter of the JVM's maximum heap, at most 256 MiB | Oldest completed snapshots expire first; if none is left, the scan fails with `ERROR`. |
+| Limit                  | Value                                                    | When it is reached                                                                                       |
+| ---------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Active scans           | 2                                                        | `429`; cancel one or wait.                                                                               |
+| Entries per scan       | derived from the heap (see below), 100,000 to 50 million | The scan fails with `ERROR` (`ENTRY_LIMIT`) and asks for a smaller folder. No totals are shown.          |
+| Depth                  | 512                                                      | The affected subtree is marked partial.                                                                  |
+| Retained sessions      | 3                                                        | The oldest finished session expires when a new scan starts.                                              |
+| Shared snapshot budget | half of the JVM's maximum heap, by estimate              | Oldest completed snapshots expire first; if none is left, the scan fails with `ERROR` (`MEMORY_BUDGET`). |
 
-The budget is shared by running scans and retained snapshots. Each entry is charged an estimate of `512 + 4 × path length` bytes, deliberately above what it costs: a measurement of 40,801 entries with 150–200 character paths on JDK 17 retained about 510 bytes per entry against an estimate of about 1,350. With the default heap (a quarter of physical memory), the budget is 256 MiB and fits roughly 200,000–300,000 entries depending on path length, so the entry limit and the budget bind at similar sizes. A whole system drive usually holds more than that and will fail with a message asking for a smaller folder.
+Limits follow the computer running the backend. The JVM sizes its maximum heap from physical memory (a quarter of it by default, or whatever `-Xmx` sets), snapshots may hold half of that heap by estimate, and the entry limit is that budget divided by the estimate for a 120-character path. `GET /capacity` returns `maxHeapBytes`, `snapshotBudgetBytes`, `maxEntries` and `referencePathLength`, and the desktop app shows the entry limit in Settings.
+
+Each entry is charged `400 + 1.3 × path length` bytes, or `400 + 2.6 × path length` when the path has characters outside Latin-1 (Java then stores it in UTF-16). This is a calibration, not a guess: 40,801 entries at average path lengths of 62, 114 and 234 characters retained 370, 420 and 545 bytes each on JDK 17 after garbage collection, about 307 bytes plus one byte per character, so the estimate carries a margin of about 30%.
+
+| Physical memory | Default heap | Budget  | About (120-character paths) |
+| --------------- | ------------ | ------- | --------------------------- |
+| 8 GB            | 2 GiB        | 1 GiB   | 1.9 million entries         |
+| 16 GB           | 4 GiB        | 2 GiB   | 3.9 million entries         |
+| 32 GB           | 8 GiB        | 4 GiB   | 7.7 million entries         |
+| 48 GB           | 11.8 GiB     | 5.9 GiB | 11.4 million entries        |
+
+Shorter paths reach the entry limit first; longer ones reach the budget first.
 
 What the budget does **not** bound:
 
 - The rest of the JVM: Spring, the traversal itself, garbage-collection headroom and any other allocation. An `OutOfMemoryError` during a scan is reported as a constant `ERROR` message on a best-effort basis; the JVM may still be unstable afterwards, and restarting the backend is the recovery.
 - Response size. `GET /scans/{id}` and `GET /scans/{id}/directory` return every direct child of the requested folder; a folder with 100,000 files produces a 100,000-item response, built while the service lock is held. Paginating direct children is a separate decision.
 - The heap size. `-Xmx` (or the platform default) decides the budget; raising the limits in code without raising the heap only moves the failure.
+- Available memory. The heap is a ceiling, not a reservation: on a computer already short of memory, a scan near the limit can make the system page before the budget is reached.
 
 Cancelled and failed scans release their working tree as soon as their worker stops; a cancelled worker keeps its reservation until then, even if its session has already expired. Expired sessions answer `404`, so a client can lose a snapshot it is still displaying when newer scans need the memory. Restarting the backend clears all sessions.
 
 Errors use JSON `{"code":"...","message":"..."}`. Clients translate `code`; `message` is an English fallback and may change.
 
-| Status | Codes                                                                                                                            |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `400`  | `INVALID_REQUEST`, `PATH_REQUIRED`, `PATH_INVALID`, `PATH_NOT_ABSOLUTE`, `FOLDER_NOT_FOUND`, `NOT_A_FOLDER`, `PATH_OUTSIDE_SCAN` |
-| `403`  | `FOLDER_UNREADABLE`                                                                                                              |
-| `404`  | `SCAN_NOT_FOUND`, `PATH_NOT_IN_SCAN`                                                                                             |
-| `409`  | `SCAN_NOT_COMPLETE`                                                                                                              |
-| `429`  | `SCANS_AT_CAPACITY`, `SCANNER_BUSY`                                                                                              |
+| Status | Codes                                                                                                                                                 |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400`  | `INVALID_REQUEST`, `INVALID_PARAMETER`, `PATH_REQUIRED`, `PATH_INVALID`, `PATH_NOT_ABSOLUTE`, `FOLDER_NOT_FOUND`, `NOT_A_FOLDER`, `PATH_OUTSIDE_SCAN` |
+| `403`  | `FOLDER_UNREADABLE`                                                                                                                                   |
+| `404`  | `SCAN_NOT_FOUND`, `PATH_NOT_IN_SCAN`                                                                                                                  |
+| `409`  | `SCAN_NOT_COMPLETE`                                                                                                                                   |
+| `429`  | `SCANS_AT_CAPACITY`, `SCANNER_BUSY`                                                                                                                   |
+
+## Ranking, skipped items and entries
+
+`GET /scans/{id}/largest` returns `scanId`, `root`, `partial`, `limit`, `minSizeBytes`, `matchingFiles` and `files`, each with `name`, `absolutePath`, `relativePath` (from the root, including the name) and `sizeBytes`. Only files are ranked, largest first, ties by path, so the order never depends on hashing. `limit` goes from 1 to 500 and `minSizeBytes` is inclusive. The first request ranks the snapshot once with a bounded heap of 500; later ones only filter that ranking and count matching files, so `matchingFiles` can exceed `files.length`. `partial` means files inside skipped items are missing from the ranking.
+
+`GET /scans/{id}/skipped` lists the items flagged with a node code, by path: `total` equals the scan's `skippedCount`, `recorded` is how many can be listed (at most 10,000) and each item has `name`, `absolutePath`, `relativePath`, `type` and `code`. `limit` goes from 1 to 500.
+
+`GET /scans/{id}/entry` answers one node without its children. The desktop app uses it before showing an item in Explorer: the path must belong to the scan by whole name elements, never by a text prefix, and the canonical path from the snapshot is the one shown.
+
+All three need a completed scan (`409 SCAN_NOT_COMPLETE` otherwise) and answer `400 INVALID_PARAMETER` for malformed or out-of-range parameters.
 
 ## Health and compatibility
 

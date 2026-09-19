@@ -25,6 +25,8 @@ export interface Formatters {
   formatPercent(value: number): string;
   /** A clock-style duration such as 0:07, 12:34 or 1:02:03. */
   formatDuration(milliseconds: number): string;
+  /** Date and time in the regional format, or UNAVAILABLE for an invalid date. */
+  formatDateTime(iso: string): string;
 }
 
 export function createFormatters(locale: string): Formatters {
@@ -92,7 +94,23 @@ export function createFormatters(locale: string): Formatters {
       : `${plain.format(minutes)}:${twoDigits.format(seconds)}`;
   }
 
-  return { locale, formatNumber, formatBytes, formatPercent, formatDuration };
+  const dateTime = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  function formatDateTime(iso: string): string {
+    const time = Date.parse(iso);
+    return Number.isNaN(time) ? UNAVAILABLE : dateTime.format(time);
+  }
+
+  return {
+    locale,
+    formatNumber,
+    formatBytes,
+    formatPercent,
+    formatDuration,
+    formatDateTime,
+  };
 }
 
 function isSupported(locale: unknown): locale is string {
@@ -123,6 +141,7 @@ export const formatNumber = formatters.formatNumber;
 export const formatBytes = formatters.formatBytes;
 export const formatPercent = formatters.formatPercent;
 export const formatDuration = formatters.formatDuration;
+export const formatDateTime = formatters.formatDateTime;
 
 export const percentOf = (part: number, total: number) =>
   total > 0 ? Math.min(100, Math.max(0, (part / total) * 100)) : 0;

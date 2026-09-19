@@ -20,6 +20,11 @@ const validError = (value: unknown): value is string | null | undefined =>
   value == null || typeof value === "string";
 const validCode = (value: unknown) => value == null || isApiCode(value);
 const optionalCount = (value: unknown) => value == null || validCount(value);
+const validInstant = (value: unknown) =>
+  value == null ||
+  (typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T/.test(value) &&
+    !Number.isNaN(Date.parse(value)));
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 
@@ -102,6 +107,8 @@ export function validateScan(value: unknown): Scan {
     !validCode(scan.errorCode) ||
     !validParams(scan.errorParams) ||
     !validError(scan.currentPath) ||
+    !validInstant(scan.startedAt) ||
+    !validInstant(scan.finishedAt) ||
     !validVolume(scan.volume)
   ) {
     throw new AppError(

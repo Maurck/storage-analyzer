@@ -116,6 +116,15 @@ test('durations use a clock format that does not depend on the interface languag
   ]) assert.equal(formatDuration(input), output, 'formatDuration(' + input + ')');
 });
 
+test('analysis dates follow the regional format and reject invalid instants', () => {
+  const { formatDateTime } = createFormatters('en-US');
+  const iso = '2026-03-04T05:06:07Z';
+  const expected = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(Date.parse(iso));
+  assert.equal(formatDateTime(iso), expected);
+  assert.match(formatDateTime(iso), /Mar 4, 2026|Mar 3, 2026|Mar 5, 2026/);
+  assert.equal(formatDateTime('yesterday'), UNAVAILABLE);
+});
+
 test('the number locale comes from the system, then the browser, then English', () => {
   assert.equal(resolveNumberLocale(['es-PE', 'en-GB']), 'es-PE');
   assert.equal(resolveNumberLocale([undefined, 'en-GB']), 'en-GB');
@@ -395,6 +404,10 @@ test('scan validation accepts the supported lifecycle and requires a root when c
     volume: { totalBytes: 500, usableBytes: 200 },
   });
   assert.equal(validateScan(detailed), detailed);
+  const dated = scan({ status: 'COMPLETE', root: directory(), startedAt: '2026-03-04T05:06:07.123Z', finishedAt: '2026-03-04T05:07:00Z' });
+  assert.equal(validateScan(dated), dated);
+  const running = scan({ startedAt: '2026-03-04T05:06:07Z', finishedAt: null });
+  assert.equal(validateScan(running), running);
   const failed = scan({ status: 'ERROR', errorCode: 'ENTRY_LIMIT', errorParams: { limit: 250000 }, volume: null });
   assert.equal(validateScan(failed), failed);
 });
@@ -412,6 +425,7 @@ test('malformed scan progress and nested roots are rejected', () => {
     scan({ errorParams: { 'bad key': 1 } }), scan({ errorParams: [1] }),
     scan({ volume: { totalBytes: 100, usableBytes: 200 } }), scan({ volume: { totalBytes: 100 } }),
     scan({ volume: 'C:' }),
+    scan({ startedAt: 1700000000 }), scan({ startedAt: 'yesterday' }), scan({ finishedAt: '2026-13-45T99:00:00Z' }),
   ]) {
     assert.throws(() => validateScan(value), error => assertAppError(error, /invalid scan/i, 0, 'invalid-scan'));
   }

@@ -30,6 +30,10 @@ export interface Scan {
   error?: string | null;
   errorCode?: string | null;
   errorParams?: Record<string, number> | null;
+  /** ISO-8601 instant; absent from services older than this contract. */
+  startedAt?: string | null;
+  /** ISO-8601 instant once the scan ended; null while scanning. */
+  finishedAt?: string | null;
   /** Frozen once the scan ends. */
   elapsedMillis: number;
   /** Only while scanning. */

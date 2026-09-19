@@ -22,7 +22,11 @@ const path = require('node:path');
   }
   await fs.writeFile(path.join(fixture, 'small.txt'), 'small');
 
-  const app = await electron.launch({ args: [frontend], env: { ...process.env, STORAGE_ANALYZER_API_URL: apiUrl } });
+  // STORAGE_ANALYZER_EXECUTABLE runs the walkthrough against an installed app,
+  // which starts its own bundled backend.
+  const installed = process.env.STORAGE_ANALYZER_EXECUTABLE;
+  const env = { ...process.env, STORAGE_ANALYZER_API_URL: apiUrl };
+  const app = await electron.launch(installed ? { executablePath: installed, env } : { args: [frontend], env });
   try {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach(window => window.hide()));
     await app.evaluate(({ dialog, shell }, selectedPath) => {

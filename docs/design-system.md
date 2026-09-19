@@ -68,6 +68,7 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 - Shortcuts are window-level, ignored while typing or with a dialog open, listed in Settings and announced with `aria-keyshortcuts`.
 - Sorting: expose `aria-sort`; preserve stable path identities.
 - Folder navigation: breadcrumbs describe the filesystem hierarchy. No application router is needed until a second feature exists.
+- From a finding to its context and back: a ranked item opens its details as a view in the same card, with a visible "Back to …" command, and its heading takes focus. Opening its folder loads only the chain of folders that leads to it, in one request, and never expands anything else; the table shows the page that holds the item, marks its row with text ("From largest files"), a bar and `aria-current`, and focuses it. Every such route has an equivalent way back that restores filter, row, scroll and focus. View state lives in the page per scan and per scope (ranking, each folder table), never in a component that unmounts, and a new analysis starts without it. Responses for an earlier request or another scan never change the current view.
 - Modal: use `<dialog>.showModal()`, a named dialog, Escape, and focus restoration. Keep lengthy exploration in the workspace.
 - Destructive actions: none exist. If added later, require an explicit target, consequence and appropriately named confirmation; do not reuse scan cancellation as a deletion pattern.
 - Forms: label each input; connect hints/errors with IDs; preserve values after failure.
@@ -77,7 +78,7 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 
 Compact mode is below 768px; regular mode is 768–1199px; wide is 1200px and above. Breakpoint values are documented tokens but media queries use literal values because CSS custom properties cannot be media conditions.
 
-Test keyboard-only operation, 390px windows, long paths, 200% text, 400% browser zoom/reflow and Windows forced colors. In forced colors, selection uses a thicker `Highlight` border, bars get a `CanvasText` outline and a `Highlight` fill, and status dots keep a system color; values are always written out as text. Focus indicators are distinct from selection. Decorative icons are hidden from assistive technology. ARIA tree navigation follows the [W3C tree-view pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/); the target is [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/).
+Test keyboard-only operation, 390px windows, long paths, 200% text, 400% browser zoom/reflow and Windows forced colors. In forced colors, selection uses a thicker `Highlight` border (a `Highlight` outline for marked table rows), bars get a `CanvasText` outline and a `Highlight` fill, and status dots keep a system color; values are always written out as text. Focus indicators are distinct from selection. Decorative icons are hidden from assistive technology. Interactive targets are at least 24×24 CSS px (WCAG 2.5.8), including the segments of the composition bar. ARIA tree navigation follows the [W3C tree-view pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/); the target is [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/).
 
 ## Scaling rules
 

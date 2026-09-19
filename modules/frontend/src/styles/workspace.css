@@ -1343,6 +1343,101 @@
     width: 68px;
     text-align: right;
   }
+  /* The row of the file last opened, or reached from the ranking. The bar and
+     the button's text or label say it too, never the color alone. */
+  tbody tr.is-selected {
+    background: var(--color-selection);
+    box-shadow: inset 3px 0 0 var(--color-focus);
+  }
+  tbody tr.is-selected .item-link {
+    color: var(--color-selection-text);
+  }
+  .revealed-label {
+    flex-shrink: 0;
+    font-size: 9px;
+    color: var(--color-selection-text);
+    border: 1px solid var(--color-focus);
+    border-radius: 999px;
+    padding: 1px 7px;
+  }
+  .return-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 10px 12px;
+    border: 1px solid #29374e;
+    border-radius: 10px;
+    background: var(--color-surface);
+    font-size: 12px;
+  }
+  .finding-detail {
+    padding-bottom: 22px;
+  }
+  .finding-back {
+    padding: 14px 16px 0;
+  }
+  .finding-heading {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 14px 23px 0;
+    min-width: 0;
+  }
+  .finding-heading > div {
+    min-width: 0;
+  }
+  .finding-heading h3 {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin: 0 0 4px;
+    overflow-wrap: anywhere;
+  }
+  .finding-heading h3:focus {
+    outline: none;
+  }
+  .finding-heading h3:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  .finding-heading p {
+    margin: 0;
+    font-size: 12px;
+  }
+  .finding-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 18px 23px 4px;
+  }
+  .finding-status {
+    padding: 0 23px;
+  }
+  .finding-detail .largest-feedback {
+    padding-top: 14px;
+  }
+  .finding-facts {
+    margin: 14px 23px 0;
+  }
+  .finding-facts > div {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 20px;
+    padding: 13px 0;
+    border-top: 1px solid var(--color-border);
+    font-size: 12px;
+  }
+  .finding-path {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    user-select: text;
+  }
+  .finding-note {
+    margin: 4px 23px 0;
+    font-size: 11px;
+    line-height: 1.5;
+  }
   /* Room for the focus ring of the last button in a row. */
   td.action-column {
     padding-inline-end: 16px;
@@ -1518,6 +1613,22 @@
     .largest-card .location-column {
       display: none;
     }
+    .finding-heading,
+    .finding-actions {
+      padding-inline: 16px;
+    }
+    .finding-facts {
+      margin-inline: 16px;
+    }
+    .finding-facts > div {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+    .finding-note,
+    .finding-status {
+      margin-inline: 16px;
+      padding-inline: 0;
+    }
     .location-inline {
       display: block;
       max-width: none;
@@ -1690,6 +1801,14 @@
     }
     .directory-tree li[aria-selected="true"] > .tree-row {
       border: 2px solid Highlight;
+    }
+    /* Backgrounds and shadows drop here: keep the chosen row outlined. */
+    tbody tr.is-selected {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+    .return-bar {
+      border: 1px solid CanvasText;
     }
     /* Forced colors drop backgrounds: keep bars and status dots visible with
        system colors. Their values are also written out as text. */

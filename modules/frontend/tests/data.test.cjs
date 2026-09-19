@@ -24,6 +24,7 @@ const { AppError, request, errorMessage } = require('../src/shared/lib/http.ts')
 const {
   validateDirectory, validateScan, validateHealth, startScan, getScan, cancelScan, getDirectory, getHealth,
   validateLargest, validateSkipped, validateCapacity, getLargest, getSkipped, getCapacity,
+  validateAncestry, getAncestors,
 } = require('../src/features/storage-analysis/api/directory.api.ts');
 const recentFolders = require('../src/shared/lib/recentFolders.ts');
 // Pinned: the default formatters follow this machine's regional settings.
@@ -505,6 +506,43 @@ test('rankings are validated before they are shown', () => {
   ]) {
     assert.throws(() => validateLargest(value), error => assertAppError(error, /analysis data is incomplete/i, 0, 'invalid-data'));
   }
+});
+
+function ancestry() {
+  const file = directory({ name: 'a.bin', absolutePath: 'C:\\Data\\x\\a.bin', type: 'FILE', sizeBytes: 5, fileCount: 1 });
+  const preview = directory({ name: 'x', absolutePath: 'C:\\Data\\x', hasChildren: true, childrenLoaded: false });
+  return {
+    scanId: 'scan-1',
+    entry: file,
+    ancestors: [
+      directory({ name: 'Data', absolutePath: 'C:\\Data', hasChildren: true, subdirectories: [preview] }),
+      directory({ name: 'x', absolutePath: 'C:\\Data\\x', hasChildren: true, subdirectories: [{ ...file }] }),
+    ],
+  };
+}
+
+test('the way to an entry is validated as an unbroken chain of loaded folders', async t => {
+  const valid = ancestry();
+  assert.equal(validateAncestry(valid), valid);
+  assert.equal(validateAncestry({ ...valid, entry: valid.ancestors[0], ancestors: [] }).ancestors.length, 0);
+  const [root, parent] = valid.ancestors;
+  for (const value of [
+    null, { ...valid, scanId: 1 }, { ...valid, ancestors: null }, { ...valid, entry: null },
+    { ...valid, ancestors: [root, root] }, // a folder that does not list the next link
+    { ...valid, ancestors: [root] }, // stops before the entry's parent
+    { ...valid, ancestors: [{ ...root, childrenLoaded: false }, parent] },
+    { ...valid, ancestors: [root, { ...parent, type: 'FILE' }] },
+  ]) {
+    assert.throws(() => validateAncestry(value), error => assertAppError(error, /analysis data is incomplete/i, 0, 'invalid-data'));
+  }
+
+  const oldWindow = globalThis.window;
+  globalThis.window = { storageAnalyzer: { backendUrl: 'http://127.0.0.1:5050' } };
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => response(ancestry()));
+  await getAncestors('scan/1', 'C:\\Data\\x\\a b.bin');
+  assert.equal(fetchMock.mock.calls[0].arguments[0],
+    'http://127.0.0.1:5050/scans/scan%2F1/ancestors?path=C%3A%5CData%5Cx%5Ca%20b.bin');
 });
 
 test('skipped-item pages and capacity are validated', () => {

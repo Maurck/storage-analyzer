@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "react-query";
 import { useStorageScan } from "./hooks/useStorageScan";
 import { useServiceStatus } from "./hooks/useServiceStatus";
@@ -6,14 +6,24 @@ import { ServiceStatusBanner } from "./components/ServiceStatusBanner";
 import { ScanProgress } from "./components/ScanProgress";
 import { useShowItem } from "./hooks/useShowItem";
 import { SHORTCUTS, useShortcuts } from "./hooks/useShortcuts";
-import { DirectoryNode, NodeCache } from "./model/directory.types";
-import { getCapacity, getDirectory } from "./api/directory.api";
-import { LargestFiles } from "./components/LargestFiles";
+import { DirectoryNode, NodeCache, RankedFile } from "./model/directory.types";
+import { getAncestors, getCapacity, getDirectory } from "./api/directory.api";
+import {
+  LargestFiles,
+  LargestState,
+  initialLargestState,
+} from "./components/LargestFiles";
 import { SkippedItemsDialog } from "./components/SkippedItemsDialog";
 import { QuickStart } from "./components/QuickStart";
 import { DirectoryTree } from "./components/DirectoryTree";
 import { SpaceDistribution } from "./components/SpaceDistribution";
-import { ContentsTable } from "./components/ContentsTable";
+import {
+  ContentsState,
+  ContentsTable,
+  PAGE_SIZE,
+  contentsItems,
+  initialContentsState,
+} from "./components/ContentsTable";
 import { ScanSummary } from "./components/ScanSummary";
 import { WelcomeState } from "./components/WelcomeState";
 import { FolderPathDialog } from "./components/FolderPathDialog";
@@ -77,6 +87,24 @@ export function StorageAnalysisPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   const [view, setView] = useState<"folder" | "largest">("folder");
+  // What each view shows, kept per scan so that going from one to the other
+  // and back never rebuilds a finding.
+  const [largestState, setLargestState] =
+    useState<LargestState>(initialLargestState);
+  const [restoreLargest, setRestoreLargest] = useState(false);
+  const [contentsStates, setContentsStates] = useState<
+    Record<string, ContentsState>
+  >({});
+  // A ranked file opened in its folder, and the way back to the ranking.
+  const [reveal, setReveal] = useState<{
+    folder: string;
+    target: string;
+    name: string;
+    paths: string[];
+    token: number;
+    focus: boolean;
+  } | null>(null);
+  const revealToken = useRef(0);
   const [skippedOpen, setSkippedOpen] = useState(false);
   const [recent, setRecent] = useState(readRecentFolders);
   const [rememberRecent, setRememberRecent] = useState(readRememberRecent);
@@ -121,6 +149,11 @@ export function StorageAnalysisPage() {
     setSelectedPath(snapshot.root.absolutePath);
     setLoadingPaths(new Set());
     setBranchError(null);
+    // A new analysis starts clean: filters and findings belong to their scan.
+    setLargestState(initialLargestState);
+    setRestoreLargest(false);
+    setContentsStates({});
+    setReveal(null);
   }, [snapshot?.id]);
 
   useEffect(() => {
@@ -160,6 +193,87 @@ export function StorageAnalysisPage() {
         });
     }
   }
+
+  /**
+   * Opens a ranked file's folder with only the folders that lead to it, puts
+   * the file on the table's visible page and keeps the way back.
+   */
+  async function openFolderOf(file: RankedFile) {
+    if (!snapshot) return;
+    const id = snapshot.id;
+    const token = ++revealToken.current;
+    const ancestry = await client.fetchQuery(
+      ["ancestors", id, file.absolutePath],
+      ({ signal }) => getAncestors(id, file.absolutePath, signal),
+      { staleTime: Infinity, retry: 1 },
+    );
+    // A later request or another analysis has taken over.
+    if (currentSnapshot.current !== id || revealToken.current !== token) return;
+    const folder = ancestry.ancestors[ancestry.ancestors.length - 1];
+    if (!folder) return;
+    ancestry.ancestors.forEach((ancestor) =>
+      client.setQueryData(["directory", id, ancestor.absolutePath], ancestor),
+    );
+    setNodes((value) => {
+      const next = { ...value };
+      ancestry.ancestors.forEach((ancestor) => {
+        next[ancestor.absolutePath] = ancestor;
+        ancestor.subdirectories.forEach((child) => {
+          if (!next[child.absolutePath]?.childrenLoaded)
+            next[child.absolutePath] = child;
+        });
+      });
+      return next;
+    });
+    setContentsStates((states) => {
+      const cleared: ContentsState = {
+        ...(states[folder.absolutePath] ?? initialContentsState),
+        search: "",
+        filter: "all",
+      };
+      const index = contentsItems(folder, cleared).findIndex(
+        (child) => child.absolutePath === ancestry.entry.absolutePath,
+      );
+      return {
+        ...states,
+        [folder.absolutePath]: {
+          ...cleared,
+          page: Math.max(0, Math.floor(index / PAGE_SIZE)),
+        },
+      };
+    });
+    setLargestState((state) => ({ ...state, detail: false }));
+    setSelectedPath(folder.absolutePath);
+    setBranchError(null);
+    setCopyStatus("");
+    showSelected.clearFailure();
+    setReveal({
+      folder: folder.absolutePath,
+      target: ancestry.entry.absolutePath,
+      name: ancestry.entry.name,
+      paths: ancestry.ancestors.map((ancestor) => ancestor.absolutePath),
+      token,
+      focus: true,
+    });
+    setView("folder");
+  }
+
+  function switchView(next: "folder" | "largest") {
+    setView(next);
+    setRestoreLargest(false);
+    if (next === "largest") setReveal(null);
+  }
+
+  function backToLargest() {
+    setView("largest");
+    setRestoreLargest(true);
+    setReveal(null);
+  }
+
+  const revealFocused = useCallback(
+    () => setReveal((value) => value && { ...value, focus: false }),
+    [],
+  );
 
   function selectNode(node: DirectoryNode) {
     setSelectedPath(node.absolutePath);
@@ -284,6 +398,7 @@ export function StorageAnalysisPage() {
         onSelect={selectNode}
         onLoad={loadNode}
         loadingPaths={loadingPaths}
+        reveal={reveal ?? undefined}
       />
     </>
   );
@@ -579,7 +694,7 @@ export function StorageAnalysisPage() {
               className="view-switch"
               legend={t("view.label")}
               value={view}
-              onChange={setView}
+              onChange={switchView}
               options={[
                 { value: "folder", label: t("view.folder") },
                 { value: "largest", label: t("view.largest") },
@@ -590,10 +705,41 @@ export function StorageAnalysisPage() {
                 key={snapshot!.id}
                 scanId={snapshot!.id}
                 root={root}
+                state={largestState}
+                onStateChange={setLargestState}
+                restoreList={restoreLargest}
                 onOpenSkipped={() => setSkippedOpen(true)}
+                onOpenFolder={openFolderOf}
+                headingAction={
+                  compact && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setDrawerOpen(true)}
+                    >
+                      <Icon name="menu" size={17} />
+                      {t("selection.explorer")}
+                    </Button>
+                  )
+                }
               />
             ) : (
               <>
+                {reveal && (
+                  <div className="return-bar">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={backToLargest}
+                    >
+                      <Icon name="arrow-left" size={17} />
+                      {t("finding.back")}
+                    </Button>
+                    <span className="muted">
+                      {t("finding.returnNote", { name: reveal.name })}
+                    </span>
+                  </div>
+                )}
                 <div className="selection-header">
                   <nav
                     className="path-breadcrumbs"
@@ -758,6 +904,25 @@ export function StorageAnalysisPage() {
                       key={selected.absolutePath}
                       node={selected}
                       onSelect={selectNode}
+                      state={
+                        contentsStates[selected.absolutePath] ??
+                        initialContentsState
+                      }
+                      onStateChange={(state) =>
+                        setContentsStates((states) => ({
+                          ...states,
+                          [selected.absolutePath]: state,
+                        }))
+                      }
+                      revealed={
+                        reveal?.folder === selected.absolutePath
+                          ? reveal.target
+                          : undefined
+                      }
+                      focusRevealed={
+                        reveal?.folder === selected.absolutePath && reveal.focus
+                      }
+                      onRevealFocused={revealFocused}
                     />
                   </>
                 ) : (

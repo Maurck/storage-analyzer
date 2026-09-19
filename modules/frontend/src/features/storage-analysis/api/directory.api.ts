@@ -1,6 +1,7 @@
 import { AppError, isApiCode, request } from "../../../shared/lib/http";
 import { backendUrl } from "../../../shared/lib/desktopBridge";
 import {
+  Ancestry,
   Capacity,
   DirectoryNode,
   Health,
@@ -180,6 +181,45 @@ export const getDirectory = async (
   );
 
 const text = (value: unknown): value is string => typeof value === "string";
+
+export function validateAncestry(value: unknown): Ancestry {
+  const ancestry = value as Ancestry | null;
+  if (
+    !isRecord(ancestry) ||
+    !text(ancestry.scanId) ||
+    !Array.isArray(ancestry.ancestors)
+  )
+    throw invalidData();
+  validateDirectory(ancestry.entry);
+  ancestry.ancestors.forEach(validateDirectory);
+  // Each folder must list the next one, ending with the entry: a chain, not a set.
+  const chain = [...ancestry.ancestors, ancestry.entry];
+  if (
+    ancestry.ancestors.some(
+      (ancestor, index) =>
+        ancestor.type !== "FOLDER" ||
+        !ancestor.childrenLoaded ||
+        !ancestor.subdirectories.some(
+          (child) => child.absolutePath === chain[index + 1].absolutePath,
+        ),
+    )
+  )
+    throw invalidData();
+  return ancestry;
+}
+
+export const getAncestors = async (
+  id: string,
+  path: string,
+  signal?: AbortSignal,
+) =>
+  validateAncestry(
+    await request(
+      backendUrl(),
+      `/scans/${encodeURIComponent(id)}/ancestors?path=${encodeURIComponent(path)}`,
+      { signal },
+    ),
+  );
 
 export function validateLargest(value: unknown): LargestFiles {
   const largest = value as LargestFiles | null;

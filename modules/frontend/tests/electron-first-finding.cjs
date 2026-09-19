@@ -1,6 +1,7 @@
 // H2 walkthrough against the real backend and Electron, on a generated
 // fixture only: choose a folder, find a deep file in the ranking without
-// opening the tree, show it in Explorer, then see a moved file explained.
+// opening the tree, show it in Explorer, open its folder from its details
+// and come back to the same row (H4a), then see a moved file explained.
 // Requires the backend at http://localhost:5000 and a production build.
 // Selectors avoid visible text so the check works in any interface language.
 const { _electron: electron, expect } = require('@playwright/test');
@@ -58,7 +59,21 @@ const path = require('node:path');
     await page.keyboard.press('Enter');
     await expect.poll(() => app.evaluate(() => globalThis.shownItems)).toEqual([target]);
 
-    // 4. A file moved after the analysis is explained, never shown.
+    // 4. H4a: its details lead to its folder, opened only along the way, and
+    // the way back returns to the same row.
+    await rows.nth(0).locator('.item-link').click();
+    await expect(page.locator('#finding-title')).toBeFocused();
+    await page.locator('.finding-actions .sa-button--primary').click();
+    await expect(page.locator('input[name="workspace-view"][value="folder"]')).toBeChecked();
+    await expect(page.locator('[role="treeitem"][aria-expanded="true"]')).toHaveCount(6); // the root and a to e
+    const revealed = page.locator('.contents-card .item-link[aria-current="true"]');
+    await expect(revealed).toBeFocused();
+    await expect(revealed).toContainText('target.bin');
+    await page.locator('.return-bar button').click();
+    await expect(page.locator('input[name="workspace-view"][value="largest"]')).toBeChecked();
+    await expect(rows.nth(0).locator('.item-link')).toBeFocused();
+
+    // 5. A file moved after the analysis is explained, never shown.
     await fs.rm(target);
     await rows.nth(0).locator('.action-column button').click();
     await expect(page.locator('.largest-feedback [role="alert"]')).toBeVisible();
@@ -69,7 +84,7 @@ const path = require('node:path');
     await fs.mkdir(path.join(frontend, 'test-results'), { recursive: true });
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach(window => window.show()));
     await page.screenshot({ path: path.join(frontend, 'test-results', 'electron-first-finding.png') });
-    console.log(`First finding passed: deep file ranked first and shown, moved file explained. This computer holds about ${capacity.maxEntries.toLocaleString('en-US')} items per analysis (heap ${(capacity.maxHeapBytes / 1024 ** 3).toFixed(1)} GiB).`);
+    console.log(`First finding passed: deep file ranked first, shown, opened in its folder and back to its row; moved file explained. This computer holds about ${capacity.maxEntries.toLocaleString('en-US')} items per analysis (heap ${(capacity.maxHeapBytes / 1024 ** 3).toFixed(1)} GiB).`);
   } finally {
     await app.close();
     await fs.rm(fixture, { recursive: true, force: true });

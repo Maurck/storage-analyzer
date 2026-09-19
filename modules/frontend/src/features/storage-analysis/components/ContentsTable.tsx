@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { DirectoryNode } from "../model/directory.types";
 import {
   formatBytes,
@@ -12,54 +12,85 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
+export const PAGE_SIZE = 25;
+
+/** How one folder's table is shown; the page keeps one per folder and scan. */
+export interface ContentsState {
+  search: string;
+  filter: "all" | DirectoryNode["type"];
+  sort: { key: "name" | "sizeBytes"; descending: boolean };
+  page: number;
+}
+
+export const initialContentsState: ContentsState = {
+  search: "",
+  filter: "all",
+  sort: { key: "sizeBytes", descending: true },
+  page: 0,
+};
+
+/** The rows the table lists, in order, before paging. */
+export function contentsItems(node: DirectoryNode, state: ContentsState) {
+  const { search, filter, sort } = state;
+  const query = search.trim().toLocaleLowerCase();
+  return node.subdirectories
+    .filter(
+      (child) =>
+        child.name.toLocaleLowerCase().includes(query) &&
+        (filter === "all" || child.type === filter),
+    )
+    .sort(
+      (a, b) =>
+        (sort.key === "name"
+          ? a.name.localeCompare(b.name, undefined, { numeric: true })
+          : a.sizeBytes - b.sizeBytes || a.name.localeCompare(b.name)) *
+        (sort.descending ? -1 : 1),
+    );
+}
+
 export function ContentsTable({
   node,
   onSelect,
+  state,
+  onStateChange,
+  revealed,
+  focusRevealed = false,
+  onRevealFocused,
 }: {
   node: DirectoryNode;
   onSelect(node: DirectoryNode): void;
+  state: ContentsState;
+  onStateChange(state: ContentsState): void;
+  /** An item reached from elsewhere (the ranking), marked in its row. */
+  revealed?: string;
+  /** Move focus to that row once it is on screen, then report it. */
+  focusRevealed?: boolean;
+  onRevealFocused?(): void;
 }) {
   const { t } = useTranslation();
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [sort, setSort] = useState<{
-    key: "name" | "sizeBytes";
-    descending: boolean;
-  }>({ key: "sizeBytes", descending: true });
-  const [page, setPage] = useState(0);
-  const items = useMemo(
-    () =>
-      node.subdirectories
-        .filter(
-          (child) =>
-            child.name
-              .toLocaleLowerCase()
-              .includes(search.trim().toLocaleLowerCase()) &&
-            (filter === "all" || child.type === filter),
-        )
-        .sort(
-          (a, b) =>
-            (sort.key === "name"
-              ? a.name.localeCompare(b.name, undefined, { numeric: true })
-              : a.sizeBytes - b.sizeBytes || a.name.localeCompare(b.name)) *
-            (sort.descending ? -1 : 1),
-        ),
-    [node, search, filter, sort],
-  );
-  const pages = Math.ceil(items.length / 25);
+  const { search, filter, sort, page } = state;
+  const revealedButton = useRef<HTMLButtonElement>(null);
+  const items = useMemo(() => contentsItems(node, state), [node, state]);
+  const pages = Math.ceil(items.length / PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(pages - 1, 0));
-  const reset = () => {
-    setSearch("");
-    setFilter("all");
-    setPage(0);
-  };
-  const sortBy = (key: "name" | "sizeBytes") => {
-    setSort((value) => ({
-      key,
-      descending: value.key === key ? !value.descending : key === "sizeBytes",
-    }));
-    setPage(0);
-  };
+  const update = (change: Partial<ContentsState>) =>
+    onStateChange({ ...state, ...change });
+  const reset = () => update({ search: "", filter: "all", page: 0 });
+  const sortBy = (key: "name" | "sizeBytes") =>
+    update({
+      sort: {
+        key,
+        descending: sort.key === key ? !sort.descending : key === "sizeBytes",
+      },
+      page: 0,
+    });
+
+  useEffect(() => {
+    if (!focusRevealed || !revealedButton.current) return;
+    revealedButton.current.focus();
+    onRevealFocused?.();
+  }, [focusRevealed, revealed, onRevealFocused]);
+
   return (
     <section className="contents-card" aria-labelledby="contents-title">
       <div className="card-heading">
@@ -90,10 +121,9 @@ export function ContentsTable({
                 type="search"
                 placeholder={t("contents.searchPlaceholder")}
                 value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setPage(0);
-                }}
+                onChange={(event) =>
+                  update({ search: event.target.value, page: 0 })
+                }
               />
             </div>
             <label className="sr-only" htmlFor="type-filter">
@@ -102,10 +132,12 @@ export function ContentsTable({
             <select
               id="type-filter"
               value={filter}
-              onChange={(event) => {
-                setFilter(event.target.value);
-                setPage(0);
-              }}
+              onChange={(event) =>
+                update({
+                  filter: event.target.value as ContentsState["filter"],
+                  page: 0,
+                })
+              }
             >
               <option value="all">{t("contents.allTypes")}</option>
               <option value="FOLDER">{t("contents.folders")}</option>
@@ -191,62 +223,78 @@ export function ContentsTable({
                 </thead>
                 <tbody>
                   {items
-                    .slice(currentPage * 25, (currentPage + 1) * 25)
-                    .map((child) => (
-                      <tr key={child.absolutePath}>
-                        <td>
-                          <button
-                            className="item-link"
-                            title={child.absolutePath}
-                            onClick={() => onSelect(child)}
-                          >
-                            <Icon
-                              name={
-                                child.type === "ERROR"
-                                  ? "alert"
-                                  : child.type === "FILE"
-                                    ? "file"
-                                    : "folder"
-                              }
-                              size={19}
-                            />
-                            <span>{child.name}</span>
-                            {child.partial && (
-                              <span className="partial-label">
-                                {t("contents.partial")}
-                              </span>
-                            )}
-                          </button>
-                        </td>
-                        <td className="type-column muted">
-                          {child.type === "FILE"
-                            ? t("contents.typeFile")
-                            : child.type === "ERROR"
-                              ? t("contents.typeSkipped")
-                              : t("contents.typeFolder")}
-                        </td>
-                        <td className="numeric">
-                          {child.partial ? "≥ " : ""}
-                          {formatBytes(child.sizeBytes)}
-                        </td>
-                        <td className="share-column">
-                          <div className="share-value">
-                            <span className="share-bar" aria-hidden="true">
-                              <span
-                                style={{
-                                  width: `${percentOf(child.sizeBytes, node.sizeBytes)}%`,
-                                }}
+                    .slice(
+                      currentPage * PAGE_SIZE,
+                      (currentPage + 1) * PAGE_SIZE,
+                    )
+                    .map((child) => {
+                      const isRevealed = child.absolutePath === revealed;
+                      return (
+                        <tr
+                          key={child.absolutePath}
+                          className={isRevealed ? "is-selected" : undefined}
+                        >
+                          <td>
+                            <button
+                              className="item-link"
+                              title={child.absolutePath}
+                              onClick={() => onSelect(child)}
+                              ref={isRevealed ? revealedButton : undefined}
+                              aria-current={isRevealed || undefined}
+                            >
+                              <Icon
+                                name={
+                                  child.type === "ERROR"
+                                    ? "alert"
+                                    : child.type === "FILE"
+                                      ? "file"
+                                      : "folder"
+                                }
+                                size={19}
                               />
-                            </span>
-                            <span>
-                              {formatPercent(
-                                percentOf(child.sizeBytes, node.sizeBytes),
+                              <span>{child.name}</span>
+                              {child.partial && (
+                                <span className="partial-label">
+                                  {t("contents.partial")}
+                                </span>
                               )}
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {isRevealed && (
+                                <span className="revealed-label">
+                                  {t("contents.revealed")}
+                                </span>
+                              )}
+                            </button>
+                          </td>
+                          <td className="type-column muted">
+                            {child.type === "FILE"
+                              ? t("contents.typeFile")
+                              : child.type === "ERROR"
+                                ? t("contents.typeSkipped")
+                                : t("contents.typeFolder")}
+                          </td>
+                          <td className="numeric">
+                            {child.partial ? "≥ " : ""}
+                            {formatBytes(child.sizeBytes)}
+                          </td>
+                          <td className="share-column">
+                            <div className="share-value">
+                              <span className="share-bar" aria-hidden="true">
+                                <span
+                                  style={{
+                                    width: `${percentOf(child.sizeBytes, node.sizeBytes)}%`,
+                                  }}
+                                />
+                              </span>
+                              <span>
+                                {formatPercent(
+                                  percentOf(child.sizeBytes, node.sizeBytes),
+                                )}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -255,9 +303,9 @@ export function ContentsTable({
             <span role="status">
               {items.length
                 ? t("contents.range", {
-                    from: formatNumber(currentPage * 25 + 1),
+                    from: formatNumber(currentPage * PAGE_SIZE + 1),
                     to: formatNumber(
-                      Math.min((currentPage + 1) * 25, items.length),
+                      Math.min((currentPage + 1) * PAGE_SIZE, items.length),
                     ),
                     total: formatNumber(items.length),
                   })
@@ -269,7 +317,7 @@ export function ContentsTable({
                   label={t("contents.previousPage")}
                   variant="ghost"
                   disabled={currentPage === 0}
-                  onClick={() => setPage(currentPage - 1)}
+                  onClick={() => update({ page: currentPage - 1 })}
                 >
                   <Icon name="chevron-right" className="rotate-180" />
                 </IconButton>
@@ -283,7 +331,7 @@ export function ContentsTable({
                   label={t("contents.nextPage")}
                   variant="ghost"
                   disabled={currentPage + 1 >= pages}
-                  onClick={() => setPage(currentPage + 1)}
+                  onClick={() => update({ page: currentPage + 1 })}
                 >
                   <Icon name="chevron-right" />
                 </IconButton>

@@ -70,6 +70,15 @@ export interface LargestFiles {
   files: RankedFile[];
 }
 
+/** Where an entry sits in a completed scan. */
+export interface Ancestry {
+  scanId: string;
+  /** The entry itself, without children, with the snapshot's own path. */
+  entry: DirectoryNode;
+  /** Root first, down to the entry's parent, each with its direct children. */
+  ancestors: DirectoryNode[];
+}
+
 export interface SkippedItem {
   name: string;
   absolutePath: string;

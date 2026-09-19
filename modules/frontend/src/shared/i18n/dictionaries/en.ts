@@ -173,6 +173,7 @@ export const en = {
   "contents.columnSize": "Size",
   "contents.columnShare": "Share",
   "contents.partial": "Partial",
+  "contents.revealed": "From largest files",
   "contents.typeFile": "File",
   "contents.typeSkipped": "Skipped",
   "contents.typeFolder": "Folder",
@@ -223,7 +224,7 @@ export const en = {
   "api.SCAN_NOT_COMPLETE":
     "Folder details are available once the analysis finishes.",
   "api.PATH_OUTSIDE_SCAN": "This folder is not part of the current analysis.",
-  "api.PATH_NOT_IN_SCAN": "This folder was not found in the analysis.",
+  "api.PATH_NOT_IN_SCAN": "This item was not found in the analysis.",
 
   "scanError.ROOT_UNREADABLE": "The selected folder could not be read.",
   "scanError.ENTRY_LIMIT":
@@ -316,6 +317,20 @@ export const en = {
   "largest.emptyFiltered": "No file is {size} or larger.",
   "largest.loading": "Ranking files",
   "largest.errorTitle": "Could not rank the files",
+
+  "finding.back": "Back to largest files",
+  "finding.summary": "{size} · {share} of what this analysis measured",
+  "finding.openFolder": "View folder in the analysis",
+  "finding.opening": "Opening its folder",
+  "finding.openError": "Could not open the folder of {name}",
+  "finding.size": "Logical size",
+  "finding.rank": "Position",
+  "finding.rankValue": "No. {rank} among the largest files in this analysis",
+  "finding.location": "Folder",
+  "finding.path": "Full path",
+  "finding.note":
+    "These details come from this analysis. The file may have changed since; rescan to update them.",
+  "finding.returnNote": "You came here from {name} in Largest files.",
 
   "show.button": "Show in Explorer",
   "show.itemLabel": "Show {name} in Explorer",

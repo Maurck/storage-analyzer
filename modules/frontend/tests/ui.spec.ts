@@ -50,7 +50,26 @@ function folder(
     subdirectories: children,
   };
 }
-function fixture(extraFiles = 0) {
+/**
+ * a/b/c/d/e/f holds movie.mkv after 30 larger files, so the table lists it
+ * on its second page.
+ */
+function deepFolder(): DirectoryNode {
+  const leaf = "/fixture/a/b/c/d/e/f";
+  let node = folder("f", leaf, [
+    file("movie.mkv", leaf, 150 * MB),
+    ...Array.from({ length: 30 }, (_, index) =>
+      file(`clip-${String(index + 1).padStart(2, "0")}.bin`, leaf, 200 * MB),
+    ),
+  ]);
+  for (const name of ["e", "d", "c", "b", "a"]) {
+    const path = node.absolutePath.slice(0, node.absolutePath.lastIndexOf("/"));
+    node = folder(name, path, [node]);
+  }
+  return node;
+}
+
+function fixture(extraFiles = 0, deep = false) {
   const projects = folder("Projects", "/fixture/Projects", [
     file("package.zip", "/fixture/Projects", 512 * MB),
     file("assets.png", "/fixture/Projects", 256 * MB),
@@ -60,6 +79,7 @@ function fixture(extraFiles = 0) {
   ]);
   const empty = folder("Empty", "/fixture/Empty", []);
   const root = folder("Fixture", "/fixture", [
+    ...(deep ? [deepFolder()] : []),
     projects,
     photos,
     empty,
@@ -68,9 +88,12 @@ function fixture(extraFiles = 0) {
       file(`note-${String(index + 1).padStart(2, "0")}.txt`, "/fixture", 0),
     ),
   ]);
-  const nodes = new Map(
-    [root, projects, photos, empty].map((node) => [node.absolutePath, node]),
-  );
+  const nodes = new Map<string, DirectoryNode>();
+  const index = (node: DirectoryNode) => {
+    nodes.set(node.absolutePath, node);
+    node.subdirectories.forEach(index);
+  };
+  index(root);
   const preview = (node: DirectoryNode): DirectoryNode => ({
     ...node,
     subdirectories: node.subdirectories.map((child) => ({
@@ -102,6 +125,10 @@ interface ApiOptions {
   /** Files ranked by GET /largest; by default the fixture's own files. */
   ranking?: RankedFile[];
   skipped?: Omit<SkippedItems, "scanId" | "offset">;
+  /** Adds a/b/c/d/e/f with movie.mkv on the second page of its folder. */
+  deep?: boolean;
+  /** GET /ancestors answers PATH_NOT_IN_SCAN this many times. */
+  ancestorErrors?: number;
 }
 
 function rankFiles(root: DirectoryNode): RankedFile[] {
@@ -123,7 +150,7 @@ function rankFiles(root: DirectoryNode): RankedFile[] {
   );
 }
 async function prepare(page: Page, options: ApiOptions = {}) {
-  const data = fixture(options.extraFiles);
+  const data = fixture(options.extraFiles, options.deep);
   if (options.partialRoot) data.root.partial = true;
   const ranking = options.ranking ?? rankFiles(data.root);
   const requests = {
@@ -134,6 +161,7 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     health: 0,
     largest: [] as string[],
     skipped: [] as string[],
+    ancestors: [] as string[],
   };
   const state = {
     pending: !!options.pending,
@@ -145,6 +173,9 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     health: options.health ?? "up",
     extras: options.scanExtras ?? ({} as Partial<Scan>),
     expiredQueries: false,
+    ancestorErrors: options.ancestorErrors ?? 0,
+    /** Holds GET /ancestors for this path until the promise settles. */
+    ancestorGates: new Map<string, Promise<void>>(),
   };
   const scan = (
     status: Scan["status"],
@@ -289,6 +320,37 @@ async function prepare(page: Page, options: ApiOptions = {}) {
         files: matching.slice(0, limit),
       };
       await respond(body);
+    } else if (url.pathname.endsWith("/ancestors")) {
+      const path = url.searchParams.get("path")!;
+      requests.ancestors.push(path);
+      await state.ancestorGates.get(path);
+      const chain: DirectoryNode[] = [];
+      const find = (node: DirectoryNode): DirectoryNode | undefined => {
+        if (node.absolutePath === path) return node;
+        for (const child of node.subdirectories) {
+          const found = find(child);
+          if (found) {
+            chain.unshift(node);
+            return found;
+          }
+        }
+      };
+      const entry = find(data.root);
+      if (!entry || state.ancestorErrors-- > 0)
+        await respond(
+          { code: "PATH_NOT_IN_SCAN", message: "Not in this scan." },
+          404,
+        );
+      else
+        await respond({
+          scanId: url.pathname.split("/")[2],
+          entry: {
+            ...entry,
+            childrenLoaded: entry.type !== "FOLDER",
+            subdirectories: [],
+          },
+          ancestors: chain.map(data.preview),
+        });
     } else if (url.pathname.endsWith("/skipped")) {
       requests.skipped.push(url.search);
       const offset = Number(url.searchParams.get("offset"));
@@ -1715,4 +1777,260 @@ test("an engine that stops during a scan is reported once, by its banner", async
     "Waiting for the analysis engine to answer",
   );
   await expect(page.getByText("Connection interrupted")).toHaveCount(0);
+});
+
+async function openFinding(page: Page, name: string) {
+  await page
+    .getByRole("table", { name: /^Largest files in Fixture/ })
+    .getByRole("button", { name, exact: true })
+    .click();
+  const heading = page.getByRole("heading", { name, exact: true });
+  await expect(heading).toBeFocused();
+  return heading;
+}
+
+test("a deep ranked file opens in its folder and the way back keeps the list (T6)", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page, { deep: true });
+  await analyze(page);
+  const table = await showLargest(page);
+  await page.getByRole("radio", { name: "100 MB or more" }).check();
+  await expect(table.locator("tbody tr")).toHaveCount(34);
+  const movieRow = table.getByRole("button", {
+    name: "movie.mkv",
+    exact: true,
+  });
+  await movieRow.scrollIntoViewIfNeeded();
+  const listScroll = await page.evaluate(() => window.scrollY);
+  expect(listScroll).toBeGreaterThan(0);
+
+  // The details say what the file is, where it sits and what to do next.
+  await openFinding(page, "movie.mkv");
+  const detail = page.getByRole("region", { name: "movie.mkv" });
+  await expect(detail).toContainText("150 MB");
+  await expect(detail).toContainText(
+    "No. 34 among the largest files in this analysis",
+  );
+  await expect(detail).toContainText("a/b/c/d/e/f");
+  await expect(detail).toContainText("/fixture/a/b/c/d/e/f/movie.mkv");
+  await page.screenshot({ path: "test-results/finding-detail.png" });
+  await expect(
+    detail.getByRole("button", { name: "Show in Explorer", exact: true }),
+  ).toBeVisible();
+  await checkAccessibility(page);
+
+  // Its folder opens with only the folders that lead to it.
+  await detail
+    .getByRole("button", { name: "View folder in the analysis" })
+    .click();
+  await expect(
+    page.getByRole("radio", { name: "Folder contents" }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("heading", { name: "f", exact: true }),
+  ).toBeVisible();
+  expect(requests.ancestors).toEqual(["/fixture/a/b/c/d/e/f/movie.mkv"]);
+  expect(requests.branches).toEqual([]);
+  await expect(
+    page.locator('[role="treeitem"][aria-expanded="true"]'),
+  ).toHaveCount(6); // the root and a to e
+  await expect(treeNode(page, "f")).toHaveAttribute("aria-selected", "true");
+  await expect(treeNode(page, "Projects")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(
+    page.getByRole("navigation", { name: "Folder path" }).getByRole("button"),
+  ).toHaveText(["Fixture", "a", "b", "c", "d", "e", "f"]);
+  // Thirty larger files come first: the file is on the second page, marked
+  // with text and focused.
+  await expect(page.getByText("Page 2 of 2")).toBeVisible();
+  const revealed = page
+    .getByRole("table", { name: /^Contents of f\./ })
+    .getByRole("button", { name: /^movie\.mkv/ });
+  await expect(revealed).toBeFocused();
+  await expect(revealed).toHaveAttribute("aria-current", "true");
+  await expect(revealed).toContainText("From largest files");
+  await page.screenshot({ path: "test-results/finding-folder.png" });
+  await expect(
+    page.getByText("You came here from movie.mkv in Largest files."),
+  ).toBeVisible();
+  await checkAccessibility(page);
+
+  // Coming back restores the filter, the row, the scroll and the focus.
+  await page.getByRole("button", { name: "Back to largest files" }).click();
+  await expect(
+    page.getByRole("radio", { name: "Largest files" }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("radio", { name: "100 MB or more" }),
+  ).toBeChecked();
+  await expect(movieRow).toBeFocused();
+  await expect(movieRow).toHaveAttribute("aria-current", "true");
+  expect(
+    Math.abs((await page.evaluate(() => window.scrollY)) - listScroll),
+  ).toBeLessThanOrEqual(2);
+  // Nothing was ranked again for the way back.
+  expect(requests.largest).toEqual([
+    "?limit=100&minSizeBytes=0",
+    "?limit=100&minSizeBytes=104857600",
+  ]);
+
+  // Closing the details alone also returns to the same row.
+  await openFinding(page, "sun.jpg");
+  await page.getByRole("button", { name: "Back to largest files" }).click();
+  await expect(
+    table.getByRole("button", { name: "sun.jpg", exact: true }),
+  ).toBeFocused();
+
+  // Forced colors drop the row's background, so an outline marks it.
+  await page.emulateMedia({ forcedColors: "active" });
+  expect(
+    await page
+      .locator("tbody tr.is-selected")
+      .evaluate((row) => getComputedStyle(row).outlineStyle),
+  ).toBe("solid");
+});
+
+test("folder tables keep their search when switching views and a new analysis starts clean", async ({
+  page,
+}) => {
+  await prepare(page, { extraFiles: 30 });
+  await analyze(page);
+  const search = page.getByRole("searchbox", { name: "Search this folder" });
+  await search.fill("note");
+  await page.getByRole("button", { name: "Next page" }).click();
+  await expect(page.getByText("Page 2 of 2")).toBeVisible();
+  await showLargest(page);
+  await page.getByRole("radio", { name: "100 MB or more" }).check();
+  await page.getByRole("radio", { name: "Folder contents" }).check();
+  await expect(search).toHaveValue("note");
+  await expect(page.getByText("Page 2 of 2")).toBeVisible();
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  await expect(
+    page.getByRole("radio", { name: "100 MB or more" }),
+  ).toBeChecked();
+
+  // Filters belong to their analysis, not to the next one.
+  await page.getByRole("button", { name: "Rescan Fixture" }).click();
+  await expect(page.getByRole("radio", { name: "Any size" })).toBeChecked();
+  await page.getByRole("radio", { name: "Folder contents" }).check();
+  await expect(search).toHaveValue("");
+});
+
+test("a late answer for another file never takes over, and a failed lookup is explained", async ({
+  page,
+}) => {
+  const { requests, state } = await prepare(page, {
+    deep: true,
+    // One retry is allowed, as for folders, so both attempts fail.
+    ancestorErrors: 2,
+  });
+  await analyze(page);
+  await showLargest(page);
+
+  await openFinding(page, "sun.jpg");
+  const view = page.getByRole("button", {
+    name: "View folder in the analysis",
+  });
+  await view.click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Could not open the folder of sun.jpg" }),
+  ).toContainText("This item was not found in the analysis.");
+  await expect(
+    page.getByRole("radio", { name: "Largest files" }),
+  ).toBeChecked();
+
+  // The first file's answer is held back while the second one opens.
+  let release!: () => void;
+  state.ancestorGates.set(
+    "/fixture/Photos/sun.jpg",
+    new Promise<void>((resolve) => (release = resolve)),
+  );
+  await view.click();
+  await expect(view).toBeDisabled();
+  await page.getByRole("button", { name: "Back to largest files" }).click();
+  await openFinding(page, "package.zip");
+  await page
+    .getByRole("button", { name: "View folder in the analysis" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Projects", exact: true }),
+  ).toBeVisible();
+  release();
+  await expect.poll(() => requests.ancestors.length).toBe(4);
+  await page.waitForTimeout(200);
+  await expect(
+    page.getByRole("heading", { name: "Projects", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("You came here from package.zip in Largest files."),
+  ).toBeVisible();
+});
+
+test("compact windows open a finding as a view and the explorer from both views (T6)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepare(page, { deep: true });
+  await analyze(page);
+  await page.keyboard.press("Escape");
+  await showLargest(page);
+  const explorer = page.getByRole("button", { name: "Explorer", exact: true });
+  await explorer.click();
+  const dialog = page.getByRole("dialog", {
+    name: "File explorer",
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(explorer).toBeFocused();
+
+  await openFinding(page, "movie.mkv");
+  await page
+    .getByRole("button", { name: "View folder in the analysis" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "f", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /^movie\.mkv/ })).toBeFocused();
+  // The drawer's tree shows the same path, opened only that far.
+  await page.getByRole("button", { name: "Explorer", exact: true }).click();
+  await expect(treeNode(page, "f")).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+    ),
+  ).toBe(true);
+  await checkAccessibility(page);
+
+  await page.getByRole("button", { name: "Back to largest files" }).click();
+  await expect(
+    page.getByRole("button", { name: "movie.mkv", exact: true }),
+  ).toBeFocused();
+});
+
+test("the finding and its way back read in Spanish", async ({ page }) => {
+  await prepare(page, { deep: true });
+  await analyze(page);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("Language").selectOption("es");
+  await page.getByRole("button", { name: "Listo" }).click();
+  await page.getByRole("radio", { name: "Archivos más grandes" }).check();
+  await page.getByRole("button", { name: "movie.mkv", exact: true }).click();
+  await expect(
+    page.getByText("N.º 34 entre los archivos más grandes de este análisis"),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Ver carpeta en el análisis" })
+    .click();
+  await expect(page.getByText("Desde los más grandes")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Volver a los archivos más grandes" }),
+  ).toBeVisible();
+  await checkAccessibility(page);
 });

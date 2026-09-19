@@ -173,6 +173,7 @@ export const es: Dictionary = {
   "contents.columnSize": "Tamaño",
   "contents.columnShare": "Proporción",
   "contents.partial": "Parcial",
+  "contents.revealed": "Desde los más grandes",
   "contents.typeFile": "Archivo",
   "contents.typeSkipped": "Omitido",
   "contents.typeFolder": "Carpeta",
@@ -226,7 +227,7 @@ export const es: Dictionary = {
   "api.SCAN_NOT_COMPLETE":
     "Los detalles de las carpetas estarán disponibles cuando termine el análisis.",
   "api.PATH_OUTSIDE_SCAN": "Esta carpeta no forma parte del análisis actual.",
-  "api.PATH_NOT_IN_SCAN": "Esta carpeta no aparece en el análisis.",
+  "api.PATH_NOT_IN_SCAN": "Este elemento no aparece en el análisis.",
 
   "scanError.ROOT_UNREADABLE": "No se pudo leer la carpeta elegida.",
   "scanError.ENTRY_LIMIT":
@@ -322,6 +323,21 @@ export const es: Dictionary = {
   "largest.emptyFiltered": "Ningún archivo ocupa {size} o más.",
   "largest.loading": "Ordenando archivos",
   "largest.errorTitle": "No se pudieron ordenar los archivos",
+
+  "finding.back": "Volver a los archivos más grandes",
+  "finding.summary": "{size} · {share} de lo medido en este análisis",
+  "finding.openFolder": "Ver carpeta en el análisis",
+  "finding.opening": "Abriendo su carpeta",
+  "finding.openError": "No se pudo abrir la carpeta de {name}",
+  "finding.size": "Tamaño lógico",
+  "finding.rank": "Posición",
+  "finding.rankValue":
+    "N.º {rank} entre los archivos más grandes de este análisis",
+  "finding.location": "Carpeta",
+  "finding.path": "Ruta completa",
+  "finding.note":
+    "Estos datos son de este análisis. El archivo puede haber cambiado desde entonces; vuelve a analizar para actualizarlos.",
+  "finding.returnNote": "Llegaste aquí desde {name} en Archivos más grandes.",
 
   "show.button": "Mostrar en el Explorador",
   "show.itemLabel": "Mostrar {name} en el Explorador",

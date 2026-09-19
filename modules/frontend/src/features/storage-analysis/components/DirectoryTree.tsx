@@ -13,6 +13,8 @@ interface Props {
   onSelect(node: DirectoryNode): void;
   onLoad(node: DirectoryNode): Promise<void>;
   loadingPaths: Set<string>;
+  /** Folders to open so an item reached from elsewhere shows in the tree. */
+  reveal?: { paths: string[]; token: number };
 }
 
 export function DirectoryTree({
@@ -22,6 +24,7 @@ export function DirectoryTree({
   onSelect,
   onLoad,
   loadingPaths,
+  reveal,
 }: Props) {
   const [expanded, setExpanded] = useState(new Set([root.absolutePath]));
   const [focused, setFocused] = useState(root.absolutePath);
@@ -84,6 +87,31 @@ export function DirectoryTree({
   useEffect(() => {
     if (tabStop && focused !== tabStop) setFocused(tabStop);
   }, [tabStop, focused]);
+
+  // Opens only the chain that leads to the item and makes its folder the tab
+  // stop, without taking focus from where the person is working.
+  useEffect(() => {
+    if (!reveal?.paths.length) return;
+    const target = reveal.paths[reveal.paths.length - 1];
+    setExpanded((value) => {
+      const next = new Set(value);
+      reveal.paths.slice(0, -1).forEach((path) => next.add(path));
+      return next;
+    });
+    setFocused(target);
+    // Scroll the tree alone: scrollIntoView would also move the page away
+    // from the row the person is looking at.
+    requestAnimationFrame(() => {
+      const row = refs.current.get(target)?.querySelector(".tree-row");
+      const list = row?.closest<HTMLElement>(".directory-tree");
+      if (!row || !list) return;
+      const rowBox = row.getBoundingClientRect();
+      const listBox = list.getBoundingClientRect();
+      if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
+      else if (rowBox.bottom > listBox.bottom)
+        list.scrollTop += rowBox.bottom - listBox.bottom;
+    });
+  }, [reveal?.token]);
 
   const focus = (path?: string) => {
     if (!path) return;

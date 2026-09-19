@@ -9,7 +9,7 @@
 - **Observado:** comportamiento o estructura comprobable en el repositorio.
 - **Propuesto:** decisión de producto recomendada, pendiente de implementación y validación.
 - **[Suposición]:** hipótesis sobre usuarios, impacto o demanda; no equivale a evidencia de uso.
-- **Estado de ejecución:** H0 (limpieza técnica y límites), H1 (motor listo, errores traducibles y progreso) y H2 (primer hallazgo, con límites dinámicos) están **cerrados y verificados**; la evidencia figura en §5.2. H3 y los hitos posteriores siguen sin empezar.
+- **Estado de ejecución:** H0 (limpieza técnica y límites), H1 (motor listo, errores traducibles y progreso) y H2 (primer hallazgo, con límites dinámicos) están **cerrados y verificados**. H3 tiene la **parte técnica entregada y verificada en el equipo de desarrollo**, pero sigue abierto: falta la prueba en una máquina limpia y sin red, y las sesiones con participantes no se han hecho. La evidencia figura en §5.2.
 
 ---
 
@@ -400,14 +400,14 @@ No hay evidencia suficiente para comprometer «0–6 semanas» o «4–12 meses�
 
 ### 5.2 Estado real del trabajo
 
-| Hito                             | Estado al 2026-09-17         | Evidencia / siguiente acción                                                          |
-| -------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------- |
-| H0 · Limpieza y límites          | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H0» debajo.                                               |
-| H1 · Motor listo y comprensible  | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H1» debajo. F15a queda iniciada, no cerrada.              |
-| H2 · Primer hallazgo             | **Cerrado (verificado)**     | Ver «Evidencia de cierre de H2» debajo. F15a: automatizada; falta la revisión manual. |
-| H3 · Beta instalable             | **Propuesto**                | Empaquetado F19a sin investigar todavía.                                              |
-| H4 · Profundidad/recurrencia     | **Backlog condicionado**     | Elegir la siguiente necesidad a partir de pruebas con usuarios.                       |
-| H5–H6 · Acciones y largo alcance | **Investigación o diferido** | Requieren evidencia y garantías adicionales; no autorizan implementación automática.  |
+| Hito                             | Estado al 2026-09-17             | Evidencia / siguiente acción                                                                              |
+| -------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| H0 · Limpieza y límites          | **Cerrado (verificado)**         | Ver «Evidencia de cierre de H0» debajo.                                                                   |
+| H1 · Motor listo y comprensible  | **Cerrado (verificado)**         | Ver «Evidencia de cierre de H1» debajo. F15a queda iniciada, no cerrada.                                  |
+| H2 · Primer hallazgo             | **Cerrado (verificado)**         | Ver «Evidencia de cierre de H2» debajo. F15a: automatizada; falta la revisión manual.                     |
+| H3 · Beta instalable             | **Abierto (técnica verificada)** | Instalador F19a listo y verificado aquí; faltan máquina limpia sin red y sesiones. Ver «Evidencia de H3». |
+| H4 · Profundidad/recurrencia     | **Backlog condicionado**         | Elegir la siguiente necesidad a partir de pruebas con usuarios.                                           |
+| H5–H6 · Acciones y largo alcance | **Investigación o diferido**     | Requieren evidencia y garantías adicionales; no autorizan implementación automática.                      |
 
 Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No marcar un hito como completado solo porque exista código.
 
@@ -488,6 +488,39 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 - El estado de carga del ranking existe, pero ninguna prueba lo comprueba.
 - Las carpetas recientes guardan rutas completas en `localStorage` del perfil local; se pueden borrar, pero no hay una opción para no guardarlas.
 - Siguen abiertos los pendientes de H1: el diálogo nativo en inglés, el borde de las filas con colores forzados y el smoke dependiente del idioma. El recorrido nuevo evita ese problema porque no usa texto.
+
+#### Evidencia de H3 (2026-09-19) — hito abierto
+
+**Entregado (F19a y correcciones de H1–H2):**
+
+- Instalador NSIS para Windows x64 (`npm run dist`): por usuario y sin elevación, con Electron, el backend y un runtime de Java 17 recortado con `jlink` (55 MiB, módulos obtenidos con `jdeps`). Pesa 152 MiB y ocupa 396 MiB instalado. Se eligió electron-builder con NSIS tras una prueba acotada; no hubo que migrar el backend.
+- La app instalada gestiona siempre su backend y lo arranca con el Java incluido, sin PowerShell ni Maven. El backend vigila el proceso de la app (`storage-analyzer.parent-pid`) y se cierra con ella, incluso si la app se termina a la fuerza.
+- Política de datos documentada en [`docs/beta/instalacion-y-datos.md`](docs/beta/instalacion-y-datos.md): idioma y carpetas recientes, más un registro del backend limitado a 5 MB con una copia anterior, todo en `%APPDATA%\Storage Analyzer`. La actualización conserva esa carpeta y la desinstalación la borra. No se envía nada por red.
+- Correcciones pendientes de H1–H2: el diálogo nativo de carpetas ya está traducido, las filas no seleccionadas no muestran borde con colores forzados, el smoke de Electron ya no depende del idioma, hay prueba del estado de carga del ranking y el botón de la última columna conserva su anillo de foco.
+- Kit para las sesiones en [`docs/beta/`](docs/beta/README.md): guion con consentimiento y ocho tareas, plantilla de resultados ligada a la puerta de §5.5 y un script que crea y elimina la carpeta de prueba (incluida una carpeta sin permiso de lectura).
+
+| Criterio de salida técnico               | Evidencia                                                                                                                                                                                                                                                                      | Estado                                                                                                                                                                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sin Node, JDK ni Maven                   | `scripts/verify-install.ps1` arranca la app con un `PATH` que solo contiene Windows y sin `JAVA_HOME`: el backend queda listo en 2,8–3,4 s con `resources\runtime\bin\java.exe`. El recorrido de interfaz (`electron-first-finding.cjs`) también pasa contra la app instalada. | Verificado en el equipo de desarrollo, que **sí** tiene esas herramientas instaladas.                                                                                                                                     |
+| Máquina limpia                           | `scripts/sandbox/start-sandbox.ps1` ejecuta la misma verificación en Windows Sandbox.                                                                                                                                                                                          | **Pendiente:** Windows Sandbox no está activado en este equipo (hace falta un administrador y reiniciar).                                                                                                                 |
+| Sin red para analizar                    | El backend solo escucha en `127.0.0.1` y la app no hace peticiones externas. La configuración de Sandbox desactiva la red.                                                                                                                                                     | **Pendiente** de la ejecución en Sandbox.                                                                                                                                                                                 |
+| Arranque y cierre sin procesos huérfanos | Cierre forzado y cierre normal: no queda ningún proceso de Java ni de la app.                                                                                                                                                                                                  | Verificado.                                                                                                                                                                                                               |
+| Actualización de prueba                  | De `1.0.0-beta.1` a `1.0.0-beta.2` encima: cambia la versión, se conserva la carpeta de datos y la app actualizada arranca.                                                                                                                                                    | Verificado.                                                                                                                                                                                                               |
+| Desinstalación con política de datos     | Elimina la app (0 archivos restantes), `%APPDATA%\Storage Analyzer` y los accesos directos del menú Inicio y del escritorio.                                                                                                                                                   | Verificado.                                                                                                                                                                                                               |
+| Rutas con espacios y Unicode             | Instalación en «Storage Analyzer beta ñá» y análisis de una carpeta «… ñá 写真».                                                                                                                                                                                               | Verificado.                                                                                                                                                                                                               |
+| Usuario estándar                         | La instalación no pidió elevación y todo se ejecutó sin elevar.                                                                                                                                                                                                                | **Parcial:** la cuenta pertenece al grupo de administradores; falta probar con una cuenta estándar.                                                                                                                       |
+| Sin desactivar protecciones              | No hace falta desactivar nada.                                                                                                                                                                                                                                                 | **Con fricción:** el instalador no está firmado, así que un archivo descargado muestra el aviso de SmartScreen (Más información → Ejecutar de todas formas). Hace falta un certificado antes de una distribución pública. |
+| Regresiones                              | Backend: 38 pruebas (1 omitida por los enlaces simbólicos). Frontend: `tsc`, webpack sin avisos, 33 pruebas de datos, 29 de escritorio y 43 de UI.                                                                                                                             | Verificado.                                                                                                                                                                                                               |
+
+**Criterios de salida de producto:** **no cumplidos todavía.** No se ha hecho ninguna sesión con participantes, así que la puerta de §5.5 no se puede evaluar ni se ha tomado la decisión sobre la siguiente iteración. El kit está listo para hacerlas.
+
+**Pendientes para cerrar H3:**
+
+1. Activar Windows Sandbox y ejecutar `scripts/sandbox/start-sandbox.ps1` (máquina limpia y sin red).
+2. Probar con una cuenta de usuario estándar y en Windows 10 x64, que se declara compatible sin haberse probado.
+3. Hacer al menos 5 sesiones con [`docs/beta/guia-de-sesion.md`](docs/beta/guia-de-sesion.md), registrar los resultados y decidir según §5.5.
+4. Antes de distribuir fuera de sesiones controladas: firma de código.
+5. Sigue pendiente de H1–H2 la revisión manual de accesibilidad (alto contraste real de Windows y lector de pantalla).
 
 ### 5.3 Secuencia de entregas
 
@@ -602,4 +635,4 @@ Registrar notas y tiempos localmente con consentimiento. No capturar rutas perso
 | Mantenimiento de reglas y formatos históricos.       | Responsable y capacidad de pruebas/migración definidos.    | Limitar F3/F4 al alcance sostenible.                                                             |
 | Tamaño de datasets objetivo.                         | Mediciones en árboles profundos/anchos con heap declarado. | Decidir paginación, almacenamiento persistente o cambio de arquitectura antes de aumentar topes. |
 
-**Siguiente paso recomendado:** H0, H1 y H2 están cerrados. Antes de H3, completar F15a con una revisión manual (alto contraste de Windows y lector de pantalla) e iniciar la investigación de empaquetado F19a. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.
+**Siguiente paso recomendado:** H0, H1 y H2 están cerrados; la parte técnica de H3 está lista. Para cerrar H3: ejecutar la verificación en Windows Sandbox, probar con una cuenta estándar, hacer las sesiones con participantes y decidir la siguiente iteración con sus resultados. No empezar H4 antes. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.

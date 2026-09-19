@@ -2,6 +2,7 @@ import { expect, Page, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import type {
   DirectoryNode,
+  FileSearch,
   LargestFiles,
   RankedFile,
   Scan,
@@ -162,6 +163,7 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     largest: [] as string[],
     skipped: [] as string[],
     ancestors: [] as string[],
+    files: [] as string[],
   };
   const state = {
     pending: !!options.pending,
@@ -176,6 +178,8 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     ancestorErrors: options.ancestorErrors ?? 0,
     /** Holds GET /ancestors for this path until the promise settles. */
     ancestorGates: new Map<string, Promise<void>>(),
+    /** Holds GET /files for this query until the promise settles. */
+    fileGates: new Map<string, Promise<void>>(),
   };
   const scan = (
     status: Scan["status"],
@@ -320,6 +324,36 @@ async function prepare(page: Page, options: ApiOptions = {}) {
         files: matching.slice(0, limit),
       };
       await respond(body);
+    } else if (url.pathname.endsWith("/files")) {
+      // Every file under the scope, like the backend: never only the ranking.
+      requests.files.push(url.search);
+      const query = (url.searchParams.get("query") ?? "").trim();
+      const scope = url.searchParams.get("scope") ?? data.root.absolutePath;
+      const minSizeBytes = Number(url.searchParams.get("minSizeBytes"));
+      const offset = Number(url.searchParams.get("offset"));
+      const limit = Number(url.searchParams.get("limit"));
+      await state.fileGates.get(query);
+      const needle = query.toLowerCase().replace(/\\/g, "/");
+      const matching = rankFiles(data.root).filter(
+        (file) =>
+          file.absolutePath.startsWith(scope + "/") &&
+          file.sizeBytes >= minSizeBytes &&
+          file.relativePath.toLowerCase().includes(needle),
+      );
+      const body: FileSearch = {
+        scanId: url.pathname.split("/")[2],
+        root: data.root.absolutePath,
+        scope,
+        partial: data.nodes.get(scope)!.partial,
+        query,
+        minSizeBytes,
+        offset,
+        limit,
+        matchingFiles: matching.length,
+        files: matching.slice(offset, offset + limit),
+      };
+      // The page may have given up on a request it no longer needs.
+      await respond(body).catch(() => {});
     } else if (url.pathname.endsWith("/ancestors")) {
       const path = url.searchParams.get("path")!;
       requests.ancestors.push(path);
@@ -601,11 +635,11 @@ test("contents search, type filtering, sorting and pagination remain consistent"
     table.getByRole("columnheader", { name: "Name" }),
   ).toHaveAttribute("aria-sort", "ascending");
   await page
-    .getByRole("searchbox", { name: "Search this folder" })
+    .getByRole("searchbox", { name: "Filter this folder’s items" })
     .fill("Photos");
   await expect(table.locator("tbody tr")).toHaveCount(1);
   await page
-    .getByRole("searchbox", { name: "Search this folder" })
+    .getByRole("searchbox", { name: "Filter this folder’s items" })
     .fill("missing");
   await expect(
     page.getByRole("heading", { name: "No matching items" }),
@@ -1509,7 +1543,7 @@ test("keyboard shortcuts work outside fields and dialogs", async ({ page }) => {
   ).toBeVisible();
 
   await page.keyboard.press("Control+F");
-  const search = page.getByRole("searchbox", { name: "Search this folder" });
+  const search = page.getByRole("searchbox", { name: "Filter this folder’s items" });
   await expect(search).toBeFocused();
   await page.keyboard.press("Control+O");
   await page.getByRole("button", { name: "Settings" }).click();
@@ -1898,7 +1932,7 @@ test("folder tables keep their search when switching views and a new analysis st
 }) => {
   await prepare(page, { extraFiles: 30 });
   await analyze(page);
-  const search = page.getByRole("searchbox", { name: "Search this folder" });
+  const search = page.getByRole("searchbox", { name: "Filter this folder’s items" });
   await search.fill("note");
   await page.getByRole("button", { name: "Next page" }).click();
   await expect(page.getByText("Page 2 of 2")).toBeVisible();
@@ -2033,4 +2067,303 @@ test("the finding and its way back read in Spanish", async ({ page }) => {
     page.getByRole("button", { name: "Volver a los archivos más grandes" }),
   ).toBeVisible();
   await checkAccessibility(page);
+});
+
+function fileSearch(page: Page) {
+  return page.getByRole("searchbox", { name: "Search files by name or path" });
+}
+function results(page: Page) {
+  return page.getByRole("table", { name: /that match the search/ });
+}
+
+test("search finds files in folders never opened, counts every match and pages them (T7)", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page, { deep: true, extraFiles: 60 });
+  await analyze(page);
+  await showLargest(page);
+  const search = fileSearch(page);
+  await expect(
+    page.getByText(
+      "Search covers every file in the whole analysis, including folders you have not opened. To search one folder and its subfolders, select it in the explorer first.",
+    ),
+  ).toBeVisible();
+
+  // A deep file, in a branch nobody expanded.
+  await search.fill("MOVIE");
+  await expect(
+    page.getByRole("heading", { name: "Files in this analysis" }),
+  ).toBeVisible();
+  const table = results(page);
+  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(table.locator("tbody tr").first()).toContainText("a/b/c/d/e/f");
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+  expect(requests.branches).toEqual([]);
+  // Typing waits for a pause, so one question is asked, not one per letter.
+  expect(requests.files).toEqual([
+    "?query=MOVIE&minSizeBytes=0&offset=0&limit=50",
+  ]);
+  await checkAccessibility(page);
+
+  // Sixty matches: the count covers all of them and pages hold fifty.
+  await search.fill("note");
+  await expect(page.getByText("1–50 of 60 matching files")).toBeVisible();
+  await expect(table.locator("tbody tr")).toHaveCount(50);
+  await page
+    .getByRole("navigation", { name: "Search results pagination" })
+    .getByRole("button", { name: "Next page" })
+    .click();
+  await expect(page.getByText("51–60 of 60 matching files")).toBeVisible();
+  await expect(page.getByText("Page 2 of 2")).toBeVisible();
+  await expect(table.locator("tbody tr")).toHaveCount(10);
+  // A new criterion starts again from the first page and applies before paging.
+  await page.getByRole("radio", { name: "100 MB or more" }).check();
+  await expect(
+    page.getByRole("heading", { name: "No matching files" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "No file in the whole analysis has “note” in its name or path. Only files of 100 MB or more are included.",
+    ),
+  ).toBeVisible();
+  expect(requests.files.at(-1)).toBe(
+    "?query=note&minSizeBytes=104857600&offset=0&limit=50",
+  );
+  await page
+    .getByRole("button", { name: "Include files of any size" })
+    .click();
+  await expect(page.getByText("1–50 of 60 matching files")).toBeVisible();
+  await search.fill("");
+  await expect(
+    page.getByRole("heading", { name: "Largest files in this analysis" }),
+  ).toBeVisible();
+});
+
+test("a folder and its subfolders can be searched, with the scope written out", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page, { deep: true });
+  await analyze(page);
+  await treeNode(page, "a").click();
+  await showLargest(page);
+  const scopes = page.getByRole("group", { name: "Search in" });
+  await expect(scopes.getByRole("radio")).toHaveCount(2);
+  await scopes.getByRole("radio", { name: "a and subfolders" }).check();
+  await expect(
+    page.getByRole("heading", { name: "Files in a and its subfolders" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Search covers every file in a and its subfolders, including folders you have not opened.",
+    ),
+  ).toBeVisible();
+  // No text is needed: a scope alone lists its files, largest first.
+  await expect(page.getByText("1–31 of 31 matching files")).toBeVisible();
+  expect(requests.files.at(-1)).toBe(
+    "?query=&minSizeBytes=0&offset=0&limit=50&scope=%2Ffixture%2Fa",
+  );
+
+  // Selecting another folder keeps the chosen one and offers the new one.
+  await treeNode(page, "Photos").click();
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  await expect(scopes.getByRole("radio")).toHaveCount(3);
+  await expect(
+    scopes.getByRole("radio", { name: "a and subfolders" }),
+  ).toBeChecked();
+  await fileSearch(page).fill("sun");
+  await expect(
+    page.getByRole("heading", { name: "No matching files" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "No file in a and its subfolders has “sun” in its name or path.",
+    ),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Search the whole analysis" })
+    .click();
+  await expect(
+    scopes.getByRole("radio", { name: "Whole analysis" }),
+  ).toBeChecked();
+  await expect(results(page).locator("tbody tr")).toHaveCount(1);
+  await expect(results(page)).toContainText("sun.jpg");
+  await checkAccessibility(page);
+  await page.emulateMedia({ forcedColors: "active" });
+  await checkAccessibility(page, ["color-contrast"]);
+});
+
+test("Ctrl+F reaches the visible search, and a folder filter hands over to a deeper search", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page);
+  await analyze(page);
+  await page.keyboard.press("Control+F");
+  const filter = page.getByRole("searchbox", {
+    name: "Filter this folder’s items",
+  });
+  await expect(filter).toBeFocused();
+  // The folder filter reads direct items and says so; going deeper is a search.
+  await filter.fill("sun");
+  await expect(
+    page.getByRole("heading", { name: "No matching items" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("The filter only reads items directly in Fixture."),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Search “sun” in Fixture and subfolders" })
+    .click();
+  await expect(
+    page.getByRole("radio", { name: "Largest files" }),
+  ).toBeChecked();
+  await expect(fileSearch(page)).toBeFocused();
+  await expect(fileSearch(page)).toHaveValue("sun");
+  await expect(results(page)).toContainText("Photos");
+
+  // Outside the field, Ctrl+F comes back to the search of this view.
+  await page.getByRole("heading", { name: "Files in this analysis" }).click();
+  await page.keyboard.press("Control+F");
+  await expect(fileSearch(page)).toBeFocused();
+
+  // From a file's details, it returns to the list and its search.
+  await page.getByRole("button", { name: "sun.jpg", exact: true }).click();
+  const detail = page.getByRole("region", { name: "sun.jpg" });
+  await expect(detail).toContainText("No. 1 of 1 matching files, by size");
+  await page.keyboard.press("Control+F");
+  await expect(fileSearch(page)).toBeFocused();
+  await expect(fileSearch(page)).toHaveValue("sun");
+
+  // A file has no list to filter, so the file search takes over.
+  await page.getByRole("radio", { name: "Folder contents" }).check();
+  await filter.fill("");
+  await page
+    .getByRole("table", { name: /^Contents of Fixture/ })
+    .getByRole("button", { name: /^readme\.txt/ })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "File details" }),
+  ).toBeVisible();
+  await page.keyboard.press("Control+F");
+  await expect(fileSearch(page)).toBeFocused();
+  expect(requests.branches).toEqual([]);
+});
+
+test("a late answer never replaces the current search, and the way back keeps query and page (T6, T7)", async ({
+  page,
+}) => {
+  const { requests, state } = await prepare(page, { extraFiles: 60 });
+  await analyze(page);
+  await showLargest(page);
+  const search = fileSearch(page);
+  let release!: () => void;
+  state.fileGates.set(
+    "readme",
+    new Promise<void>((resolve) => (release = resolve)),
+  );
+  await search.fill("readme");
+  await expect.poll(() => requests.files.length).toBe(1);
+  await search.fill("package");
+  const table = results(page);
+  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(table).toContainText("package.zip");
+  release();
+  await page.waitForTimeout(300);
+  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(table).toContainText("package.zip");
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+
+  // Earlier rows stay while the next search runs, marked as out of date.
+  let next!: () => void;
+  state.fileGates.set(
+    "note",
+    new Promise<void>((resolve) => (next = resolve)),
+  );
+  await search.fill("note");
+  await expect(page.locator(".table-scroll.is-stale")).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  await expect(
+    page.getByRole("status").filter({ hasText: "Searching…" }),
+  ).toBeVisible();
+  await expect(
+    table.getByRole("button", { name: "package.zip", exact: true }),
+  ).toBeDisabled();
+  next();
+  await expect(page.getByText("1–50 of 60 matching files")).toBeVisible();
+  await expect(page.locator(".table-scroll.is-stale")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Next page" }).click();
+  await expect(page.getByText("51–60 of 60 matching files")).toBeVisible();
+  const row = table.getByRole("button", { name: "note-55.txt", exact: true });
+  await row.click();
+  await expect(page.getByRole("region", { name: "note-55.txt" })).toContainText(
+    "No. 55 of 60 matching files, by size",
+  );
+  await page
+    .getByRole("button", { name: "View folder in the analysis" })
+    .click();
+  const revealed = page
+    .getByRole("table", { name: /^Contents of Fixture\./ })
+    .getByRole("button", { name: /^note-55\.txt/ });
+  await expect(revealed).toBeFocused();
+  await expect(revealed).toContainText("From search results");
+  await expect(
+    page.getByText("You came here from note-55.txt in your search results."),
+  ).toBeVisible();
+  const asked = requests.files.length;
+  await page.getByRole("button", { name: "Back to search results" }).click();
+  await expect(search).toHaveValue("note");
+  await expect(page.getByText("51–60 of 60 matching files")).toBeVisible();
+  await expect(row).toBeFocused();
+  await expect(row).toHaveAttribute("aria-current", "true");
+  expect(requests.files.length).toBe(asked);
+});
+
+test("search reads in Spanish on a narrow window and never focuses the closed explorer", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepare(page, { deep: true });
+  await analyze(page);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("Language").selectOption("es");
+  await page.getByRole("button", { name: "Listo" }).click();
+  await page.getByRole("radio", { name: "Archivos más grandes" }).check();
+  await page.keyboard.press("Control+F");
+  const search = page.getByRole("searchbox", {
+    name: "Buscar archivos por nombre o ruta",
+  });
+  await expect(search).toBeFocused();
+  await search.fill("mkv");
+  await expect(
+    page.getByText("1–1 de 1 archivos que coinciden"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Archivos de este análisis" }),
+  ).toBeVisible();
+  await expect(page.locator(".location-inline").first()).toHaveText(
+    "a/b/c/d/e/f",
+  );
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+    ),
+  ).toBe(true);
+  await checkAccessibility(page);
+  await page.screenshot({
+    path: "test-results/search-compact-es.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "movie.mkv", exact: true }).click();
+  await expect(
+    page.getByText("N.º 1 de 1 archivos que coinciden, por tamaño"),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Ver carpeta en el análisis" })
+    .click();
+  await expect(page.getByText("Desde la búsqueda")).toBeVisible();
+  await page.getByRole("button", { name: "Volver a los resultados" }).click();
+  await expect(search).toHaveValue("mkv");
 });

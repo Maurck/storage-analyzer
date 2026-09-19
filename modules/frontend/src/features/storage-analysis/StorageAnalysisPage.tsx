@@ -12,6 +12,7 @@ import {
   LargestFiles,
   LargestState,
   initialLargestState,
+  isSearch,
 } from "./components/LargestFiles";
 import { SkippedItemsDialog } from "./components/SkippedItemsDialog";
 import { QuickStart } from "./components/QuickStart";
@@ -92,10 +93,11 @@ export function StorageAnalysisPage() {
   const [largestState, setLargestState] =
     useState<LargestState>(initialLargestState);
   const [restoreLargest, setRestoreLargest] = useState(false);
+  const [focusFileSearch, setFocusFileSearch] = useState(false);
   const [contentsStates, setContentsStates] = useState<
     Record<string, ContentsState>
   >({});
-  // A ranked file opened in its folder, and the way back to the ranking.
+  // A listed file opened in its folder, and the way back to the list.
   const [reveal, setReveal] = useState<{
     folder: string;
     target: string;
@@ -103,6 +105,8 @@ export function StorageAnalysisPage() {
     paths: string[];
     token: number;
     focus: boolean;
+    /** It came from search results rather than the ranking. */
+    fromSearch: boolean;
   } | null>(null);
   const revealToken = useRef(0);
   const [skippedOpen, setSkippedOpen] = useState(false);
@@ -152,6 +156,7 @@ export function StorageAnalysisPage() {
     // A new analysis starts clean: filters and findings belong to their scan.
     setLargestState(initialLargestState);
     setRestoreLargest(false);
+    setFocusFileSearch(false);
     setContentsStates({});
     setReveal(null);
   }, [snapshot?.id]);
@@ -195,7 +200,7 @@ export function StorageAnalysisPage() {
   }
 
   /**
-   * Opens a ranked file's folder with only the folders that lead to it, puts
+   * Opens a listed file's folder with only the folders that lead to it, puts
    * the file on the table's visible page and keeps the way back.
    */
   async function openFolderOf(file: RankedFile) {
@@ -254,9 +259,31 @@ export function StorageAnalysisPage() {
       paths: ancestry.ancestors.map((ancestor) => ancestor.absolutePath),
       token,
       focus: true,
+      fromSearch: isSearch(largestState),
     });
     setView("folder");
   }
+
+  /** Looks for what a folder's filter holds in the folder and its subfolders. */
+  function searchSubfolders(query: string) {
+    if (!root || !selected) return;
+    setLargestState((state) => ({
+      ...state,
+      query,
+      scope:
+        selected.absolutePath === root.absolutePath
+          ? undefined
+          : { path: selected.absolutePath, name: selected.name },
+      page: 0,
+      detail: false,
+    }));
+    setView("largest");
+    setRestoreLargest(false);
+    setReveal(null);
+    setFocusFileSearch(true);
+  }
+
+  const fileSearchFocused = useCallback(() => setFocusFileSearch(false), []);
 
   function switchView(next: "folder" | "largest") {
     setView(next);
@@ -356,13 +383,21 @@ export function StorageAnalysisPage() {
       if (!busy) rescan();
     },
     search: () => {
-      const target =
-        view === "folder"
-          ? document.querySelector<HTMLInputElement>("#contents-search")
-          : null;
-      (
-        target ?? document.querySelector<HTMLInputElement>("#tree-search")
-      )?.focus();
+      // The search of the list on screen, whose scope is written next to it.
+      const field = document.querySelector<HTMLInputElement>(
+        view === "folder" ? "#contents-search" : "#file-search",
+      );
+      if (field) {
+        field.focus();
+        return;
+      }
+      // No list here (a file, an empty folder or a file's details): the file
+      // search takes over with the scope it shows.
+      setLargestState((state) => ({ ...state, detail: false }));
+      setView("largest");
+      setRestoreLargest(false);
+      setReveal(null);
+      setFocusFileSearch(true);
     },
     parent: () => {
       const trail = breadcrumbs();
@@ -708,6 +743,14 @@ export function StorageAnalysisPage() {
                 state={largestState}
                 onStateChange={setLargestState}
                 restoreList={restoreLargest}
+                folder={
+                  selected.type === "FOLDER" &&
+                  selected.absolutePath !== root.absolutePath
+                    ? { path: selected.absolutePath, name: selected.name }
+                    : undefined
+                }
+                focusSearch={focusFileSearch}
+                onSearchFocused={fileSearchFocused}
                 onOpenSkipped={() => setSkippedOpen(true)}
                 onOpenFolder={openFolderOf}
                 headingAction={
@@ -733,10 +776,14 @@ export function StorageAnalysisPage() {
                       onClick={backToLargest}
                     >
                       <Icon name="arrow-left" size={17} />
-                      {t("finding.back")}
+                      {reveal.fromSearch
+                        ? t("finding.backToResults")
+                        : t("finding.back")}
                     </Button>
                     <span className="muted">
-                      {t("finding.returnNote", { name: reveal.name })}
+                      {reveal.fromSearch
+                        ? t("finding.returnNoteSearch", { name: reveal.name })
+                        : t("finding.returnNote", { name: reveal.name })}
                     </span>
                   </div>
                 )}
@@ -919,10 +966,12 @@ export function StorageAnalysisPage() {
                           ? reveal.target
                           : undefined
                       }
+                      revealedFromSearch={reveal?.fromSearch}
                       focusRevealed={
                         reveal?.folder === selected.absolutePath && reveal.focus
                       }
                       onRevealFocused={revealFocused}
+                      onSearchSubfolders={searchSubfolders}
                     />
                   </>
                 ) : (

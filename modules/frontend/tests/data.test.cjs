@@ -24,7 +24,7 @@ const { AppError, request, errorMessage } = require('../src/shared/lib/http.ts')
 const {
   validateDirectory, validateScan, validateHealth, startScan, getScan, cancelScan, getDirectory, getHealth,
   validateLargest, validateSkipped, validateCapacity, getLargest, getSkipped, getCapacity,
-  validateAncestry, getAncestors,
+  validateAncestry, getAncestors, validateSearch, searchFiles,
 } = require('../src/features/storage-analysis/api/directory.api.ts');
 const recentFolders = require('../src/shared/lib/recentFolders.ts');
 // Pinned: the default formatters follow this machine's regional settings.
@@ -543,6 +543,52 @@ test('the way to an entry is validated as an unbroken chain of loaded folders', 
   await getAncestors('scan/1', 'C:\\Data\\x\\a b.bin');
   assert.equal(fetchMock.mock.calls[0].arguments[0],
     'http://127.0.0.1:5050/scans/scan%2F1/ancestors?path=C%3A%5CData%5Cx%5Ca%20b.bin');
+});
+
+function search(overrides = {}) {
+  return {
+    scanId: 'scan-1', root: 'C:\\Data', scope: 'C:\\Data\\Photos', partial: false, query: 'sun',
+    minSizeBytes: 0, offset: 50, limit: 50, matchingFiles: 120,
+    files: [
+      { name: 'sun.jpg', absolutePath: 'C:\\Data\\Photos\\sun.jpg', relativePath: 'Photos\\sun.jpg', sizeBytes: 9 },
+      { name: 'sunset.jpg', absolutePath: 'C:\\Data\\Photos\\sunset.jpg', relativePath: 'Photos\\sunset.jpg', sizeBytes: 4 },
+    ],
+    ...overrides,
+  };
+}
+
+test('search pages are validated as an ordered page of a larger count', () => {
+  const valid = search();
+  assert.equal(validateSearch(valid), valid);
+  assert.equal(validateSearch(search({ files: [], matchingFiles: 50 })).files.length, 0);
+  const [first, second] = valid.files;
+  for (const value of [
+    null, search({ scope: '' }), search({ query: 3 }), search({ offset: -1 }), search({ partial: 'no' }),
+    search({ limit: 1 }), // more files than the limit
+    search({ matchingFiles: 51 }), // a page that claims more files than the count
+    search({ files: [second, first] }), // out of order, so pages could repeat or skip
+    search({ minSizeBytes: 5 }), // a file under the requested minimum
+    search({ files: [first, { ...first }] }), // duplicate identity
+  ]) {
+    assert.throws(() => validateSearch(value), error => assertAppError(error, /analysis data is incomplete/i, 0, 'invalid-data'));
+  }
+});
+
+test('a search request encodes its query, scope and page', async t => {
+  const oldWindow = globalThis.window;
+  globalThis.window = { storageAnalyzer: { backendUrl: 'http://127.0.0.1:5050' } };
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const urls = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    urls.push(url);
+    return response(search({ offset: 0, files: [], matchingFiles: 0, query: 'a b&c' }));
+  });
+  await searchFiles('scan/1', { query: 'a b&c', scope: 'C:\\Data\\Photos', minSizeBytes: 104857600, offset: 100, limit: 50 });
+  await searchFiles('scan-2');
+  assert.deepEqual(urls, [
+    'http://127.0.0.1:5050/scans/scan%2F1/files?query=a+b%26c&minSizeBytes=104857600&offset=100&limit=50&scope=C%3A%5CData%5CPhotos',
+    'http://127.0.0.1:5050/scans/scan-2/files?query=&minSizeBytes=0&offset=0&limit=50',
+  ]);
 });
 
 test('skipped-item pages and capacity are validated', () => {

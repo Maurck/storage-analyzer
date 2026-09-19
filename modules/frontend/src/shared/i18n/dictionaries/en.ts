@@ -154,8 +154,10 @@ export const en = {
   "contents.largestFirst": "Largest first by default",
   "contents.emptyTitle": "This folder is empty",
   "contents.emptyDescription": "There are no items to display in this folder.",
-  "contents.searchLabel": "Search this folder",
-  "contents.searchPlaceholder": "Search this folder…",
+  "contents.searchLabel": "Filter this folder’s items",
+  "contents.searchPlaceholder": "Filter this folder…",
+  "contents.directOnly": "The filter only reads items directly in {name}.",
+  "contents.searchSubfolders": "Search “{query}” in {name} and subfolders",
   "contents.filterLabel": "Filter by type",
   "contents.allTypes": "All types",
   "contents.folders": "Folders",
@@ -174,6 +176,7 @@ export const en = {
   "contents.columnShare": "Share",
   "contents.partial": "Partial",
   "contents.revealed": "From largest files",
+  "contents.revealedSearch": "From search results",
   "contents.typeFile": "File",
   "contents.typeSkipped": "Skipped",
   "contents.typeFolder": "Folder",
@@ -331,6 +334,44 @@ export const en = {
   "finding.note":
     "These details come from this analysis. The file may have changed since; rescan to update them.",
   "finding.returnNote": "You came here from {name} in Largest files.",
+  "finding.matchValue": "No. {rank} of {total} matching files, by size",
+  "finding.backToResults": "Back to search results",
+  "finding.returnNoteSearch":
+    "You came here from {name} in your search results.",
+
+  "search.label": "Search files by name or path",
+  "search.placeholder": "Search files by name or path…",
+  "search.scopeLegend": "Search in",
+  "search.scopeAll": "Whole analysis",
+  "search.scopeFolder": "{name} and subfolders",
+  "search.whereAll": "the whole analysis",
+  "search.whereFolder": "{name} and its subfolders",
+  "search.scopeNote":
+    "Search covers every file in {where}, including folders you have not opened.",
+  "search.scopeHint":
+    "To search one folder and its subfolders, select it in the explorer first.",
+  "search.titleAll": "Files in this analysis",
+  "search.titleFolder": "Files in {name} and its subfolders",
+  "search.description":
+    "Files whose name or path from {root} contains your text, largest first. Only what this analysis covered is included.",
+  "search.partial":
+    "Some items here were skipped, so files inside them cannot appear in the results.",
+  "search.errorTitle": "Could not search the files",
+  "search.loading": "Searching files",
+  "search.searching": "Searching…",
+  "search.emptyTitle": "No matching files",
+  "search.emptyQuery": "No file in {where} has “{query}” in its name or path.",
+  "search.emptyAll": "There are no files in {where}.",
+  "search.emptyMin": "Only files of {size} or more are included.",
+  "search.searchAll": "Search the whole analysis",
+  "search.anySize": "Include files of any size",
+  "search.clear": "Clear the search",
+  "search.caption":
+    "Files in {where} that match the search, largest first. Sizes are logical file sizes.",
+  "search.range": "{from}–{to} of {total} matching files",
+  "search.windowLimit":
+    "Only the first {limit} can be browsed. Narrow the search to see the rest.",
+  "search.pagination": "Search results pagination",
 
   "show.button": "Show in Explorer",
   "show.itemLabel": "Show {name} in Explorer",

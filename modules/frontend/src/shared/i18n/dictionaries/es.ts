@@ -155,8 +155,11 @@ export const es: Dictionary = {
   "contents.largestFirst": "De mayor a menor por defecto",
   "contents.emptyTitle": "Esta carpeta está vacía",
   "contents.emptyDescription": "No hay elementos que mostrar en esta carpeta.",
-  "contents.searchLabel": "Buscar en esta carpeta",
-  "contents.searchPlaceholder": "Buscar en esta carpeta…",
+  "contents.searchLabel": "Filtrar los elementos de esta carpeta",
+  "contents.searchPlaceholder": "Filtrar esta carpeta…",
+  "contents.directOnly":
+    "El filtro solo lee los elementos que están directamente en {name}.",
+  "contents.searchSubfolders": "Buscar “{query}” en {name} y subcarpetas",
   "contents.filterLabel": "Filtrar por tipo",
   "contents.allTypes": "Todos los tipos",
   "contents.folders": "Carpetas",
@@ -174,6 +177,7 @@ export const es: Dictionary = {
   "contents.columnShare": "Proporción",
   "contents.partial": "Parcial",
   "contents.revealed": "Desde los más grandes",
+  "contents.revealedSearch": "Desde la búsqueda",
   "contents.typeFile": "Archivo",
   "contents.typeSkipped": "Omitido",
   "contents.typeFolder": "Carpeta",
@@ -338,6 +342,45 @@ export const es: Dictionary = {
   "finding.note":
     "Estos datos son de este análisis. El archivo puede haber cambiado desde entonces; vuelve a analizar para actualizarlos.",
   "finding.returnNote": "Llegaste aquí desde {name} en Archivos más grandes.",
+  "finding.matchValue": "N.º {rank} de {total} archivos que coinciden, por tamaño",
+  "finding.backToResults": "Volver a los resultados",
+  "finding.returnNoteSearch":
+    "Llegaste aquí desde {name} en tus resultados de búsqueda.",
+
+  "search.label": "Buscar archivos por nombre o ruta",
+  "search.placeholder": "Buscar archivos por nombre o ruta…",
+  "search.scopeLegend": "Buscar en",
+  "search.scopeAll": "Todo el análisis",
+  "search.scopeFolder": "{name} y subcarpetas",
+  "search.whereAll": "todo el análisis",
+  "search.whereFolder": "{name} y sus subcarpetas",
+  "search.scopeNote":
+    "La búsqueda recorre todos los archivos de {where}, incluidas las carpetas que no has abierto.",
+  "search.scopeHint":
+    "Para buscar solo en una carpeta y sus subcarpetas, selecciónala antes en el explorador.",
+  "search.titleAll": "Archivos de este análisis",
+  "search.titleFolder": "Archivos de {name} y sus subcarpetas",
+  "search.description":
+    "Archivos cuyo nombre o ruta desde {root} contiene el texto, de mayor a menor. Solo incluye lo que abarcó este análisis.",
+  "search.partial":
+    "Aquí se omitieron algunos elementos, así que los archivos que contienen no pueden aparecer en los resultados.",
+  "search.errorTitle": "No se pudieron buscar los archivos",
+  "search.loading": "Buscando archivos",
+  "search.searching": "Buscando…",
+  "search.emptyTitle": "Ningún archivo coincide",
+  "search.emptyQuery":
+    "Ningún archivo de {where} tiene “{query}” en su nombre o ruta.",
+  "search.emptyAll": "No hay archivos en {where}.",
+  "search.emptyMin": "Solo se incluyen archivos de {size} o más.",
+  "search.searchAll": "Buscar en todo el análisis",
+  "search.anySize": "Incluir archivos de cualquier tamaño",
+  "search.clear": "Borrar la búsqueda",
+  "search.caption":
+    "Archivos de {where} que coinciden con la búsqueda, de mayor a menor. Los tamaños son lógicos.",
+  "search.range": "{from}–{to} de {total} archivos que coinciden",
+  "search.windowLimit":
+    "Solo se pueden recorrer los primeros {limit}. Precisa la búsqueda para ver el resto.",
+  "search.pagination": "Paginación de los resultados de búsqueda",
 
   "show.button": "Mostrar en el Explorador",
   "show.itemLabel": "Mostrar {name} en el Explorador",

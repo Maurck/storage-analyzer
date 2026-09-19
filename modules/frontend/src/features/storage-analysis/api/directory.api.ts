@@ -4,6 +4,7 @@ import {
   Ancestry,
   Capacity,
   DirectoryNode,
+  FileSearch,
   Health,
   LargestFiles,
   Scan,
@@ -221,20 +222,13 @@ export const getAncestors = async (
     ),
   );
 
-export function validateLargest(value: unknown): LargestFiles {
-  const largest = value as LargestFiles | null;
+/** Distinct files at or above the minimum, largest first, no more than the limit. */
+function validFiles(list: LargestFiles | FileSearch) {
   const paths = new Set<string>();
-  if (
-    !isRecord(largest) ||
-    !text(largest.scanId) ||
-    !text(largest.root) ||
-    typeof largest.partial !== "boolean" ||
-    ![largest.limit, largest.minSizeBytes, largest.matchingFiles].every(
-      validCount,
-    ) ||
-    !Array.isArray(largest.files) ||
-    largest.files.length > largest.limit ||
-    !largest.files.every((file) => {
+  return (
+    Array.isArray(list.files) &&
+    list.files.length <= list.limit &&
+    list.files.every((file, index) => {
       const valid =
         isRecord(file) &&
         text(file.name) &&
@@ -243,14 +237,54 @@ export function validateLargest(value: unknown): LargestFiles {
         !paths.has(file.absolutePath) &&
         text(file.relativePath) &&
         validCount(file.sizeBytes) &&
-        file.sizeBytes >= largest.minSizeBytes;
+        file.sizeBytes >= list.minSizeBytes &&
+        (index === 0 || file.sizeBytes <= list.files[index - 1].sizeBytes);
       if (valid) paths.add(file.absolutePath);
       return valid;
     })
+  );
+}
+
+export function validateLargest(value: unknown): LargestFiles {
+  const largest = value as LargestFiles | null;
+  if (
+    !isRecord(largest) ||
+    !text(largest.scanId) ||
+    !text(largest.root) ||
+    typeof largest.partial !== "boolean" ||
+    ![largest.limit, largest.minSizeBytes, largest.matchingFiles].every(
+      validCount,
+    ) ||
+    !validFiles(largest)
   ) {
     throw invalidData();
   }
   return largest;
+}
+
+export function validateSearch(value: unknown): FileSearch {
+  const search = value as FileSearch | null;
+  if (
+    !isRecord(search) ||
+    !text(search.scanId) ||
+    !text(search.root) ||
+    !text(search.scope) ||
+    search.scope.length === 0 ||
+    !text(search.query) ||
+    typeof search.partial !== "boolean" ||
+    ![
+      search.minSizeBytes,
+      search.offset,
+      search.limit,
+      search.matchingFiles,
+    ].every(validCount) ||
+    !validFiles(search) ||
+    // A page never claims more files than the count it belongs to.
+    search.offset + search.files.length > search.matchingFiles
+  ) {
+    throw invalidData();
+  }
+  return search;
 }
 
 export function validateSkipped(value: unknown): SkippedItems {
@@ -305,6 +339,39 @@ export const getLargest = async (
       { signal },
     ),
   );
+export const searchFiles = async (
+  id: string,
+  {
+    query = "",
+    scope,
+    minSizeBytes = 0,
+    offset = 0,
+    limit = 50,
+  }: {
+    query?: string;
+    /** A folder of the analysis; the whole analysis when absent. */
+    scope?: string;
+    minSizeBytes?: number;
+    offset?: number;
+    limit?: number;
+  } = {},
+  signal?: AbortSignal,
+) => {
+  const params = new URLSearchParams({
+    query,
+    minSizeBytes: String(minSizeBytes),
+    offset: String(offset),
+    limit: String(limit),
+  });
+  if (scope) params.set("scope", scope);
+  return validateSearch(
+    await request(
+      backendUrl(),
+      `/scans/${encodeURIComponent(id)}/files?${params}`,
+      { signal },
+    ),
+  );
+};
 export const getSkipped = async (
   id: string,
   offset: number,

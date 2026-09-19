@@ -70,6 +70,26 @@ export interface LargestFiles {
   files: RankedFile[];
 }
 
+/**
+ * One page of the files under a folder of the analysis, subfolders included,
+ * whose path from the root contains the query, largest first.
+ */
+export interface FileSearch {
+  scanId: string;
+  root: string;
+  /** The folder searched; the root for the whole analysis. */
+  scope: string;
+  /** Something under the scope was skipped, so files there cannot match. */
+  partial: boolean;
+  query: string;
+  minSizeBytes: number;
+  offset: number;
+  limit: number;
+  /** Every match under the scope, not only this page. */
+  matchingFiles: number;
+  files: RankedFile[];
+}
+
 /** Where an entry sits in a completed scan. */
 export interface Ancestry {
   scanId: string;

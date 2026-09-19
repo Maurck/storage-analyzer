@@ -54,18 +54,24 @@ export function ContentsTable({
   state,
   onStateChange,
   revealed,
+  revealedFromSearch = false,
   focusRevealed = false,
   onRevealFocused,
+  onSearchSubfolders,
 }: {
   node: DirectoryNode;
   onSelect(node: DirectoryNode): void;
   state: ContentsState;
   onStateChange(state: ContentsState): void;
-  /** An item reached from elsewhere (the ranking), marked in its row. */
+  /** An item reached from elsewhere (the ranking or a search), marked in its row. */
   revealed?: string;
+  /** It was reached from search results rather than the ranking. */
+  revealedFromSearch?: boolean;
   /** Move focus to that row once it is on screen, then report it. */
   focusRevealed?: boolean;
   onRevealFocused?(): void;
+  /** Looks for the filter's text in this folder and all its subfolders. */
+  onSearchSubfolders?(query: string): void;
 }) {
   const { t } = useTranslation();
   const { search, filter, sort, page } = state;
@@ -76,6 +82,7 @@ export function ContentsTable({
   const update = (change: Partial<ContentsState>) =>
     onStateChange({ ...state, ...change });
   const reset = () => update({ search: "", filter: "all", page: 0 });
+  const query = search.trim();
   const sortBy = (key: "name" | "sizeBytes") =>
     update({
       sort: {
@@ -150,6 +157,22 @@ export function ContentsTable({
               </Button>
             )}
           </div>
+          {/* The filter reads direct items only; going deeper is a search, said so. */}
+          {query && onSearchSubfolders && node.directoryCount > 0 && (
+            <div className="contents-scope">
+              <span className="muted">
+                {t("contents.directOnly", { name: node.name })}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => onSearchSubfolders(query)}
+              >
+                <Icon name="search" size={16} />
+                {t("contents.searchSubfolders", { query, name: node.name })}
+              </Button>
+            </div>
+          )}
           {items.length === 0 ? (
             <EmptyState
               title={t("contents.noMatchTitle")}
@@ -260,7 +283,9 @@ export function ContentsTable({
                               )}
                               {isRevealed && (
                                 <span className="revealed-label">
-                                  {t("contents.revealed")}
+                                  {revealedFromSearch
+                                    ? t("contents.revealedSearch")
+                                    : t("contents.revealed")}
                                 </span>
                               )}
                             </button>

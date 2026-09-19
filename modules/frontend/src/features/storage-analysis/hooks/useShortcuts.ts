@@ -15,10 +15,26 @@ export const SHORTCUTS = {
   parent: "Alt+ArrowLeft",
 } as const;
 
+/** Inputs where the keys of a shortcut are text or editing, not a command. */
+const TEXT_ENTRY = [
+  "text",
+  "search",
+  "email",
+  "url",
+  "tel",
+  "password",
+  "number",
+  "date",
+  "time",
+];
+
 function typingOrInDialog(target: EventTarget | null) {
   const element = target instanceof Element ? target : null;
+  const input = element?.closest("input");
   return (
-    !!element?.closest("input, textarea, select, [contenteditable='true']") ||
+    (!!input && TEXT_ENTRY.includes(input.type)) ||
+    // A radio or a checkbox holds focus without taking text: shortcuts still work.
+    !!element?.closest("textarea, select, [contenteditable='true']") ||
     !!document.querySelector("dialog[open]")
   );
 }

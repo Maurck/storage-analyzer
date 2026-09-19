@@ -19,8 +19,17 @@ contextBridge.exposeInMainWorld(
   Object.freeze({
     backendUrl,
     numberLocale,
-    selectDirectory: () =>
-      ipcRenderer.invoke("storage-analyzer:select-directory"),
+    // Only two short strings reach the main process, which checks them again.
+    selectDirectory: (labels) =>
+      ipcRenderer.invoke(
+        "storage-analyzer:select-directory",
+        labels && typeof labels === "object"
+          ? {
+              title: String(labels.title ?? "").slice(0, 120),
+              buttonLabel: String(labels.buttonLabel ?? "").slice(0, 120),
+            }
+          : undefined,
+      ),
     getBackendStatus: () =>
       ipcRenderer.invoke("storage-analyzer:get-backend-status"),
     retryBackend: () => ipcRenderer.invoke("storage-analyzer:retry-backend"),

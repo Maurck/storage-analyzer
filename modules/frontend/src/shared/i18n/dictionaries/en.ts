@@ -186,6 +186,7 @@ export const en = {
   "folderDialog.label": "Folder path",
   "folderDialog.cancel": "Cancel",
   "folderDialog.analyze": "Analyze folder",
+  "folderDialog.nativeTitle": "Select a folder to analyze",
 
   "common.loading": "Loading",
   "tree.loading": "Loading {name}",

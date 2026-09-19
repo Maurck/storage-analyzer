@@ -11,7 +11,7 @@ const frontendPath = path.resolve(__dirname, '..');
 const mainSource = fs.readFileSync(path.join(frontendPath, 'main.js'), 'utf8');
 const preloadSource = fs.readFileSync(path.join(frontendPath, 'preload.js'), 'utf8');
 
-async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, launch = {}, systemLocale = 'es-PE', fetchImpl, paths = {} } = {}) {
+async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, launch = {}, systemLocale = 'es-PE', fetchImpl, paths = {}, isPackaged } = {}) {
     const windows = [];
     const sent = [];
     const shown = [];
@@ -44,6 +44,7 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, l
         on: (name, handler) => appEvents.set(name, handler),
         quit: () => { quitCount += 1; },
         getSystemLocale: () => systemLocale,
+        isPackaged,
         getPath: name => {
             if (!(name in paths)) throw new Error(`Unknown path ${name}`);
             return paths[name];
@@ -54,7 +55,7 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, l
     const waits = [...(launch.waits ?? ['ready'])];
     const backend = {
         startBackend: (url, options) => {
-            backendCalls.push({ call: 'start', url });
+            backendCalls.push({ call: 'start', url, installed: options?.installed });
             backend.onExit = options?.onExit;
             return Promise.resolve(outcomes.length > 1 ? outcomes.shift() : outcomes[0]);
         },
@@ -82,7 +83,10 @@ async function loadDesktop({ backendUrl, platform = 'win32', openDialog, argv, l
             : name === './backend-process' ? backend
             : require(name),
         __dirname: frontendPath,
-        process: { env: backendUrl === undefined ? {} : { STORAGE_ANALYZER_API_URL: backendUrl }, platform, argv },
+        process: {
+            env: backendUrl === undefined ? {} : { STORAGE_ANALYZER_API_URL: backendUrl },
+            platform, argv, resourcesPath: 'C:\\Program Files\\Storage Analyzer\\resources',
+        },
         URL, console, AbortSignal,
         fetch: async (url, init) => {
             fetches.push(url);
@@ -228,12 +232,17 @@ test('preload exposes only backend configuration, service status and fixed opera
     assert.equal(exposed.api.backendUrl, 'http://localhost:5050');
     assert.equal(exposed.api.numberLocale, 'es-PE');
     assert.equal(await exposed.api.selectDirectory('untrusted-channel'), 'C:\\Selected');
+    await exposed.api.selectDirectory({ title: 'Elige una carpeta', buttonLabel: 'Analizar', extra: 'dropped' });
+    await exposed.api.selectDirectory({ title: 'x'.repeat(500) });
     await exposed.api.getBackendStatus('ignored');
     await exposed.api.retryBackend('ignored');
     await exposed.api.showItemInFolder('scan-id', 'C:\\Data\\file.bin', 'ignored');
     await exposed.api.getCommonFolders('ignored');
-    assert.deepEqual(calls, [
-        ['storage-analyzer:select-directory'],
+    // Copy objects made inside the vm context, whose prototypes differ from ours.
+    assert.deepEqual(calls.map(args => args.map(value => value && typeof value === 'object' ? { ...value } : value)), [
+        ['storage-analyzer:select-directory', undefined],
+        ['storage-analyzer:select-directory', { title: 'Elige una carpeta', buttonLabel: 'Analizar' }],
+        ['storage-analyzer:select-directory', { title: 'x'.repeat(120), buttonLabel: '' }],
         ['storage-analyzer:get-backend-status'],
         ['storage-analyzer:retry-backend'],
         ['storage-analyzer:show-item', 'scan-id', 'C:\\Data\\file.bin'],
@@ -265,7 +274,7 @@ function statusOf(desktop) {
 test('a managed backend moves from starting to ready and tells the window', async () => {
     const desktop = await loadDesktop({ argv: ['electron', '.', '--start-backend'] });
     assert.deepEqual(desktop.backendCalls, [
-        { call: 'start', url: 'http://localhost:5000' },
+        { call: 'start', url: 'http://localhost:5000', installed: undefined },
         { call: 'wait', url: 'http://localhost:5000' },
     ]);
     assert.deepEqual({ ...statusOf(desktop) }, { managed: true, state: 'ready' });
@@ -554,5 +563,62 @@ test('common folders come from the system and only when they exist', async () =>
             /only available to the application window/);
     } finally {
         fs.rmSync(home, { recursive: true, force: true });
+    }
+});
+
+test('the native folder dialog uses the interface language and falls back to English', async () => {
+    const desktop = await loadDesktop();
+    const select = desktop.handlers.get('storage-analyzer:select-directory');
+    const event = windowEvent(desktop.windows[0]);
+    await select(event, { title: 'Elige una carpeta para analizar', buttonLabel: 'Analizar la carpeta' });
+    await select(event, { title: '', buttonLabel: 'x'.repeat(121) });
+    await select(event, 'not labels');
+    assert.deepEqual(desktop.dialogCalls.map(call => [call.options.title, call.options.buttonLabel]), [
+        ['Elige una carpeta para analizar', 'Analizar la carpeta'],
+        ['Select a folder to analyze', 'Analyze folder'],
+        ['Select a folder to analyze', 'Analyze folder'],
+    ]);
+});
+
+test('the installed app always runs its own backend from the bundled runtime', async () => {
+    const installed = await loadDesktop({ isPackaged: true, paths: { userData: 'C:\\Users\\me\\AppData\\Roaming\\Storage Analyzer' } });
+    const start = installed.backendCalls.find(call => call.call === 'start');
+    assert.ok(start, 'no --start-backend flag is needed once installed');
+    assert.deepEqual({ ...start.installed }, {
+        java: path.join('C:\\Program Files\\Storage Analyzer\\resources', 'runtime', 'bin', 'java.exe'),
+        jar: path.join('C:\\Program Files\\Storage Analyzer\\resources', 'backend', 'sa-backend.jar'),
+        logFile: path.join('C:\\Users\\me\\AppData\\Roaming\\Storage Analyzer', 'logs', 'backend.log'),
+    });
+    const development = await loadDesktop({ argv: ['electron', '.', '--start-backend'] });
+    assert.equal(development.backendCalls[0].installed, undefined, 'development keeps the start script');
+});
+
+test('the installed backend runs with the bundled Java, watches the app and logs to a bounded file', async () => {
+    const { startBackend, stopBackend, MAX_LOG_BYTES } = backendProcess;
+    const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'sa-log-'));
+    try {
+        const logFile = path.join(dir, 'logs', 'backend.log');
+        const spawned = [];
+        const spawnImpl = (command, args, options) => { spawned.push({ command, args, options }); return fakeChild(); };
+        const installed = { java: 'C:\\App\\runtime\\bin\\java.exe', jar: 'C:\\App\\backend\\sa-backend.jar', logFile };
+        const probe = async () => ({ state: 'unreachable' });
+        assert.equal(await startBackend('http://localhost:5123', { probe, spawnImpl, platform: 'win32', installed }), 'started');
+        stopBackend();
+        assert.equal(spawned[0].command, installed.java);
+        assert.deepEqual(spawned[0].args, [
+            '-Dfile.encoding=UTF-8', '-jar', installed.jar,
+            '--server.port=5123', `--storage-analyzer.parent-pid=${process.pid}`,
+        ]);
+        assert.equal(spawned[0].options.windowsHide, true);
+        assert.equal(spawned[0].options.stdio[0], 'ignore');
+        assert.ok(fs.existsSync(logFile), 'the log exists before the backend writes to it');
+
+        fs.writeFileSync(logFile, Buffer.alloc(MAX_LOG_BYTES + 1));
+        await startBackend('http://localhost:5123', { probe, spawnImpl, platform: 'win32', installed });
+        stopBackend();
+        assert.equal(fs.statSync(logFile).size, 0, 'an oversized log starts over');
+        assert.equal(fs.statSync(path.join(dir, 'logs', 'backend.old.log')).size, MAX_LOG_BYTES + 1);
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
     }
 });

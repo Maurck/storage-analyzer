@@ -16,7 +16,11 @@ export type BackendLifecycle =
 export interface DesktopBridge {
   backendUrl: string;
   numberLocale?: string;
-  selectDirectory(): Promise<string | null>;
+  /** The labels appear in the native dialog; missing ones fall back to English. */
+  selectDirectory(labels?: {
+    title: string;
+    buttonLabel: string;
+  }): Promise<string | null>;
   getBackendStatus?(): Promise<BackendLifecycle>;
   retryBackend?(): Promise<BackendLifecycle>;
   onBackendStatus?(callback: (status: BackendLifecycle) => void): () => void;

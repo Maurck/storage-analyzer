@@ -186,6 +186,7 @@ export const es: Dictionary = {
   "folderDialog.label": "Ruta de la carpeta",
   "folderDialog.cancel": "Cancelar",
   "folderDialog.analyze": "Analizar la carpeta",
+  "folderDialog.nativeTitle": "Elige una carpeta para analizar",
 
   "common.loading": "Cargando",
   "tree.loading": "Cargando {name}",

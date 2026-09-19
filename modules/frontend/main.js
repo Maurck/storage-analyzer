@@ -30,11 +30,34 @@ const commonFolderIds = [
   "videos",
 ];
 const backendUrl = getBackendUrl(process.env.STORAGE_ANALYZER_API_URL);
-// `npm start` passes this flag. Launching Electron without it leaves the
-// backend to be started separately, which is what the test harness does.
-const managesBackend = (
-  Array.isArray(process.argv) ? process.argv : []
-).includes("--start-backend");
+// The installed app always runs its own backend. In development `npm start`
+// passes this flag; launching Electron without it leaves the backend to be
+// started separately, which is what the test harness does.
+const managesBackend =
+  app.isPackaged === true ||
+  (Array.isArray(process.argv) ? process.argv : []).includes("--start-backend");
+
+/** The Java runtime and backend the installer ships, beside the app. */
+function installedBackend() {
+  if (app.isPackaged !== true) return undefined;
+  return {
+    java: path.join(process.resourcesPath, "runtime", "bin", "java.exe"),
+    jar: path.join(process.resourcesPath, "backend", "sa-backend.jar"),
+    logFile: path.join(app.getPath("userData"), "logs", "backend.log"),
+  };
+}
+
+/** Labels for the native folder dialog, in the interface's language. */
+function dialogLabels(labels) {
+  const text = (value, fallback) =>
+    typeof value === "string" && value.trim() && value.length <= 120
+      ? value
+      : fallback;
+  return {
+    title: text(labels?.title, "Select a folder to analyze"),
+    buttonLabel: text(labels?.buttonLabel, "Analyze folder"),
+  };
+}
 let mainWindow = null;
 let pendingDirectoryDialog = null;
 // What the renderer is told about the backend this app manages. Without
@@ -139,6 +162,7 @@ function launchBackend() {
   backendLaunch = (async () => {
     try {
       const outcome = await startBackend(backendUrl, {
+        installed: installedBackend(),
         onExit: () => {
           if (!backendLaunch) {
             setBackendStatus({
@@ -307,14 +331,15 @@ app.whenReady().then(() => {
     assertAppSender(event, "Common folders");
     return commonFolders();
   });
-  ipcMain.handle(selectDirectoryChannel, async (event) => {
+  ipcMain.handle(selectDirectoryChannel, async (event, labels) => {
     const window = assertAppSender(event, "Folder selection");
+    const { title, buttonLabel } = dialogLabels(labels);
     // Keep repeated clicks from creating overlapping native dialogs.
     if (!pendingDirectoryDialog) {
       pendingDirectoryDialog = dialog
         .showOpenDialog(window, {
-          title: "Select a folder to analyze",
-          buttonLabel: "Analyze folder",
+          title,
+          buttonLabel,
           properties: ["openDirectory"],
         })
         .then((result) =>

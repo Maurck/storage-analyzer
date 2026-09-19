@@ -176,7 +176,10 @@ export function StorageAnalysisPage() {
       return;
     }
     try {
-      const path = await window.storageAnalyzer.selectDirectory();
+      const path = await window.storageAnalyzer.selectDirectory({
+        title: t("folderDialog.nativeTitle"),
+        buttonLabel: t("folderDialog.analyze"),
+      });
       if (path) await begin(path);
     } catch (error) {
       setPickerError(describeError(error));

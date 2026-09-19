@@ -1,4 +1,5 @@
 const { spawn } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 
 // The start script lives at the repository root and already owns the server's
@@ -63,6 +64,7 @@ async function startBackend(
     spawnImpl = spawn,
     platform = process.platform,
     onExit,
+    installed,
   } = {},
 ) {
   if (child) return "running";
@@ -74,21 +76,23 @@ async function startBackend(
   }
   if (platform !== "win32") return "unsupported-platform";
 
-  const started = spawnImpl(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      scriptPath,
-      // The script exits when this process disappears, so a killed Electron
-      // never leaves the server holding the port.
-      "-ParentProcessId",
-      String(process.pid),
-    ],
-    { stdio: "inherit", windowsHide: true },
-  );
+  const started = installed
+    ? spawnInstalled(backendUrl, installed, spawnImpl)
+    : spawnImpl(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          scriptPath,
+          // The script exits when this process disappears, so a killed Electron
+          // never leaves the server holding the port.
+          "-ParentProcessId",
+          String(process.pid),
+        ],
+        { stdio: "inherit", windowsHide: true },
+      );
   child = started;
   const forget = () => {
     if (child !== started) return false;
@@ -103,6 +107,49 @@ async function startBackend(
     if (forget()) onExit?.(null);
   });
   return "started";
+}
+
+// A log that outgrows this is kept once as backend.old.log and started over,
+// so logs never grow without bound.
+const MAX_LOG_BYTES = 5 * 1024 * 1024;
+
+/** Opens the backend log for appending, rotating it first when it is too large. */
+function openLog(logFile) {
+  fs.mkdirSync(path.dirname(logFile), { recursive: true });
+  try {
+    if (fs.statSync(logFile).size > MAX_LOG_BYTES) {
+      fs.renameSync(logFile, logFile.replace(/\.log$/, ".old.log"));
+    }
+  } catch {
+    // No log yet.
+  }
+  return fs.openSync(logFile, "a");
+}
+
+/**
+ * The installed app runs the backend with the Java runtime it ships, without
+ * PowerShell, Maven or a JDK on the machine. The backend watches this process
+ * and exits with it, so even a killed app leaves no JVM behind.
+ */
+function spawnInstalled(backendUrl, { java, jar, logFile }, spawnImpl) {
+  const port = new URL(backendUrl).port || "5000";
+  const log = openLog(logFile);
+  try {
+    return spawnImpl(
+      java,
+      [
+        "-Dfile.encoding=UTF-8",
+        "-jar",
+        jar,
+        `--server.port=${port}`,
+        `--storage-analyzer.parent-pid=${process.pid}`,
+      ],
+      { stdio: ["ignore", log, log], windowsHide: true },
+    );
+  } finally {
+    // The child keeps its own handle.
+    fs.closeSync(log);
+  }
 }
 
 /**
@@ -149,6 +196,7 @@ function stopBackend() {
 }
 
 module.exports = {
+  MAX_LOG_BYTES,
   API_VERSION,
   APPLICATION,
   isRunning,

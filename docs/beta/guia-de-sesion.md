@@ -1,5 +1,7 @@
 # Guía de sesión moderada
 
+> **Diferida desde el 2026-09-19.** Se conserva como material histórico; no reclutar participantes ni ejecutar este protocolo por ahora. No es un requisito de H3 ni de los hitos posteriores. La evaluación vigente es interna y está definida en §5.5 de [`ANALISIS_PRODUCTO.md`](../../ANALISIS_PRODUCTO.md). Cualquier reactivación requiere una decisión posterior explícita.
+
 **Objetivo:** comprobar si alguien sin entorno de desarrollo puede instalar la beta, analizar una carpeta, encontrar el archivo más grande y mostrarlo en el Explorador **sin ayuda**, y si entiende qué significan las cifras.
 
 **Participantes:** 5 a 8 personas del segmento inicial **[Suposición]**: usan Windows a diario, no programan y alguna vez se quedaron sin espacio. Son pocas para medir porcentajes: sirven para descubrir fricciones.

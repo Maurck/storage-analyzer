@@ -6,7 +6,7 @@ The interface is available in English and Spanish. Analysis runs locally and rea
 
 ## Installing the beta
 
-On Windows 10/11 x64, run `Storage-Analyzer-Setup-<version>.exe`. It installs for the current user without administrator rights and brings its own Java runtime: no Node, Java, Maven or network connection is needed. Uninstalling removes the app and its data folder. See [installation and data](./docs/beta/instalacion-y-datos.md) for what the beta stores and the [beta kit](./docs/beta/README.md) for moderated test sessions.
+On Windows 10/11 x64, run `Storage-Analyzer-Setup-<version>.exe`. It installs for the current user without administrator rights and brings its own Java runtime: no Node, Java, Maven or network connection is needed. Uninstalling removes the app and its data folder. See [installation and data](./docs/beta/instalacion-y-datos.md) for what the beta stores and [internal beta verification](./docs/beta/README.md) for the current checks and their outstanding environment limitations. External participant sessions are deferred and are not a roadmap requirement.
 
 To build the installer, run `npm run dist` in `modules/frontend` (Windows, JDK 17 with `jmods`).
 

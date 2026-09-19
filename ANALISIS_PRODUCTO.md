@@ -1,134 +1,113 @@
 # Storage Analyzer: análisis de producto, UX y UI
 
-> Fecha: 2026-09-17 · Alcance: todo el repositorio (`modules/backend`, `modules/frontend`, `docs/`, scripts de arranque).
-> Las suposiciones sobre usuarios o negocio se marcan con **[Suposición]**.
-> Revisión del plan: funcionalidades divididas en entregas pequeñas, dependencias explícitas y roadmap por hitos verificables. Las propuestas no describen capacidades ya implementadas.
+> Revisión: 2026-09-19 · Alcance: aplicación actual y evolución desde H3.
+> Base inspeccionada: commit `1856f19`, frontend, backend, integración Electron, instalador, documentación, pruebas y capturas existentes.
+> Esta revisión propone cambios de producto; no implementa las funcionalidades ni vuelve a ejecutar las verificaciones históricas.
 
-### Cómo leer este documento
+### Decisiones de esta revisión
 
-- **Observado:** comportamiento o estructura comprobable en el repositorio.
-- **Propuesto:** decisión de producto recomendada, pendiente de implementación y validación.
-- **[Suposición]:** hipótesis sobre usuarios, impacto o demanda; no equivale a evidencia de uso.
-- **Estado de ejecución:** H0 (limpieza técnica y límites), H1 (motor listo, errores traducibles y progreso) y H2 (primer hallazgo, con límites dinámicos) están **cerrados y verificados**. H3 tiene la **parte técnica entregada y verificada en el equipo de desarrollo**, pero sigue abierto: falta la prueba en una máquina limpia y sin red, y las sesiones con participantes no se han hecho. La evidencia figura en §5.2.
-
----
-
-## 1. Qué es el producto hoy
-
-### Propuesta de valor
-
-Una app de escritorio (Electron + API Java local) que **analiza el tamaño lógico de los archivos de una carpeta**. El análisis ocurre en el equipo y solo lee metadatos; no modifica los archivos. La interfaz está en inglés y español, cuenta con navegación por teclado y un árbol ARIA, y tiene WCAG 2.2 AA como objetivo, no como certificación. El formato de tamaños busca seguir al Explorador de Windows, pero tamaño lógico, tamaño en disco y espacio recuperable son conceptos distintos.
-
-### Qué problema resuelve
-
-"Me estoy quedando sin espacio y no sé por qué." Compite en la misma categoría que WinDirStat, WizTree, TreeSize o SpaceSniffer.
-
-### Usuario probable
-
-- **[Suposición]** Usuario de Windows con conocimientos medios: gamers, creadores de contenido o desarrolladores con discos llenos, además de algún técnico de soporte que diagnostica equipos ajenos.
-- **[Suposición]** Hoy es un proyecto personal o de código abierto sin monetización. En este documento, "valor para el negocio" significa adopción, retención, diferenciación frente a las alternativas y reputación del proyecto.
-
-### Flujo principal actual
-
-```
-Abrir app → Bienvenida → "Elegir carpeta" (diálogo nativo)
-  → Escaneo (spinner + contadores, cancelable)
-  → Resumen (4 métricas) + aviso de parcialidad
-  → Explorador en árbol (izq.) | Migas de pan + dona top-5 + tabla de contenidos (der.)
-  → Navegar carpeta por carpeta
-```
-
-### Lo que ya está bien resuelto (y conviene conservar)
-
-- Estados del sistema muy trabajados: carga, vacío, error con acción de recuperación, parcial (con "≥" en los tamaños), sesión expirada y cancelación que conserva los resultados anteriores.
-- Bases de accesibilidad: árbol con búsqueda por tecleo (type-ahead), separador redimensionable con teclado, `aria-sort`, diálogos nativos y enlace para saltar al contenido. Falta validar tecnologías de asistencia y alto contraste de manera sistemática.
-- Aislamiento de Electron: `contextIsolation`, `sandbox`, CSP e IPC acotado. Añadir acciones sobre rutas exigirá revisar ese límite de seguridad.
-- Formato de tamaños centralizado y probado (`shared/lib/format.ts`), aunque la política de locale aún debe resolverse.
-- La arquitectura del backend (snapshot en memoria y expansión bajo demanda) permite proponer consultas globales sin releer el disco. Esas consultas también necesitan límites de memoria, trabajo y respuesta.
-
-### Dirección de producto propuesta
-
-**[Suposición de segmento inicial]** Usuario de Windows que quiere identificar un archivo o carpeta grande y revisar su ubicación sin aprender la estructura completa del disco. Soporte técnico y usuarios recurrentes son segmentos secundarios hasta validarlos.
-
-El primer resultado útil será **«instalar → analizar una carpeta → encontrar un elemento relevante → mostrar su ubicación»**. La beta inicial seguirá siendo de análisis: sin borrado, cuentas, servicios en la nube ni IA. Primero se valida ese recorrido; después se decide entre profundizar el análisis, comparar históricos o incorporar acciones de limpieza.
+- **No reiniciar lo entregado:** H0–H2 están cerrados según la evidencia registrada. El instalador y las correcciones técnicas de H3 ya existen; quedan verificaciones de entorno y accesibilidad.
+- **Sin participación externa por ahora:** no hay reclutamiento, entrevistas, sesiones moderadas, encuestas ni umbrales de éxito con participantes como requisito de avance. Se reemplazan por evaluación interna reproducible. El material anterior se conserva como diferido, no como trabajo obligatorio.
+- **Valor de negocio = utilidad sostenida:** ayudar a encontrar, comprender, revisar y comparar almacenamiento con menos esfuerzo y mayor confianza. No se presume monetización, demanda demostrada ni una mejora de retención medida.
+- **Separar hechos de propuestas:** “Implementado” significa comprobado en el código; “verificado anteriormente” remite a §5.2; “pendiente” no se da por probado. Las decisiones sobre prioridades son hipótesis de producto razonadas, no observaciones de usuarios externos.
+- **Preservar el producto:** mantener análisis local, lectura de metadatos, inglés/español, accesibilidad, tokens y componentes existentes. No se propone un cambio de marca, una reescritura ni convertirlo obligatoriamente en un limpiador.
 
 ---
 
-## 2. Diagnóstico crítico: fricciones y huecos
+## 1. Qué es el producto y qué quiere lograr
 
-### 2.1 El producto termina justo donde empieza la necesidad del usuario
+### Propuesta de valor actual
 
-Hoy, cuando encuentra un elemento relevante, el usuario solo puede copiar su ruta (`StorageAnalysisPage.tsx`, `copyPath`): no puede mostrarlo en el Explorador, abrirlo ni enviarlo a la papelera desde la app. **[Suposición]** Parte del público quiere liberar espacio, no solo comprenderlo. Mostrar la ubicación permite probar esa necesidad con menor riesgo; no implica que el producto deba incorporar borrado propio.
+Storage Analyzer es una aplicación de escritorio para Windows que analiza una carpeta y permite identificar sus archivos más grandes, explorar su contenido y mostrar un elemento en el Explorador. El análisis es local y de solo lectura. Sus cifras describen **tamaño lógico**; no equivalen al tamaño asignado en disco ni al espacio que se recuperaría eliminando un archivo.
 
-### 2.2 La bienvenida promete algo que la app no cumple
+La instalación empaquetada ya incorpora Electron, backend y Java. El código y las guías declaran Windows 10/11 x64, pero la verificación registrada procede del equipo de desarrollo; no debe confundirse esa declaración con una matriz de soporte completa.
 
-> **Resuelto en H2 (F2a):** la vista «Archivos más grandes» ordena los archivos de todo el análisis sin abrir el árbol.
+### El trabajo del usuario, no la lista de pantallas
 
-`WelcomeState` anuncia **"Encontrar archivos grandes"**, pero la tabla solo muestra los hijos directos de la carpeta seleccionada. Para encontrar un archivo de 20 GB que está 6 niveles más abajo hay que bajar nivel por nivel. La búsqueda del árbol dice "Buscar en elementos cargados", así que el usuario tiene que haber abierto antes la rama donde está lo que busca.
+**[Suposición de segmento de trabajo]** Persona que usa Windows y necesita resolver «me queda poco espacio», «no sé qué está creciendo» o «quiero revisar lo que ocupa mucho». Un desarrollador o soporte técnico puede necesitar mayor detalle, pero no debe obligar al resto a entender snapshots, heaps o estructuras internas.
 
-### 2.3 Barrera de instalación enorme
+| Pregunta del usuario              | Respuesta que el producto debe facilitar                                      | Valor para el producto                                            |
+| --------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| ¿Qué ocupa tanto?                 | Encontrar archivos y carpetas relevantes sin bajar nivel por nivel.           | Primer resultado útil y menor abandono del recorrido.             |
+| ¿Qué estoy viendo y por qué pesa? | Ruta, tipo, fecha, contexto y cobertura comprensibles.                        | Confianza en los datos y mejores decisiones.                      |
+| ¿Cómo reviso esto sin perderme?   | Detalle, carpeta contenedora, ubicación externa y regreso al mismo resultado. | Menos trabajo repetido y utilidad cotidiana.                      |
+| ¿Qué cambió desde la última vez?  | Comparaciones locales entre análisis compatibles.                             | Motivo concreto para volver, sin afirmar retención ya conseguida. |
+| ¿Qué conviene revisar primero?    | Candidatos explicables y una lista manual, sin promesas de borrado seguro.    | Orientación útil con riesgo controlado.                           |
 
-Para usarla hace falta Node, `npm ci`, `npm run build`, JDK 17 exacto y Maven (ver `start-backend.ps1`). No hay instalador. Fuera de Windows, el backend ni siquiera se arranca solo (`backend-process.js` devuelve `unsupported-platform`). **[Suposición]** Si el público objetivo no es desarrollador, hoy casi nadie de ese público puede instalarla.
+### Recorrido que ya existe
 
-### 2.4 Arranque en frío con un mensaje de error engañoso
+```text
+Instalar y abrir → Esperar al motor si está iniciando
+  → Elegir carpeta / reciente / carpeta habitual
+  → Analizar con tiempo, ruta actual y cancelación
+  → Ver tamaño lógico, cobertura y capacidad/libre de la unidad al iniciar
+  → Explorar carpeta O consultar los 100 archivos más grandes de todo el análisis
+  → Ver omitidos, copiar ruta o mostrar el elemento en el Explorador
+```
 
-> **Resuelto en H1:** la interfaz espera a que `/health` responda, explica el estado del motor y solo reintenta a petición de la persona.
+### Capacidades implementadas que se reutilizarán
 
-`main.js` abre la ventana antes de que la JVM termine de arrancar. Si el usuario elige una carpeta enseguida, recibe _"No se pudo conectar con el servicio local de análisis. Inicia el backend e inténtalo de nuevo"_. Le pide que haga algo que la propia app ya está haciendo. No hay un estado de "Preparando el motor de análisis…".
+| Capacidad                        | Estado actual y evidencia local                                                                                                                     | Lo que aún no implica                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Motor y errores: F9/F11/F16a     | Salud/versión, recuperación explícita, códigos traducidos, progreso y locale del sistema. `useServiceStatus`, `ScanProgress`, `backend-process.js`. | Historial, progreso porcentual o lectura en tiempo real.                                          |
+| Ranking global: F2a              | 100 filas, mínimo 0/100 MB/1 GB/10 GB, ruta relativa, coincidencias y cobertura. `LargestFiles.tsx`.                                                | Búsqueda global por nombre, fecha o categoría; navegación interna al contenedor.                  |
+| Mostrar ubicación: F1a           | Disponible en selección y ranking; ruta confirmada por backend y comprobación de existencia. `useShowItem`, `main.js`, `/scans/{id}/entry`.         | Abrir/ejecutar, papelera o restauración.                                                          |
+| Inicio y productividad: F6a/F14a | Cinco recientes borrables, carpetas comunes, Ctrl+O/F/F5 y Alt+←, ayuda en Ajustes.                                                                 | Selector de unidades, drag-and-drop, subanálisis o persistencia de resultados.                    |
+| Cobertura y cifras: F10/F8a      | Omitidos paginados con motivo/truncamiento; tamaño lógico y capacidad/libre al inicio. `SkippedItemsDialog`, `ScanSummary`.                         | Detección fiable de nube o tamaño físico.                                                         |
+| Accesibilidad y UI: F15a parcial | Árbol por teclado, foco, split adaptable, idiomas y pruebas automáticas de colores forzados.                                                        | Certificación WCAG ni revisión manual completa con tecnologías de asistencia; tampoco tema claro. |
+| Distribución: F19a parcial       | NSIS por usuario, Java incluido, logs acotados, cierre/actualización/desinstalación probados en desarrollo.                                         | Prueba limpia/offline, cuenta estándar real, Windows 10 verificado o firma.                       |
 
-### 2.5 El tamaño lógico puede engañar
+**Dirección desde H3:** pasar de «ya puedo encontrar un archivo grande» a **«puedo entenderlo, volver a encontrarlo y comprobar qué cambió»**. El valor inmediato está en conectar y profundizar las herramientas existentes, no en añadir más gráficos o acciones destructivas.
 
-- **[Suposición a verificar]** Los archivos de OneDrive "solo en la nube" (placeholders) informan su tamaño lógico completo sin ocupar disco. Un usuario con 80 GB en OneDrive verá 80 GB "ocupados" que en realidad no puede liberar localmente.
-- Los enlaces duros y los archivos comprimidos o dispersos (sparse) tampoco se distinguen.
-- La app no muestra **capacidad ni espacio libre de la unidad**, que es la cifra que el usuario tiene en la cabeza ("me quedan 3 GB").
+---
 
-### 2.6 Los resultados son efímeros
+## 2. Fricciones actuales desde la perspectiva del usuario
 
-Las sesiones viven en memoria y se pierden al reiniciar (`ScanService`). Desde H0 se retienen como máximo 3 y comparten un presupuesto de memoria estimado que puede hacerlas caducar antes. No hay historial ni comparación entre escaneos. La pregunta «¿qué ha crecido desde la última vez?» no tiene respuesta; que sea una necesidad recurrente del segmento inicial es una hipótesis por validar.
+Esta sección sustituye el diagnóstico inicial obsoleto. No siguen pendientes el ranking, mostrar en el Explorador, los recientes, el detalle de omitidos, el arranque explicado ni la traducción del diálogo nativo.
 
-### 2.7 Pocas dimensiones de análisis
+### 2.1 Veo muchas cifras antes de poder trabajar
 
-Solo se muestran nombre, tipo, tamaño y porcentaje. Faltan:
+El hero, cuatro tarjetas, la explicación técnica y la dona desplazan los resultados hacia abajo. Las capturas de pruebas del 19/09 (`overview.png`, `largest-compact-es.png`) muestran esa jerarquía; no son sesiones de usuarios. **Inferencia de diseño:** compactar el resumen y dar prioridad a la tabla/ranking, manteniendo visibles alcance, fecha y advertencias esenciales. La explicación extensa puede ser ampliable; la parcialidad no.
 
-- **Fecha de modificación**, para encontrar elementos antiguos; no demuestra que no se usen. La fecha de acceso no se incluye en el alcance inicial.
-- **Extensión o categoría** (vídeo, instaladores, archivos comprimidos, cachés de desarrollo).
-- **Número de elementos por carpeta** en la tabla (el dato existe en `fileCount`, pero no se muestra).
+### 2.2 Encuentro un archivo grande, pero no puedo investigarlo dentro de la app
 
-### 2.8 Internacionalización incompleta
+El ranking presenta nombre y ubicación como texto y una acción de Explorador. Falta «Ver carpeta en el análisis» y un detalle útil. Volver desde el contexto debe conservar consulta, umbral, orden, página, desplazamiento y foco, no obligar a reconstruir el hallazgo.
 
-> **Resuelto en H1**, salvo el título y el botón del diálogo nativo de carpetas, que siguen en inglés (ver pendientes de H1). Los números siguen el formato regional del sistema.
+### 2.3 No sé qué está buscando cada buscador
 
-- Los mensajes de error del backend llegan en inglés (`ScanService`). En la interfaz en español, el usuario ve _"This path could not be read…"_ en los errores de rama, en los nodos del árbol (`node.error`) y en los fallos de escaneo.
-- Hay textos fijos en inglés: `Spinner` y `Button` (`"Loading"`), `DirectoryTree.tsx` (`` `Loading ${node.name}` ``) y `formatBytes` (`"Unavailable"`).
-- `formatNumber` usa `en-US` fijo (`1,234`), mientras que `docs/design-system.md` dice que los números "siguen al sistema operativo". Un usuario hispanohablante con Windows en español ve `1.234` en el Explorador y `1,234` aquí. **Hay que decidir qué regla vale y aplicarla de forma coherente.**
+Árbol = elementos cargados; tabla = hijos directos; ranking = tamaño mínimo. Ctrl+F en ranking puede dirigir al árbol, que en compacto está dentro de un diálogo cerrado. Proponer una búsqueda con **ámbito visible y consistente**, no un cuarto buscador. Las consultas globales han de recorrer el snapshot observado, no filtrar los primeros 100/500 resultados.
 
-### 2.9 Solo hay tema oscuro
+### 2.4 Pierdo contexto al cambiar de vista
 
-> **Parcialmente atendido en H1 (F15a iniciada):** las reglas de alto contraste ya se aplican y tienen prueba. El tema claro (F15b) sigue pendiente.
+La tabla se monta por ruta y el ranking se desmonta al salir; filtros/página/umbral locales pueden reiniciarse. Estado de vista por análisis y ámbito, regreso al resultado y recuperación de foco son una mejora funcional, no solo estética. No conservar filtros de otro scan sin hacerlo explícito.
 
-`index.html` declara `color-scheme: dark` y no existe un tema claro. Tampoco se ha verificado el modo de alto contraste de Windows (`forced-colors`), un fallo relevante para un producto que se presenta como accesible.
+### 2.5 El tamaño no basta para decidir
 
-### 2.10 El progreso del escaneo dice poco
+Faltan modificación, extensión/categoría y conteos por carpeta en la tabla. Estos últimos ya existen en el modelo; las fechas todavía no se guardan en las entradas del snapshot. Añadir datos debe enriquecer la misma tarea de búsqueda y detalle, no crear pantallas desconectadas. «Antiguo» no significa «sin uso» ni «seguro para borrar».
 
-> **Resuelto en H1 (F16a):** tiempo transcurrido, carpeta actual, aviso de periodos sin actividad y aviso de motor sin respuesta, sin porcentajes.
+### 2.6 No sé si estos resultados siguen vigentes
 
-Es indeterminado a propósito (correcto según el design system), pero ni siquiera muestra el tiempo transcurrido ni la carpeta que se está leyendo. En escaneos de varios minutos, el usuario no sabe si la app se ha colgado.
+Las cifras pertenecen a un análisis, no al filesystem vivo. Ya se avisa de la capacidad al inicio y de rutas desaparecidas; falta una identidad temporal visible del resultado y una actualización dirigida. Agregar fecha de inicio/fin exige extender el contrato: `elapsedMillis` no es una fecha. No detectar cambios externos imaginariamente ni modificar totales antiguos.
 
-### 2.11 Otras fricciones menores
+### 2.7 Al volver a abrir, tengo que empezar de nuevo
 
-- No se puede **reescanear solo la subcarpeta** seleccionada: "Reescanear" recorre toda la raíz otra vez.
-- No hay atajos (`Ctrl+O`, `Ctrl+F`, `F5`) ni arrastrar y soltar carpetas.
-- No hay lista de **carpetas recientes** ni **unidades** en la bienvenida: siempre hay que pasar por el diálogo nativo.
-- La tabla tiene paginación fija de 25 elementos y no permite filtrar por tamaño mínimo.
-- La dona usa colores fijos en el código (`SpaceDistribution.tsx`), no los tokens, y solo muestra el top 5.
-- Las métricas del resumen incluyen textos de relleno ("Una jerarquía para explorar") que podrían ser datos útiles (la carpeta más grande, el archivo más grande).
-- El contador de "elementos omitidos" no lleva a ninguna parte: falta una lista de motivos y rutas. Elevar permisos no debe ser la respuesta automática a esta carencia.
-- El backend admite 2 escaneos simultáneos, pero la interfaz solo gestiona uno.
-- Robustez (resuelto en H0 y H2): el límite anterior de 100 millones de entradas y 5 sesiones era desproporcionado para snapshots en memoria. H0 lo acotó a 250.000 entradas y a `min(256 MiB, heap máximo / 4)`, lo que impedía analizar `C:\` completo. **H2 hace el límite dinámico:** el presupuesto es la mitad del heap de la JVM (que se dimensiona según la RAM) con una estimación por entrada calibrada, y el máximo de entradas se deriva de él (unos 1,9 millones con 8 GB de RAM y 11,4 millones en el equipo de desarrollo). El presupuesto sigue sin limitar el consumo total de la JVM ni el tamaño de las respuestas de carpetas anchas.
+Recientes son rutas, no informes guardados. Las sesiones de backend caducan o desaparecen al reiniciar. Guardar resúmenes comparables y mostrar «Qué creció» aportaría continuidad; un resumen acotado no restaura un árbol completo.
 
-### 2.12 Deuda que afecta a la evolución del producto
+### 2.8 Elegir el próximo análisis exige salir del recorrido
 
-La revisión inicial identificó código heredado sin uso: `src/components/**`, `src/services/**`, `src/hooks/directories.hooks.ts`, `src/models/**`, `src/icons/**`, `src/enums/**`, los estilos ITCSS antiguos, los endpoints `/directory` y `/directory/mock`, `DirectoryService` y `RandomDirectoryGenerator`. **Retirado en H0**; los contratos de `/scans` se mantienen sin cambios y las rutas retiradas responden `404`.
+Recientes y comunes están en bienvenida, no en un selector accesible también desde resultados. Reanalizar siempre parte de la raíz. Ampliar el selector, ofrecer unidades con contexto y «Analizar esta subcarpeta» como scan independiente reduce trabajo repetido. **Capacidad/libre de la unidad actual ya se muestra**; no proponerla de nuevo como inédita.
+
+### 2.9 Un análisis grande puede producir una vista costosa
+
+La tabla pagina 25 filas en el cliente, pero recibe todos los hijos; el árbol muestra todos los hijos de ramas abiertas. Las consultas y la materialización bajo el monitor del servicio pueden afectar al progreso de otro scan. La memoria dinámica mejoró el recorrido del disco, no resolvió automáticamente el coste de mostrar o consultar millones de entradas.
+
+### 2.10 Comodidad, privacidad y confianza aún pueden mejorar
+
+Solo hay tema oscuro. Los recientes guardan rutas completas y se pueden borrar, pero falta «No guardar recientes». Los comandos principales usan iconos que exigen reconocer su significado. Conviene hacer más visibles las acciones frecuentes, permitir tema del sistema y explicar almacenamiento local. Al añadir historial, revisar la política actual: actualizar conserva datos y desinstalar los elimina.
+
+### 2.11 La distribución necesita cierre técnico, no reclutamiento
+
+El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta estándar, alcance Windows comprobado, accesibilidad manual y firma para distribución pública. Una sesión externa no reemplazaría esas verificaciones, y su ausencia deja de ser un bloqueo del roadmap. La evidencia histórica y sus límites se conservan en §5.2.
 
 ---
 
@@ -136,42 +115,50 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### Reglas de alcance
 
-- Se conservan los identificadores F1–F18 para mantener trazabilidad; F19 formaliza la distribución que antes solo figuraba en el roadmap.
+- Se conservan F1–F19 y se añade F20 (lista de revisión no destructiva). Cada ficha distingue lo existente de su siguiente incremento; H0–H2 no se reabren.
 - **MVP** es la primera entrega útil de cada propuesta, no la obligación de incluirla en la primera versión del producto.
 - Complejidad **B / M / A** significa baja / media / alta relativa. Incluye interfaz, API, pruebas y seguridad; no representa días de trabajo.
 - El impacto indicado es **esperado, no medido**. No se asignan puntuaciones RICE sin datos de alcance y confianza.
-- Cada entrega debe definir qué queda fuera y cómo se comprueba que funciona. Los contratos y endpoints descritos son propuestas, no una API existente.
+- Los contratos marcados como implementados existen; cualquier ampliación es propuesta. La aceptación futura usa fixtures, recorridos internos y estándares, sin exigir participantes externos. No equivale a demostrar demanda.
 
 ### F1. Acciones separadas por riesgo: mostrar, abrir y enviar a la papelera
 
+**Estado al 2026-09-19:** F1a implementada en H2. F1b/F1c pendientes; primero mejorar descubrimiento de la acción existente y continuidad del contexto (UX2/UX3).
+
 **Necesidad:** pasar de identificar un elemento a revisarlo o actuar sobre él. **Impacto esperado: alto.**
 
-- **F1a · MVP de la beta:** «Mostrar en el Explorador» para el elemento seleccionado, con un botón visible y accesible. El menú contextual puede llegar después; no debe ser el único acceso.
+- **F1a · Entrega existente:** «Mostrar en el Explorador» para el elemento seleccionado, con un botón visible y accesible. El menú contextual puede llegar después; no debe ser el único acceso.
 - **F1b · Ampliación:** «Abrir con la aplicación predeterminada». Requiere una decisión explícita del usuario y una política para ejecutables, scripts, accesos directos y tipos desconocidos. Nunca abrir automáticamente al seleccionar una fila.
 - **F1c · Iniciativa posterior:** envío individual a la papelera, desactivado por defecto. Confirmar nombre, ruta completa y tamaño observado, indicando cuándo se midió. Bloquear objetivos fuera del alcance autorizado, raíces y ubicaciones protegidas; rechazar cambios de identidad y enlaces que redirijan a otro destino.
 - **Contrato de seguridad:** validar emisor IPC y objetivo en el proceso privilegiado; no confiar en una ruta arbitraria del renderer ni en una comparación de prefijos de texto. Revalidar existencia y pertenencia al análisis. Para mutaciones, diseñar además la identidad del archivo y la carrera entre validación y operación. El modo navegador no debe simular que estas acciones nativas están disponibles.
 - **Aceptación:** la acción apunta al elemento seleccionado; rutas desaparecidas, permisos y errores de apertura se explican sin cerrar la app. Cancelar la confirmación no produce efectos. Una operación fallida nunca se muestra como exitosa ni recurre a borrado permanente.
 - **Consistencia:** después de una mutación, marcar el análisis como desactualizado y ofrecer reescaneo. No restar a un snapshot inmutable tamaños que podrían haber cambiado. «Enviado a la papelera» no significa «espacio liberado»: no contabilizar bytes lógicos como espacio libre recuperado.
 - **Fuera del MVP:** selección múltiple, vaciado de papelera, ajuste incremental del árbol y restauración automática. «Deshacer» necesita una prueba de viabilidad que cubra conflictos de nombre y recuperación tras reiniciar; no se promete antes.
-- **Dependencias y esfuerzo:** F1a, B–M, sobre selección existente; no depende de F2. F1b, M, tras política de apertura. F1c, A, condicionada a F8 acotada, revisión de seguridad y validación con usuarios.
+- **Dependencias y esfuerzo:** F1a, B–M, sobre selección existente; no depende de F2. F1b, M, tras política de apertura. F1c, A, condicionada a F8 acotada, revisión de seguridad y escenarios internos de fallo reproducibles; fuera de la siguiente entrega.
 
 **Base técnica verificada:** Electron permite mostrar una ruta, abrirla y enviarla a la papelera; `openPath` puede devolver un mensaje de fallo. Su API `shell` no documenta una operación inversa de restauración. Estas capacidades no resuelven por sí solas el flujo seguro del producto. [Documentación de shell](https://www.electronjs.org/docs/latest/api/shell). La validación del emisor de IPC también forma parte de las recomendaciones oficiales. [Seguridad de Electron](https://www.electronjs.org/docs/latest/tutorial/security#17-validate-the-sender-of-all-ipc-messages).
 
 ### F2. Los archivos más grandes de todo el análisis
 
+**Estado al 2026-09-19:** F2a implementada en H2. Se prioriza F2b en H4, como ampliación del recorrido existente.
+
 **Necesidad:** encontrar un archivo grande sin abrir sus carpetas antecesoras. **Impacto esperado: alto. Complejidad: M.**
 
 - **F2a · MVP:** vista «100 archivos más grandes del análisis», con nombre, tamaño lógico y ruta relativa a la raíz. Conmutador «Esta carpeta | Más grandes del análisis»; filtro mínimo en bytes con accesos rápidos equivalentes a 100 MB y 1 GB según la política de unidades de la app.
-- **Contrato propuesto:** `GET /scans/{id}/largest?limit=100&minSizeBytes=...`, solo archivos en la primera entrega. Validar y acotar parámetros; ordenar por tamaño descendente y desempatar por ruta. Responder con identificador de scan y cobertura completa/parcial. Calcular un top-N acotado, sin copiar u ordenar todo el snapshot si no hace falta.
+- **Contrato implementado:** `GET /scans/{id}/largest?limit=100&minSizeBytes=...`, solo archivos en la primera entrega. Validar y acotar parámetros; ordenar por tamaño descendente y desempatar por ruta. Responder con identificador de scan y cobertura completa/parcial. Calcular un top-N acotado, sin copiar u ordenar todo el snapshot si no hace falta.
 - **Aceptación:** encuentra un archivo situado seis niveles abajo aunque el árbol esté contraído; abrir ramas no cambia el ranking. Probar empates, cero bytes, cero coincidencias, límites exactos del filtro, análisis parcial y sesión caducada. La etiqueta dice «del análisis», nunca «de todo el disco» si no se analizó todo.
 - **UI:** reutilizar primitivas de tabla y selección sin forzar el contrato de hijos directos. Mostrar ubicación incluso con nombres duplicados. El top 100 es un límite visible, no una supuesta lista completa.
-- **F2b · Después:** búsqueda global por nombre/ruta en el mismo snapshot, paginación acotada y navegación al contenedor con carga de ancestros. Las carpetas agregadas irían en una vista separada: sumarlas junto a descendientes duplica tamaños.
+- **F2b.1 · H4a:** seleccionar un resultado, inspeccionar un detalle y «Ver carpeta en el análisis» cargando solo los ancestros necesarios. «Volver a resultados» restaura filtros, fila, foco y desplazamiento.
+- **F2b.2 · H4b:** nombre/ruta y tamaño sobre todo el análisis, con ámbito explícito, coincidencias reales y paginación acotada. Aplicar filtros **antes** de top-N/paginación; la caché actual de 500 archivos no cubre una búsqueda global.
+- **F2b.3 · H4c:** integrar fecha (F7), extensión/categoría (F5) con filtros AND, chips eliminables y «Limpiar filtros». Las carpetas agregadas van separadas para no duplicar bytes de descendientes.
 - **Fuera del MVP:** deduplicación por contenido, búsqueda en el disco en tiempo real, carpeta+archivo en un mismo total y expansión masiva del árbol.
 - **Dependencias:** H0 validado y contrato de errores F11. F1a complementa el hallazgo, pero no bloquea calcular el ranking.
 
 ### F3. Elementos para revisar, con reglas locales explicables
 
-**Necesidad:** ayudar a interpretar resultados sin afirmar que algo se puede borrar por su nombre. **Impacto esperado: alto, con baja confianza hasta validar usuarios. Complejidad: M–A.**
+**Estado al 2026-09-19:** Pendiente; propuesta para H6, después de filtros y lista de revisión. Impacto esperado, sin demanda demostrada.
+
+**Necesidad:** ayudar a interpretar resultados sin afirmar que algo se puede borrar por su nombre. **Impacto esperado: alto, con confianza limitada sin evidencia de uso externo. Complejidad: M–A.**
 
 - **MVP:** catálogo pequeño, versionado y probado de candidatos en carpetas del usuario. Cada coincidencia muestra regla, evidencia, tamaño observado y una explicación de qué revisar. Empezar, por ejemplo, por instaladores antiguos en Descargas y archivos grandes sin modificación reciente; no tratarlos como prescindibles.
 - **UI:** «Elementos para revisar», no «Limpieza segura» ni «Espacio recuperable garantizado». Informar cobertura parcial y evitar sumar una carpeta y sus descendientes dos veces.
@@ -182,16 +169,20 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F4. Historial de resúmenes y comparaciones compatibles
 
+**Estado al 2026-09-19:** Pendiente; iniciativa principal de H5 para conservar resultados y comparar cambios.
+
 **Necesidad:** responder «¿qué cambió desde el último análisis?». **Impacto esperado: alto para uso recurrente, demanda pendiente de validar. Complejidad: M–A.**
 
-- **F4a · MVP:** guardar resúmenes locales acotados: raíz e identidad disponible del volumen, fecha, versión de esquema, criterio de tamaño, alcance/exclusiones, cobertura y agregados por carpeta con profundidad/límite declarados. Propuesta inicial: 10 informes o 20 MiB, lo que se alcance primero; ajustar con mediciones.
-- **Contrato de UX:** un resumen histórico permite consultar lo guardado, **no reconstruir todo el árbol** ni evitar la caducidad de sesiones activas. Mostrar fecha, cobertura retenida y «Histórico»; ofrecer reescaneo para datos actuales.
+- **F4a · MVP:** permitir guardar resúmenes locales voluntariamente, con opción explícita de guardado automático y límites visibles: raíz e identidad disponible del volumen, fecha, versión de esquema, criterio de tamaño, alcance/exclusiones, cobertura y agregados por carpeta con profundidad/límite declarados. Propuesta inicial: 10 informes o 20 MiB, lo que se alcance primero; ajustar con mediciones.
+- **Contrato de UX:** cada informe ofrece «Analizar de nuevo» y acceso a «Comparar» cuando haya otro compatible. Un resumen histórico permite consultar lo guardado, **no reconstruir todo el árbol** ni evitar la caducidad de sesiones activas. Mostrar fecha, cobertura retenida y «Histórico»; ofrecer reescaneo para datos actuales.
 - **F4b · Comparación:** comparar resúmenes compatibles de la misma raíz y alcance. Diferenciar «nuevo», «ya no observado» y «no comparable»; una rama inaccesible no vale cero. Presentar crecimiento/disminución de tamaño lógico, no limpieza confirmada.
 - **Aceptación:** persistencia tras reinicio, escritura atómica, lectura de archivos corruptos sin bloquear el arranque, versión incompatible explicada y opción de borrar historial. No deducir desapariciones fuera de la profundidad guardada. Probar análisis parciales y cambios de exclusiones.
 - **Fuera del MVP:** snapshots completos persistentes, seguimiento de renombrados, sincronización, comparación entre equipos y vigilancia continua.
-- **Dependencias:** contrato de snapshot estable, semántica de cobertura y política de retención. F7 no es requisito para comparar tamaños agregados. Priorizar antes de F3 si las entrevistas muestran que el problema principal es el crecimiento recurrente.
+- **Dependencias:** contrato de snapshot estable, semántica de cobertura y política de retención. F7 no es requisito para comparar tamaños agregados. Se prioriza antes de F3 porque responde una tarea concreta que hoy obliga a rehacer trabajo; es una decisión de producto, no un hallazgo de entrevistas.
 
 ### F5. Desglose por tipo de archivo
+
+**Estado al 2026-09-19:** Pendiente; H4 después de búsqueda/fechas, enlazada a la misma consulta.
 
 **Necesidad:** entender cuánto representan vídeos, imágenes, documentos u otros tipos. **Impacto esperado: medio–alto. Complejidad: M.**
 
@@ -203,6 +194,8 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F6. Inicio rápido y contexto de almacenamiento
 
+**Estado al 2026-09-19:** F6a implementada. F6b y el acceso a recientes desde resultados son ampliaciones, no rehacer la bienvenida.
+
 **Necesidad:** empezar sin repetir siempre el selector y entender qué se está analizando. **Impacto esperado: medio–alto.**
 
 - **F6a · MVP, B:** últimas 5 carpetas y accesos a carpetas comunes resueltas por el sistema, sin asumir nombres ni rutas fijas. Registrar recientes tras iniciar un scan válido; permitir borrarlos. Manejar almacenamiento local bloqueado y rutas que ya no existen.
@@ -213,15 +206,19 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F7. Fechas de modificación y filtros combinables
 
+**Estado al 2026-09-19:** Pendiente; H4. El backend aún no retiene lastModifiedTime en el snapshot.
+
 **Necesidad:** localizar elementos antiguos o grandes con criterios explícitos. **Impacto esperado: medio–alto. Complejidad: B–M.**
 
-- **MVP:** conservar `lastModifiedTime` al escanear archivos; columna ordenable «Modificado» y filtros de tamaño/fecha. Combinar filtros con semántica AND y mostrar el número de coincidencias y cómo restablecerlos.
+- **MVP:** conservar `lastModifiedTime` al escanear archivos y recalibrar memoria/DTO/validadores; columna ordenable «Modificado» y filtros de tamaño/fecha. Combinar filtros con semántica AND y mostrar el número de coincidencias y cómo restablecerlos.
 - **Aceptación:** fecha absoluta accesible además de la relativa, zona horaria definida, fechas ausentes/futuras tratadas explícitamente y pruebas de límites. «No modificado desde…» nunca se convierte en «No usado desde…».
 - **Después:** fecha más reciente de un descendiente para carpetas, con una etiqueta diferente de la modificación de la propia carpeta y cobertura parcial visible.
 - **Fuera del MVP:** prometer antigüedad de uso mediante fecha de acceso.
 - **Dependencias:** ampliar/versionar DTO y validadores; integrar filtros globales con F2 sin cambiar silenciosamente el alcance de la tabla actual.
 
 ### F8. Precisión: tamaño lógico, tamaño en disco y nube
+
+**Estado al 2026-09-19:** F8a implementada en H1. F8b/c pendientes; no prometer tamaño físico a partir de los bytes actuales.
 
 **Necesidad:** evitar decisiones basadas en cifras que no representan espacio local recuperable. **Impacto esperado: alto en escenarios de nube; prevalencia desconocida. Complejidad: A para soporte nativo.**
 
@@ -234,6 +231,8 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F9. Arranque verificable y recuperación del servicio
 
+**Estado al 2026-09-19:** Implementada en H1 y adaptada al backend empaquetado en H3. Mantener y probar regresiones, no volver a construir.
+
 **Necesidad:** evitar errores engañosos al iniciar y después de una caída del backend. **Impacto esperado: alto en primer uso. Complejidad: M.**
 
 - **MVP:** estado `starting | ready | failed`, endpoint de salud que identifique la aplicación y la compatibilidad de API, timeout y reintentos acotados. Un puerto TCP abierto no demuestra que responda el servicio correcto.
@@ -244,6 +243,8 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F10. Informe de cobertura y elementos omitidos
 
+**Estado al 2026-09-19:** Entrega mínima implementada en H2. Mejoras posteriores: agrupar/filtrar motivos y mantener acceso desde las nuevas vistas.
+
 **Necesidad:** entender por qué el resultado es parcial. **Impacto esperado: medio–alto para confianza. Complejidad: M.**
 
 - **MVP:** desde «Omitidos», abrir una lista paginada y acotada por ruta y código de motivo: permiso, enlace excluido, profundidad, cambio durante lectura u otro error. Mostrar cantidad registrada y avisar si la lista fue truncada.
@@ -253,34 +254,42 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F11. Contrato de errores e internacionalización coherente
 
+**Estado al 2026-09-19:** Implementada en H1; diálogo nativo traducido en H3. La política de locale del sistema ya está resuelta.
+
 **Necesidad:** comprender fallos y su recuperación en el idioma elegido. **Impacto esperado: medio–alto. Complejidad: B–M.**
 
 - **MVP:** códigos estables en errores HTTP, scans y nodos; parámetros controlados para interpolación y mensaje de respaldo. Mapear códigos en el frontend; no traducir por coincidencias con frases inglesas.
-- **Decisión propuesta de formato:** idioma de interfaz elegido por el usuario; locale numérico resuelto explícitamente desde el sistema en Electron y desde el navegador en preview. Conservar las reglas actuales de unidades/truncamiento y hacer coherentes bytes, contadores y porcentajes. Actualizar documentación y pruebas con esa política.
+- **Política implementada de formato:** idioma de interfaz elegido por el usuario; locale numérico resuelto explícitamente desde el sistema en Electron y desde el navegador en preview. Conservar las reglas actuales de unidades/truncamiento y hacer coherentes bytes, contadores y porcentajes. Actualizar documentación y pruebas con esa política.
 - **Aceptación:** arranque, carga, ramas, límites y fallos no dejan textos fijos sin traducir. Códigos desconocidos tienen fallback comprensible; errores técnicos no exponen trazas al usuario. Probar al menos inglés, español y locale de números diferente al idioma de interfaz.
 - **Fuera del MVP:** traducción de nombres de archivos y soporte de nuevos idiomas.
 - **Dependencias:** acordar contrato junto con F9; sirve de base para F10 y los errores de las nuevas consultas.
 
 ### F12. Treemap como complemento, no como navegación obligatoria
 
+**Estado al 2026-09-19:** Diferida a H7; no es requisito para encontrar, revisar ni comparar.
+
 **Necesidad:** explorar visualmente la distribución cuando ranking y tabla no basten. **Impacto esperado: medio, pendiente de validar. Complejidad: A.**
 
 - **MVP condicionado:** 2 niveles con número máximo de rectángulos y agrupación del resto, paleta de tokens y controles equivalentes en la tabla.
 - **Aceptación:** tamaño y porcentaje accesibles sin hover; selección sincronizada y alternativa completa por teclado/lector de pantalla. Probar nodos pequeños, cero bytes, zoom, alto contraste y carpetas anchas.
 - **Fuera del MVP:** renderizar todo el árbol, navegación solo por canvas o usar superficie visual como sustituto de cifras exactas.
-- **Dependencias:** F2/F5 evaluadas con usuarios y presupuesto de renderizado medido. Investigar una visualización solo si resuelve una tarea que esas vistas no cubren.
+- **Dependencias:** F2/F5 comparadas mediante tareas internas reproducibles y presupuesto de renderizado medido. Investigar una visualización solo si resuelve una tarea que esas vistas no cubren.
 
 ### F13. Informes exportables y respetuosos con la privacidad
 
+**Estado al 2026-09-19:** Pendiente; CSV/JSON en H5 después de fijar el alcance de las vistas. HTML posterior.
+
 **Necesidad:** documentar un análisis o pedir ayuda sin dar acceso al equipo. **Impacto esperado: medio; alto si se valida soporte técnico. Complejidad: M.**
 
-- **F13a · MVP:** CSV y JSON de la vista actual, con raíz, fecha, unidad, filtros, límite de resultados y cobertura. Elegir rutas completas, relativas o redacción de identificadores antes de guardar; aplicar esa política también a la raíz y a todos los metadatos. La vista previa debe mostrar el informe completo resultante. Las rutas relativas todavía pueden revelar nombres personales: no equivalen a anonimización.
+- **F13a · MVP:** CSV y JSON de la vista actual, con raíz, fecha, unidad, filtros, límite de resultados y cobertura. Elegir rutas completas, relativas o redacción de identificadores antes de guardar; aplicar esa política también a la raíz y a todos los metadatos. Vista previa paginada/acotada que permita revisar el conjunto exportable con conteo exacto; no cargar todo el informe en el DOM. Acotar la exportación y explicitar su límite antes de guardar; si se amplía, diseñar generación progresiva sin materializar una respuesta gigante. Las rutas relativas todavía pueden revelar nombres personales: no equivalen a anonimización.
 - **Aceptación:** nombres Unicode y separadores correctos; neutralizar fórmulas en celdas CSV sin ocultar la política de escape. Cancelar no crea un informe; disco lleno y permisos producen errores recuperables. No exportar filas ocultas fuera del alcance anunciado.
 - **F13b · Después:** HTML autocontenido con contenido escapado, sin scripts ni recursos remotos.
 - **Fuera del MVP:** compartir automáticamente, subir archivos o afirmar anonimización total sin revisar nombres incluidos.
 - **Dependencias:** contrato de vista estable. No requiere F4 si el informe proviene de un scan activo.
 
 ### F14. Productividad en incrementos independientes
+
+**Estado al 2026-09-19:** F14a implementada. F14b/c pendientes; corregir el destino de Ctrl+F es continuidad UX, no un atajo nuevo.
 
 **Necesidad:** reducir pasos repetidos sin alterar la consistencia del análisis. **Impacto esperado: medio.**
 
@@ -292,6 +301,8 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F15. Alto contraste primero, elección de tema después
 
+**Estado al 2026-09-19:** F15a automatizada, revisión manual pendiente. F15b pendiente: Sistema/Claro/Oscuro se propone con H4.
+
 **Necesidad:** mantener legibilidad y control en preferencias visuales distintas. **Impacto esperado: medio; accesibilidad es un requisito transversal.**
 
 - **F15a · Calidad de la beta, B–M:** verificar y corregir `forced-colors`, foco, selección, errores y gráficos con alternativas textuales.
@@ -301,6 +312,8 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 - **Fuera del MVP:** afirmar cumplimiento WCAG a partir de pruebas automáticas únicamente.
 
 ### F16. Progreso honesto y diagnóstico de actividad
+
+**Estado al 2026-09-19:** F16a implementada. F16b opcional; prioridad inferior a búsqueda y comparación.
 
 **Necesidad:** distinguir un trabajo en curso de un servicio que dejó de responder. **Impacto esperado: medio–alto. Complejidad: B–M.**
 
@@ -312,6 +325,8 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F17. Monitor opcional, solo tras validar recurrencia
 
+**Estado al 2026-09-19:** Diferida a H7. Sin actividad en segundo plano ni notificaciones nuevas por defecto.
+
 **Necesidad:** avisar de poco espacio antes de que interrumpa al usuario. **Impacto esperado: desconocido hasta validar uso. Complejidad: A.**
 
 - **Primera entrega si se justifica:** consulta de espacio libre con umbral configurable, activación explícita y pausa. No escanear recursivamente el disco en segundo plano por defecto.
@@ -322,6 +337,8 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F18. Asistente con IA: fuera del alcance actual
 
+**Estado al 2026-09-19:** Fuera del plan actual.
+
 **Necesidad hipotética:** explicar carpetas poco reconocibles. No hay evidencia aún de que requiera IA ni de que compense el riesgo.
 
 - **Decisión propuesta:** no implementarlo en las primeras entregas. Evaluar primero explicaciones deterministas y enlaces de ayuda revisados. Retirar la afirmación de que F3 cubre un porcentaje concreto de valor: no se ha medido.
@@ -331,85 +348,171 @@ La revisión inicial identificó código heredado sin uso: `src/components/**`, 
 
 ### F19. Distribución autónoma para Windows
 
+**Estado al 2026-09-19:** Instalador construido y verificado en desarrollo en H3; quedan las verificaciones de entorno y procedencia de §5.2.
+
 **Necesidad:** que una persona sin herramientas de desarrollo pueda probar el producto. **Impacto esperado: alto si el segmento inicial no es técnico. Complejidad: A.**
 
-- **F19a · MVP de beta:** paquete instalable con frontend, backend y runtime Java compatibles; no descargar JDK/Maven/Node en el primer arranque. Ensayar temprano un runtime embebido; decidir herramienta de empaquetado tras una prueba acotada, sin obligar a migrar el backend.
+- **F19a · Construido:** instalador NSIS con electron-builder, frontend, backend y Java 17 recortado mediante jlink. No replantear herramientas sin una limitación medida; completar pruebas limpias/offline y de usuario estándar.
 - **Aceptación:** instalar, iniciar, analizar y desinstalar en una máquina limpia del Windows declarado como soportado, sin herramientas de desarrollo ni red para el análisis. Probar rutas con espacios/Unicode, usuario estándar, inicio fallido y cierre sin procesos huérfanos.
 - **Operación:** definir ubicación y límites de logs/datos, conservación del historial al actualizar, limpieza al desinstalar y compatibilidad de versiones entre procesos. Resolver firma/procedencia antes de distribución pública; no pedir que se desactiven protecciones del sistema.
 - **Fuera del MVP:** multiplataforma completa, autoactualización y reescritura a GraalVM. Solo reconsiderarlas con evidencia o una limitación medida.
-- **Dependencias:** F9 y contratos de versión. La investigación puede empezar antes, pero la beta requiere el recorrido útil de H2.
+- **Dependencias:** F9 y recorrido H2 ya disponibles. La firma condiciona distribución pública; no bloquea diseñar ni desarrollar las siguientes mejoras en el entorno interno.
 
-### Mejoras pequeñas que acompañan a las entregas
+### F20. Lista manual de revisión, sin tocar archivos
 
-| Área actual | Mejora acotada                                                                                                     | Se entrega con                                   |
-| ----------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| Resumen     | Mostrar el archivo observado más grande; aclarar cobertura y tamaño lógico.                                        | F2a + F8a                                        |
-| Tabla       | `fileCount` de carpetas y cabecera clara; no añadir muchos filtros antes de definir alcance.                       | F7 / F2b                                         |
-| Árbol       | Conservar búsqueda de elementos cargados hasta que exista búsqueda global real; distinguir ambos alcances.         | F2b                                              |
-| Dona        | Paleta desde tokens y cifras accesibles, sin duplicar información ni controles.                                    | F15a / F5                                        |
-| Detalle     | Ruta útil, extensión, fecha y acción visible de ubicación.                                                         | F1a / F7                                         |
-| Ajustes     | Añadir opciones solo con la función correspondiente; separar idioma, formato y acciones de riesgo.                 | F11 / F15b / F1c                                 |
-| Escaneo     | Política de exclusiones explícita y visible si se incorpora; nunca excluir silenciosamente para aparentar rapidez. | Investigación de escala en H0; función posterior |
-| Calidad     | Pruebas de carpetas profundas/anchas y respuestas acotadas; no confundir carga diferida con coste constante.       | Todos los hitos                                  |
+**Estado:** propuesta nueva para H5c, después de búsqueda útil e informes persistentes. **Complejidad: M. Impacto esperado: medio–alto.**
+
+**Tarea:** «He encontrado varios elementos; quiero conservar cuáles revisar sin volver a buscarlos». Aporta continuidad entre análisis y Explorador sin depender de borrado dentro de la app.
+
+- **MVP:** marcar archivos, no carpetas, desde resultados/detalle; lista local con ruta, scan/fecha de origen y estados «Por revisar» / «Revisado» elegidos por la persona. No cambia ni borra el archivo. Quitar de la lista solo elimina la anotación.
+- **Datos y UX:** guardar únicamente si la persona lo activa; límite propuesto de 100 elementos con aviso antes de alcanzarlo. Mostrar «tamaño lógico observado» como cifra informativa, no como objetivo de espacio liberado. No sumar dos registros de la misma ruta; advertir las limitaciones de enlaces duros.
+- **Aceptación:** volver a la lista tras reinicio cuando fue guardada; ítems desaparecidos o de scans caducados siguen como referencias históricas, no como comprobados. «Buscar de nuevo» abre una consulta actual y la persona selecciona explícitamente el resultado antes de mostrarlo en el Explorador. No asociar automáticamente por ruta un archivo que pudo ser sustituido: el DTO actual no conserva identidad persistente y un reescaneo no demuestra continuidad. La identidad robusta queda fuera del MVP de anotaciones y será requisito separado de cualquier mutación.
+- **Dependencias:** almacenamiento/política de retención de F4a, consulta/detalle F2b y F1a. Exportar la lista con F13 solo cuando el alcance se anuncia.
+- **Fuera:** papelera en lote, estados automáticos «limpio» y sincronización. F3 puede sugerir candidatos, pero solo la persona los añade.
+- **Valor esperado:** menos reconstrucción de trabajo y una salida organizada para revisar con herramientas del sistema. No añade riesgo de mutación.
 
 ---
 
-## 4. Priorización y dependencias
+## 4. Prioridades de producto y criterios UX/UI
 
-### 4.1 Criterio de decisión
+### 4.1 Qué merece el siguiente esfuerzo
 
-Priorizar, por este orden: **seguridad y veracidad → posibilidad de completar el primer recorrido → aprendizaje con usuarios → profundidad de análisis → automatización**. Un impacto alto no elimina dependencias ni vuelve bajo el riesgo.
+Se prioriza **confianza → encontrar con precisión → entender el contexto → conservar/comparar → revisión guiada**. La ausencia temporal de investigación externa no elimina la necesidad de justificar decisiones: las hipótesis se contrastan con casos de uso y verificaciones internas, sin inventar adopción, satisfacción o ingresos.
 
-| Prioridad                | Iniciativas                                  | Razón                                                                   | Confianza                                                    |
-| ------------------------ | -------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------ |
-| P0 · Base                | H0, F9, F11, F8a, F15a                       | Evitar fallos engañosos, promesas incorrectas y regresiones.            | Alta sobre la existencia de la brecha técnica.               |
-| P1 · Primer valor        | F2a, F1a, F16a, F19a                         | Encontrar algo útil, entender el progreso y poder instalarlo.           | Media sobre el impacto; falta prueba con usuarios.           |
-| P1 · Reducir fricción    | F6a, F10, F14a                               | Iniciar, entender cobertura y operar sin pasos repetidos.               | Media; pueden recortarse ampliaciones para proteger la beta. |
-| P2 · Profundidad         | F7, F5, F2b, F4a/b, F13a, F3                 | Resolver necesidades observadas de análisis o repetición.               | Media–baja hasta validar el segmento.                        |
-| P2 · Comodidad           | F6b, F14b/c, F15b, F16b, F1b                 | Mejoras independientes; no deben retrasar el flujo central.             | Media–baja.                                                  |
-| P3 · Riesgo/alcance alto | F8b/c, F1c, F12, F13b, F17                   | Precisión nativa, mutaciones o complejidad operativa adicional.         | Baja sobre retorno/esfuerzo hasta investigar.                |
-| No comprometida          | F18, MFT, cuentas, sincronización, app móvil | Sin problema validado que justifique complejidad o exposición de datos. | Insuficiente.                                                |
+| Orden         | Incremento desde lo existente                                                              | Utilidad para la persona                                                   | Valor de negocio esperado                                            | Esfuerzo / riesgo                               |
+| ------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------- |
+| 1 · H3        | Cierre interno de instalación y accesibilidad + resumen/acciones más claros (UX1/UX2/UX6). | Usar lo que ya existe con confianza y sin tanta búsqueda visual.           | Activación técnica y menor fricción del primer uso.                  | B–M para UI; verificación de entorno separada.  |
+| 2 · H4a       | Ranking → detalle → carpeta → volver, con estado conservado (F2b.1).                       | Investigar un hallazgo sin perderlo ni salir por obligación.               | Más tareas resueltas por análisis.                                   | M; coordinación de navegación/cachés.           |
+| 3 · H4b/c     | Búsqueda global, fecha/tipo y categorías integradas (F2b.2/3, F7, F5).                     | Encontrar «los vídeos antiguos de esta ubicación», no solo el top general. | Profundidad de análisis y utilidad frente a una lista de tamaños.    | M; consulta global y nuevos metadatos.          |
+| 4 · H4d       | Unidades, subanálisis, selector de ubicaciones y tema (F6b, F14c, F15b).                   | Repetir tareas con menos pasos y comodidad visual.                         | Uso cotidiano y control sobre qué analizar.                          | M; soporte por volumen y preferencias.          |
+| 5 · H5        | Historial/comparación, informes y lista de revisión (F4, F13a, F20).                       | Retomar trabajo y saber qué creció.                                        | Razón concreta para volver y utilidad para soporte personal/técnico. | M–A; persistencia, privacidad y compatibilidad. |
+| 6 · H6        | Candidatos explicables y precisión acotada (F3, F8b/c).                                    | Entender qué merece inspección, sin falsa seguridad.                       | Diferenciación por orientación y exactitud.                          | M–A; falsos positivos y Windows nativo.         |
+| Diferido · H7 | Papelera, treemap, monitor y otras apuestas.                                               | Solo añadir lo que no resuelvan los recorridos anteriores.                 | Beneficio aún incierto frente a coste y riesgo.                      | Alto o no justificado todavía.                  |
 
-**Excepción por seguridad:** aunque F8b/c no sea prioridad para el análisis de solo lectura, su validación acotada pasa a ser necesaria antes de habilitar F1c en contextos afectados. No posponer la advertencia de tamaño lógico mientras se investiga.
+**No cuentan como nuevas entregas:** F1a, F2a, F6a, F8a, F9, F10 mínimo, F11, F14a, F16a y el paquete F19a ya construido. Se mantienen, se integran y se comprueban sus regresiones.
 
-### 4.2 Dependencias que determinan el orden
+### 4.2 Dependencias y límites que importan al usuario
 
-| Entrega                   | Necesita                                                                           | No necesita esperar a              |
-| ------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------- |
-| F9                        | Contrato de identidad/versión y errores mínimos F11.                               | Instalador final.                  |
-| F2a                       | H0, snapshots identificados y errores coherentes.                                  | F7, F5, papelera o historial.      |
-| F1a                       | Selección existente y validación IPC/objetivo.                                     | Menú contextual o modo de borrado. |
-| F19a                      | F9; H2 listo para la beta útil.                                                    | IA, treemap o limpieza.            |
-| F10                       | Códigos F11 y registro de omisiones acotado.                                       | Modo administrador.                |
-| F5 + filtros de categoría | Agregados; F2 ampliada para el enlace al ranking.                                  | Fechas o lectura de contenido.     |
-| F3                        | F7 para antigüedad, cobertura F10 y catálogo probado.                              | Acciones destructivas.             |
-| F4b                       | Resúmenes F4a compatibles, con identidad y cobertura.                              | Snapshots completos o F7.          |
-| F1c                       | Política de seguridad, revalidación, F8 acotada y estado desactualizado/reescaneo. | Promesa de deshacer automático.    |
+| Ampliación                          | Requisito real                                                                     | Riesgo que debe evitar                                                           |
+| ----------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Volver al contenedor (F2b.1)        | Resolver padres dentro del mismo snapshot y conservar estado de vista.             | Expandir miles de nodos o mezclar datos de otro scan.                            |
+| Búsqueda/filtros globales (F2b.2/3) | Consultar todas las entradas observadas y luego ordenar/paginar.                   | Filtrar los 100 visibles o los 500 cacheados y afirmar que no hay coincidencias. |
+| Fecha/categoría (F7/F5)             | Retener fechas; clasificación versionada; memoria y DTO recalibrados.              | Inferir desuso o inspeccionar contenido sin necesidad.                           |
+| Nuevas consultas                    | Presupuesto para trabajo, respuesta y DOM; no monopolizar el monitor del servicio. | Que navegar impida ver progreso o cancelar otro scan.                            |
+| Historial/comparación (F4)          | Fecha/raíz/volumen/alcance/cobertura/métrica/versiones compatibles.                | Interpretar desconocido como cero o un resumen como árbol completo.              |
+| Revisión/exports (F20/F13a)         | Alcance explícito y almacenamiento local voluntario con límites.                   | Filtrar rutas privadas o actuar sobre una referencia obsoleta.                   |
+| Candidatos (F3)                     | F7 para antigüedad, F10 existente y catálogo pequeño probado.                      | Presentar patrones como permiso para borrar.                                     |
+| Papelera (F1c)                      | Diseño específico de identidad, sincronización, privilegios y recuperación.        | Restar cifras antiguas o equiparar papelera con espacio liberado.                |
 
-Trabajar en paralelo solo donde no se dupliquen contratos: por ejemplo, probar empaquetado mientras se implementa el ranking. **Propuesta de capacidad:** una entrega principal y una investigación acotada en curso; no abrir todas las iniciativas P1 a la vez.
+F6b no es requisito para guardar un informe; F7 no es requisito para comparar tamaños; F3 no requiere papelera. Mantener estas dependencias mínimas evita bloquear una mejora útil por otra de mayor riesgo.
+
+### 4.3 Especificación UX/UI de las próximas entregas
+
+Las siguientes decisiones son **propuestas de diseño para este producto**, no mandatos universales ni cambios ya aplicados. Se apoyan en el código y las capturas existentes; se verificarán al implementarlas.
+
+#### UX1 · Resultados antes que decoración — H3
+
+- En bienvenida, conservar una explicación corta y acercar los accesos habituales/recientes al botón de elegir carpeta; no agregar un tutorial obligatorio.
+- Con resultados, sustituir el hero grande por un encabezado de trabajo: raíz, momento del análisis, estado completo/parcial y acciones. Resumen compacto: tamaño lógico, archivos y omitidos; conteo de carpetas secundario.
+- Mantener siempre «Tamaño lógico» y cobertura. Mover el párrafo largo a «Cómo se calcula», ampliable por teclado. La unidad conserva su lectura temporal; no presentar una medida al iniciar como actual.
+- Colocar tabla/ranking antes de la visualización grande; dona opcional/colapsable. No ocultar resultados tras un muro de tarjetas ni añadir métricas de relleno.
+- **Aceptación propuesta:** con fixture completo y sin errores, a 1280×720 y 100 % se ven controles y primeras filas sin scroll de página; a 390 px el resumen compacto no antepone cuatro tarjetas y una dona a los resultados. Mensajes de error y zoom pueden aumentar la altura sin perder acceso.
+- **Valor:** menor distancia visual hasta la siguiente acción, sin retirar advertencias relevantes.
+
+#### UX2 · Acciones reconocibles y con alcance — H3/H4
+
+- «Mostrar en el Explorador» ya funciona: mantener el icono de fila, pero ofrecer texto en el detalle/barra de selección; no depender solo de tooltip o clic derecho.
+- Diferenciar «Ver carpeta en el análisis», «Mostrar en el Explorador», «Copiar ruta» y «Analizar esta carpeta». Un clic de selección nunca ejecuta ni borra.
+- La acción global será «Nuevo análisis»; actualizar dice qué raíz se reanaliza. Elegir otro objetivo conserva los resultados actuales hasta que termine, como hoy.
+- Menú contextual opcional para acciones secundarias, con equivalente visible y teclado; no construirlo antes de resolver navegación.
+- **Aceptación:** etiquetas y estado deshabilitado explican objeto y consecuencia; los fallos se muestran junto al comando, sin alertas globales duplicadas por la misma causa.
+
+#### UX3 · Navegación que no borra el trabajo — H4a
+
+- Mantener «Contenido de carpeta | Archivos más grandes»; no convertir cada filtro en otra pestaña. Cuando exista búsqueda global, integrarla con ese ámbito y una etiqueta estable.
+- Seleccionar un archivo muestra detalle dentro del área de trabajo; «Ver carpeta» carga solo la cadena necesaria. «Volver a resultados» recupera fila, filtro, orden, página, scroll y foco.
+- Estado asociado a `scanId + ámbito`, no a un componente efímero. En un nuevo análisis, restaurar preferencias de presentación, no resultados/selecciones viejas.
+- En compacto, detalle como vista con regreso explícito; el explorador debe poder abrirse desde ambas vistas y devolver foco al disparador.
+- **Aceptación:** volver conserva exactamente el conjunto y posición; una respuesta tardía del análisis anterior no altera la selección actual. No introducir un router si estado local bien definido basta.
+
+#### UX4 · Una consulta comprensible — H4b/c
+
+- Búsqueda visible por nombre/ruta y selector «Todo el análisis / Esta carpeta y subcarpetas». La tabla de contenido sin búsqueda conserva sus hijos directos; la consulta en carpeta es recursiva y lo dice explícitamente. No cambiar de alcance silenciosamente al usar Ctrl+F.
+- Filtros por tamaño, extensión/categoría y fecha en una barra común; chips con eliminación individual y «Limpiar filtros». Mantener consulta mientras llegan resultados nuevos, con estado de carga claro y sin mostrar filas viejas como si coincidieran.
+- Conteo «Mostrando 1–50 de N coincidencias» calculado sobre todo el ámbito. El top 100 actual sigue etiquetado como ranking, no como búsqueda exhaustiva.
+- Vacío distingue carpeta vacía de filtros sin coincidencias; ofrece una salida concreta. Evitar cambiar foco al actualizar resultados.
+- **Aceptación:** buscar encuentra un archivo fuera del top 500 y en una rama nunca abierta; filtrar combina criterios antes de paginar; una consulta anterior cancelada no sobrescribe la nueva.
+
+#### UX5 · Tabla y detalle como superficie principal — H4
+
+- Nombre y ruta distinguen duplicados; tamaño alineado a la derecha con cifras tabulares; cabecera persistente que no tape foco; orden indicado por texto/estado, no solo flecha.
+- Añadir modificación y tipo cuando existan datos. Conteos de carpeta usan los valores ya disponibles. Columnas secundarias se pliegan en compacto; el detalle conserva toda la información.
+- Densidad cómoda por defecto; una variante compacta, solo si aporta valor sin reducir objetivos interactivos ni legibilidad.
+- Categorías con barras y etiquetas activables filtran la misma lista; no otra isla visual. Colores desde tokens. No necesita un treemap ni una biblioteca nueva.
+- **Aceptación:** nombres largos, Unicode, tamaños cero y desconocidos no se confunden; controles alcanzables por teclado y sin dependencia de hover; carpeta ancha no significa miles de nodos DOM sin presupuesto.
+
+#### UX6 · Confianza, fecha y recuperación — H3/H4
+
+- Encabezado «Analizado el…» y distinción entre completo, parcial, histórico y datos conservados tras caída. No usar “desactualizado” por mera antigüedad: decir que es una lectura de ese momento, no monitorización.
+- La fecha persistible debe venir del contrato del scan; hasta incorporarla, no inventarla a partir de duración. Una desaparición detectada sí justifica avisar y ofrecer nuevo análisis.
+- Omisiones con acceso ya disponible: agregar agrupación por motivo cuando facilite inspección; no convertir la advertencia en sugerencia automática de elevar permisos.
+- Anunciar cambios relevantes sin leer cada ruta/segundo. Reservar modales para decisiones que lo requieran; selección y filtros no necesitan confirmación.
+- **Aceptación:** pérdida del servicio no borra el resultado; acción sobre ruta ausente orienta a actualizar; un histórico nunca parece vivo.
+
+#### UX7 · Control personal y privacidad — H3/H4/H5
+
+- Añadir «Guardar carpetas recientes» con desactivación y borrado explícitos; acceder a recientes también desde «Nuevo análisis». Esta preferencia no borra archivos del disco.
+- Tema Sistema/Claro/Oscuro sobre los tokens existentes, sin reiniciar scan. Mantener idioma de interfaz independiente del locale numérico ya resuelto.
+- Antes de persistir informes/listas, mostrar ubicación, límites, cómo borrar/exportar y qué sucede al desinstalar. Conservar la opción de no guardar.
+- **Aceptación:** fallos de preferencias no impiden analizar; borrar recientes e historial son operaciones distintas y nombradas. No activar telemetría ni subir logs.
+
+#### UX8 · Rendimiento perceptible como calidad — transversal
+
+- Feedback inmediato del comando y geometría estable durante carga; conservar cancelación y navegación permitida. No añadir animaciones largas para ocultar latencia.
+- Evaluar respuesta/consulta/DOM por separado: la paginación visual actual no acota hijos ni trabajo en backend. Usar límites o paginación real si la medición lo exige.
+- **Aceptación:** matriz reproducible con datos profundos/anchos, consultas rápidas sucesivas y dos scans. Registrar latencias y memoria por versión; la respuesta al usuario no depende de que termine una consulta global bajo un lock prolongado.
+
+### 4.4 Referencias de calidad y cómo se aplican
+
+“Estándares de la industria” aquí significa criterios comprobables, no copiar una apariencia ni instalar un framework. Las referencias se consultaron el 2026-09-19; los estándares normativos se distinguen de guías y heurísticas.
+
+| Referencia                                                                                                             | Aplicación y criterio de revisión                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [WCAG 2.2, referencia W3C](https://www.w3.org/WAI/WCAG22/quickref/)                                                    | Objetivo AA: teclado sin trampas, foco visible/no totalmente oculto, nombres y estados accesibles; contraste 4,5:1 para texto normal y 3:1 para texto grande/componentes esenciales. Revisar 200 % de texto y reflow a 320 CSS px; las tablas pueden necesitar desplazamiento en su región, no toda la página. Objetivos de al menos 24×24 CSS px o las excepciones/espaciado del criterio 2.5.8. No afirmar certificación por pasar axe. |
+| [WAI-ARIA APG](https://www.w3.org/WAI/ARIA/apg/patterns/)                                                              | Árbol, diálogo y controles compuestos con teclado/foco coherentes. Conservar HTML nativo cuando basta; no convertir la tabla en un `grid` ARIA sin implementar su interacción completa. Probar cierre y retorno de foco.                                                                                                                                                                                                                  |
+| [Comandos de Windows](https://learn.microsoft.com/en-us/windows/apps/design/basics/commanding-basics)                  | Acciones frecuentes cerca del objeto; secundarias en menú. Feedback contextual y confirmaciones reservadas a consecuencias importantes. De ahí la propuesta de texto visible para mostrar ubicación y de no modalizar cada paso.                                                                                                                                                                                                          |
+| [Navegación de Windows](https://learn.microsoft.com/en-us/windows/apps/design/basics/navigation-basics)                | Destinos claros, estructura simple y migas de pan; nuestra aplicación concreta añade regreso que conserva la consulta y selección.                                                                                                                                                                                                                                                                                                        |
+| [Layout Fluent 2](https://fluent2.microsoft.design/layout) y [tipografía](https://fluent2.microsoft.design/typography) | Jerarquía visual, ritmo y adaptación al espacio. Reutilizar escala de 4 px, tipografía rem, tokens y superficies actuales; reducir protagonismo del hero en el área de trabajo, sin imitar WinUI ni cambiar React.                                                                                                                                                                                                                        |
+| [Heurísticas de Nielsen](https://www.nngroup.com/articles/ten-usability-heuristics/)                                   | Revisar visibilidad del estado, lenguaje reconocible, control, consistencia y recuperación. Son una guía de inspección interna, no prueba de demanda ni sustituto de investigación externa futura.                                                                                                                                                                                                                                        |
+
+**Decisiones de diseño propias, más allá del mínimo normativo:** objetivos cómodos de 32–40 px y 44 px donde se priorice tacto; foco nunca tapado por cabeceras fijas; texto antes que iconos ambiguos; movimiento reducido; ninguna advertencia crítica escondida por compactar el resumen. Verificarlas en el contexto real del producto.
 
 ---
 
 ## 5. Roadmap orientado a resultados
 
-### 5.1 Qué se pretende validar primero
+### 5.1 Objetivo y política de avance desde H3
 
-La beta no pretende ser un limpiador completo. Debe demostrar que alguien del segmento elegido puede **instalar, analizar, localizar un elemento relevante y mostrarlo en el Explorador**, entendiendo las limitaciones de los datos.
+El recorrido instalar → analizar → encontrar → mostrar ya está implementado. Ahora se busca reducir esfuerzo para **investigar, comparar y revisar**, no volver a construir ese recorrido ni introducir limpieza como destino obligatorio.
 
-No hay evidencia suficiente para comprometer «0–6 semanas» o «4–12 meses». Los horizontes siguientes expresan orden y condiciones de salida; se estimará calendario al conocer capacidad, alcance aceptado y resultados de las investigaciones.
+Se mantienen las evidencias de H0–H2. H3 se reorganiza en **verificación interna de distribución** y **claridad del área de trabajo**. H4 tendrá un orden definido en lugar de depender de entrevistas. H5 pasa a continuidad/comparación; la limpieza que antes figuraba en H5 se difiere a H7. Se conservan los identificadores F para rastrear ese cambio.
 
-### 5.2 Estado real del trabajo
+No se fijan fechas sin capacidad estimada. Una entrega principal y, como máximo, una verificación/investigación independiente en paralelo. Un entorno de pruebas no disponible bloquea la afirmación de soporte correspondiente, **no todo el trabajo de diseño o desarrollo siguiente**.
 
-| Hito                             | Estado al 2026-09-17             | Evidencia / siguiente acción                                                                              |
-| -------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| H0 · Limpieza y límites          | **Cerrado (verificado)**         | Ver «Evidencia de cierre de H0» debajo.                                                                   |
-| H1 · Motor listo y comprensible  | **Cerrado (verificado)**         | Ver «Evidencia de cierre de H1» debajo. F15a queda iniciada, no cerrada.                                  |
-| H2 · Primer hallazgo             | **Cerrado (verificado)**         | Ver «Evidencia de cierre de H2» debajo. F15a: automatizada; falta la revisión manual.                     |
-| H3 · Beta instalable             | **Abierto (técnica verificada)** | Instalador F19a listo y verificado aquí; faltan máquina limpia sin red y sesiones. Ver «Evidencia de H3». |
-| H4 · Profundidad/recurrencia     | **Backlog condicionado**         | Elegir la siguiente necesidad a partir de pruebas con usuarios.                                           |
-| H5–H6 · Acciones y largo alcance | **Investigación o diferido**     | Requieren evidencia y garantías adicionales; no autorizan implementación automática.                      |
+### 5.2 Estado real y evidencia conservada
 
-Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No marcar un hito como completado solo porque exista código.
+| Hito                                 | Estado al 2026-09-19                   | Qué sigue                                                                                                                    |
+| ------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| H0 · Limpieza y límites              | Cerrado según verificación registrada. | Mantener regresiones; límites evolucionados en H2.                                                                           |
+| H1 · Motor, errores y progreso       | Cerrado según verificación registrada. | Revisar accesibilidad manual pendiente; diálogo nativo ya corregido en H3.                                                   |
+| H2 · Primer hallazgo                 | Cerrado según verificación registrada. | Integrar ranking/contexto; no rehacer F1a/F2a/F6a/F10/F14a.                                                                  |
+| H3 · Distribución interna y claridad | Instalador entregado; hito abierto.    | Entorno limpio/offline, cuenta estándar, matriz Windows y accesibilidad; UX de consolidación propuesta, aún no implementada. |
+| H4 · Encontrar y comprender          | Propuesto, ordenado en incrementos.    | Contexto → búsqueda global → fechas/categorías → comodidad.                                                                  |
+| H5 · Retomar y comparar              | Propuesto.                             | Resúmenes locales compatibles, comparación, informes y revisión manual.                                                      |
+| H6 · Orientación y precisión         | Propuesto, alcance acotado.            | Catálogo explicable y precisión Windows verificada.                                                                          |
+| H7 · Apuestas de mayor riesgo        | Diferido.                              | Papelera, mapa, monitor e iniciativas sin retorno suficientemente claro.                                                     |
+
+**Alcance de la evidencia:** las tablas siguientes registran ejecuciones anteriores, conservadas como historial. Esta revisión comprobó código, documentación y capturas existentes; no volvió a ejecutar instaladores, suites ni pruebas manuales. Los pendientes históricos resueltos posteriormente se anotan para no duplicar trabajo.
 
 #### Evidencia de cierre de H0 (2026-09-17)
 
@@ -429,7 +532,7 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 
 **Pendientes detectados, fuera del alcance de H0:**
 
-- `tests/electron-smoke.cjs` espera textos en inglés, pero Electron toma el idioma del sistema. En un Windows en español falla antes de probar nada. Recargar la página tras fijar el idioma con CDP cierra la ventana, así que hay que resolverlo aparte (por ejemplo, con un perfil `userData` temporal para las pruebas). La verificación de H0 se hizo con una copia temporal adaptada al español.
+- **Resuelto en H3; observación histórica de H0:** `tests/electron-smoke.cjs` esperaba textos en inglés, pero Electron toma el idioma del sistema. En un Windows en español falla antes de probar nada. Recargar la página tras fijar el idioma con CDP cierra la ventana, así que hay que resolverlo aparte (por ejemplo, con un perfil `userData` temporal para las pruebas). La verificación de H0 se hizo con una copia temporal adaptada al español.
 - ~~**Decisión de producto antes de H2/H3:** con 250.000 entradas, analizar `C:\` completo falla.~~ **Resuelto en H2** con límites derivados del heap (ver evidencia de H2).
 - Las respuestas de carpetas anchas se construyen con el lock del servicio tomado y sin paginar. Con los fixtures actuales (2.000 hijos) no bloquean; conviene revisarlas si H2 usa fixtures más anchos.
 
@@ -455,10 +558,10 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 
 **Pendientes detectados en H1:**
 
-- El título y el botón del diálogo nativo de carpetas (`main.js`) siguen en inglés. Traducirlos exige pasar textos validados por IPC.
-- Con colores forzados, las filas no seleccionadas del árbol también muestran borde (el borde transparente se vuelve visible). La selección se distingue por grosor y color, pero el aspecto es recargado.
-- F19a (prueba de empaquetado en una máquina limpia) no se investigó en este hito.
-- `tests/electron-smoke.cjs` sigue dependiendo del idioma del sistema (pendiente de H0); en H1 se actualizó la lista de claves del puente y se verificó con la copia en español.
+- **Resuelto en H3:** título y botón del diálogo nativo traducidos mediante textos validados por IPC.
+- **Resuelto en H3:** se eliminaron los bordes de filas no seleccionadas bajo colores forzados.
+- **Avanzado en H3:** el paquete F19a existe; la ejecución en máquina limpia sigue pendiente, no el desarrollo del instalador.
+- **Resuelto en H3:** el smoke dejó de depender del idioma. La adaptación temporal usada en H0/H1 ya no define el procedimiento actual.
 
 #### Evidencia de cierre de H2 (2026-09-19)
 
@@ -485,9 +588,9 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 
 - Desde el ranking no se puede ir a la carpeta que contiene el archivo en el árbol (es F2b).
 - Calcular el ranking de un análisis grande bloquea el servicio unos 300 ms la primera vez; mientras tanto, el progreso de otro análisis simultáneo se retrasa.
-- El estado de carga del ranking existe, pero ninguna prueba lo comprueba.
+- **Resuelto en H3:** se añadió prueba del estado de carga del ranking.
 - Las carpetas recientes guardan rutas completas en `localStorage` del perfil local; se pueden borrar, pero no hay una opción para no guardarlas.
-- Siguen abiertos los pendientes de H1: el diálogo nativo en inglés, el borde de las filas con colores forzados y el smoke dependiente del idioma. El recorrido nuevo evita ese problema porque no usa texto.
+- **Resueltos en H3:** diálogo nativo, bordes de colores forzados y smoke independiente del idioma. Sí sigue pendiente la revisión manual con lector de pantalla y alto contraste real.
 
 #### Evidencia de H3 (2026-09-19) — hito abierto
 
@@ -497,7 +600,7 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 - La app instalada gestiona siempre su backend y lo arranca con el Java incluido, sin PowerShell ni Maven. El backend vigila el proceso de la app (`storage-analyzer.parent-pid`) y se cierra con ella, incluso si la app se termina a la fuerza.
 - Política de datos documentada en [`docs/beta/instalacion-y-datos.md`](docs/beta/instalacion-y-datos.md): idioma y carpetas recientes, más un registro del backend limitado a 5 MB con una copia anterior, todo en `%APPDATA%\Storage Analyzer`. La actualización conserva esa carpeta y la desinstalación la borra. No se envía nada por red.
 - Correcciones pendientes de H1–H2: el diálogo nativo de carpetas ya está traducido, las filas no seleccionadas no muestran borde con colores forzados, el smoke de Electron ya no depende del idioma, hay prueba del estado de carga del ranking y el botón de la última columna conserva su anillo de foco.
-- Kit para las sesiones en [`docs/beta/`](docs/beta/README.md): guion con consentimiento y ocho tareas, plantilla de resultados ligada a la puerta de §5.5 y un script que crea y elimina la carpeta de prueba (incluida una carpeta sin permiso de lectura).
+- Material de evaluación anterior en [`docs/beta/`](docs/beta/README.md): guion y plantilla externa ahora **diferidos**. Se conserva el generador de fixtures para verificación interna; el kit no constituye una obligación de reclutar ni una puerta de salida.
 
 | Criterio de salida técnico               | Evidencia                                                                                                                                                                                                                                                                      | Estado                                                                                                                                                                                                                    |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -512,17 +615,19 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 | Sin desactivar protecciones              | No hace falta desactivar nada.                                                                                                                                                                                                                                                 | **Con fricción:** el instalador no está firmado, así que un archivo descargado muestra el aviso de SmartScreen (Más información → Ejecutar de todas formas). Hace falta un certificado antes de una distribución pública. |
 | Regresiones                              | Backend: 38 pruebas (1 omitida por los enlaces simbólicos). Frontend: `tsc`, webpack sin avisos, 33 pruebas de datos, 29 de escritorio y 43 de UI.                                                                                                                             | Verificado.                                                                                                                                                                                                               |
 
-**Criterios de salida de producto:** **no cumplidos todavía.** No se ha hecho ninguna sesión con participantes, así que la puerta de §5.5 no se puede evaluar ni se ha tomado la decisión sobre la siguiente iteración. El kit está listo para hacerlas.
+**Cambio de criterio al 2026-09-19:** no se realizaron sesiones externas y **ya no se requieren por ahora**. No se inventan resultados ni se afirma validación de demanda. La aceptación de producto se sustituye por los recorridos internos de §5.5.
 
-**Pendientes para cerrar H3:**
+**Pendientes técnicos reales del instalador actual:**
 
-1. Activar Windows Sandbox y ejecutar `scripts/sandbox/start-sandbox.ps1` (máquina limpia y sin red).
-2. Probar con una cuenta de usuario estándar y en Windows 10 x64, que se declara compatible sin haberse probado.
-3. Hacer al menos 5 sesiones con [`docs/beta/guia-de-sesion.md`](docs/beta/guia-de-sesion.md), registrar los resultados y decidir según §5.5.
-4. Antes de distribuir fuera de sesiones controladas: firma de código.
-5. Sigue pendiente de H1–H2 la revisión manual de accesibilidad (alto contraste real de Windows y lector de pantalla).
+1. Ejecutar `modules/frontend/scripts/sandbox/start-sandbox.ps1` o una VM limpia equivalente, sin red y sin herramientas de desarrollo. Activar Sandbox requiere autoridad administrativa y reinicio; no se hace como parte de una revisión documental.
+2. Probar con una cuenta estándar real. Para Windows 10, aportar evidencia o dejarlo como compatibilidad no verificada; no extrapolar desde Windows 11.
+3. Completar revisión interna manual con lector de pantalla y alto contraste de Windows.
+4. Firma/procedencia antes de distribución pública. No es requisito para diseñar H4 ni para pruebas internas autorizadas; tampoco se pide desactivar protecciones.
+5. Aplicar y verificar, en entregas separadas, la consolidación UX añadida a H3. No confundirla con las correcciones del instalador que ya se entregaron.
 
 ### 5.3 Secuencia de entregas
+
+**H0–H2 se conservan como planificación histórica, no como una nueva lista de trabajo.** Su cierre y excepciones constan en §5.2. La revisión manual restante de F15a se traslada expresamente a H3a/b; no se considera aprobada por el cierre de H2.
 
 #### H0 · Base técnica mantenible y acotada — primero
 
@@ -548,91 +653,143 @@ Esta tabla distingue **diseño**, **cambios locales** y **entrega validada**. No
 
 - **Orden:** F2a → F1a → F10 mínimo. Añadir F6a y F14a si no desplazan las garantías de cobertura y accesibilidad.
 - **Criterios de salida:** el archivo objetivo de un fixture profundo aparece en el top global sin expandir el árbol; nombre duplicado se distingue por ubicación; filtros/empates son deterministas. Una persona puede mostrarlo con teclado, y las rutas inexistentes o el snapshot caducado producen recuperación comprensible.
-- **Calidad:** cerrar F15a para las vistas entregadas; demostrar selección, foco, carga, vacío, error y parcialidad en inglés/español.
+- **Calidad original de H2:** selección, foco, carga, vacío, error y parcialidad en inglés/español con evidencia automatizada. La revisión manual pendiente de F15a se completa en H3a/b; no se declara cerrada aquí.
 - **No incluye:** apertura de ejecutables, papelera, treemap o búsqueda global ilimitada.
 - **Demostración de entrega:** recorrido grabado o checklist reproducible desde elegir carpeta hasta mostrar un elemento, usando solo fixtures, no rutas personales.
 
-#### H3 · Beta Windows instalable y prueba de valor
+#### H3 · Consolidar el producto disponible, sin evaluación externa
 
-**Resultado:** validar el flujo con personas que no tengan entorno de desarrollo.
+**Resultado para el usuario:** una app instalable que explica su alcance y deja trabajar con los resultados sin obstáculos innecesarios. No implica ampliar todavía las consultas.
 
-- **Incluye:** F19a y correcciones del recorrido H1–H2. Completar F6a/F14a si quedaron pendientes; no convertir la beta en un inventario de funcionalidades.
-- **Criterios de salida técnicos:** prueba en máquina limpia sin Node/JDK/Maven instalados; sin red para analizar; arranque, cierre, actualización de prueba y desinstalación con política de datos documentada. Sin procesos huérfanos ni necesidad de desactivar protecciones.
-- **Criterios de salida de producto:** sesiones moderadas con participantes del segmento inicial, resultados registrados y decisión explícita sobre la siguiente iteración. El número propuesto y sus límites figuran en §5.5.
-- **No incluye:** soporte equivalente para macOS/Linux ni borrado dentro de la app.
-- **Decisión posterior:** si no se cumple la puerta de §5.5, corregir y repetir la prueba antes de añadir F3/F4/F12, aunque algunos participantes completen el recorrido. Si la barrera es solo instalación, priorizar distribución antes de enriquecer gráficos.
+**H3a · Cerrar verificaciones reales, no rehacer el instalador.**
 
-#### H4 · Profundizar según el problema observado
+- Ejecutar los pendientes técnicos de §5.2 y registrar entorno, versión, resultado y límites. Se admite VM limpia equivalente a Sandbox.
+- Conservar backend empaquetado, runtime, logs acotados, actualización y cierre ya implementados.
+- Si un entorno está bloqueado, registrarlo como **no verificado** y acotar soporte. No cerrar esa validación ni detener automáticamente tareas independientes de H4.
 
-**Resultado:** resolver la siguiente pregunta importante, no añadir todas las vistas a la vez.
+**H3b · Mejorar la claridad con las capacidades actuales.**
 
-| Evidencia observada en la beta                   | Siguiente entrega candidata                  | Condición de aceptación principal                                                 |
-| ------------------------------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------- |
-| «No sé qué clase de archivos ocupa esto».        | F5, después filtros de categoría en F2.      | Agregados reconciliados y alcance visible.                                        |
-| «Quiero encontrar algo antiguo o por su nombre». | F7 y/o F2b.                                  | Filtros combinables, fechas honestas y consultas acotadas.                        |
-| «Quiero saber qué creció».                       | F4a → F4b.                                   | Informes persistentes comparables; desconocido distinto de cero.                  |
-| «Necesito documentarlo o pedir ayuda».           | F13a.                                        | Exportación fiel al alcance, revisable y sin fórmulas activas.                    |
-| «Lo encuentro, pero no sé qué revisar».          | Piloto pequeño F3 con F7/F10.                | Explicaciones comprendidas, falsos positivos revisados y sin automatizar borrado. |
-| «Repito siempre los mismos pasos».               | F6b, F14b/c o F15b, según problema concreto. | Menos pasos sin ocultar límites ni alterar snapshots previos.                     |
+- UX1: encabezado y resumen compactos; resultados antes de la dona; explicación extensa ampliable, con tamaño lógico/parcialidad siempre visibles.
+- UX2: acción de ubicación con texto en la barra/detalle y comandos de alcance claro.
+- UX6: identidad temporal del análisis, incorporando fecha explícita al contrato; mensajes de estado sin duplicación.
+- UX7: acceder a recientes desde «Nuevo análisis» y ofrecer no guardarlos. No es otra implementación de F6a.
+- Cerrar la revisión manual aplicable de F15a; mantener idiomas, locale, estados y teclado existentes.
 
-Elegir **una** de estas líneas y revisar resultados antes de abrir la siguiente. F1b y F16b son ampliaciones opcionales, no requisitos de recurrencia.
+**Salida:** recorridos internos T1–T5 de §5.5 aprobados en el ámbito declarado; sin defecto bloqueante de datos, seguridad o tarea principal. Pruebas/regresiones y limitaciones documentadas. **Sin participantes, entrevistas ni requisito “4 de 5”.**
 
-#### H5 · Acciones de limpieza, solo con garantías explícitas
+**Fuera:** nuevas búsquedas globales, historial, tema claro, papelera, rediseño de marca y publicación pública automática.
 
-**Resultado condicionado:** permitir una acción individual sin inducir decisiones falsas sobre el archivo o el espacio.
+#### H4 · Encontrar con precisión y entender el contexto
 
-- **Entrada obligatoria:** necesidad de actuar dentro de la app confirmada; política de objetivos permitidos; precisión F8b/c para el alcance elegido; límites de privilegios y rutas revisados; plan de fallos y datos desactualizados.
-- **Primera entrega posible:** F1c individual, con modo de análisis por defecto, confirmación, resultado verificable y reescaneo. Si no se puede validar el destino o el soporte de papelera, bloquear; nunca degradar a borrado permanente.
-- **Pruebas de salida:** archivo movido/cambiado, permisos, enlaces/reparse points, carpeta protegida, unidad no soportada y sincronización. No restar tamaños antiguos ni anunciar espacio liberado al enviar a papelera.
-- **Diferido:** selección múltiple, deshacer propio, vaciado y actualización incremental del snapshot. Cada ampliación necesita su propio diseño y pruebas.
-- **Decisión:** si no se consiguen estas garantías, mantener F1a como salida útil del producto. No existe obligación de transformarlo en limpiador.
+**Resultado para el usuario:** «Encuentro el elemento que busco, entiendo dónde está y vuelvo a mis resultados sin empezar de nuevo». Es la prioridad funcional siguiente.
 
-#### H6 · Apuestas posteriores, sin fecha comprometida
+| Incremento                  | Entrega                                                                                                             | Criterio de salida observable                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H4a · Conectar el hallazgo  | F2b.1 + UX3/UX5: selección/detalle, carpeta contenedora, regreso y estado por scan/ámbito.                          | Desde un resultado profundo, abrir su carpeta sin expandir todo el árbol; volver conserva filtros, página, selección, scroll y foco.                |
+| H4b · Consulta global real  | F2b.2 + UX4: nombre/ruta/tamaño, ámbito explícito, conteo y páginas acotadas.                                       | Encuentra una coincidencia que no está entre los 500 más grandes ni en ramas cargadas. Ctrl+F siempre enfoca la búsqueda visible del ámbito.        |
+| H4c · Explicar y filtrar    | F7 → F5 → F2b.3: modificación, extensión/categoría, conteos y filtros AND en la misma superficie.                   | Categorías reconcilian con bytes observados; elegir una lleva a sus archivos. Fecha desconocida no satisface por accidente un filtro de antigüedad. |
+| H4d · Repetir con comodidad | F14c + F6b + F15b: subanálisis independiente, unidades accesibles con fecha de lectura y tema Sistema/Claro/Oscuro. | Analizar subcarpeta no mezcla snapshots; unidad lenta no congela inicio; tema no reinicia análisis ni selección.                                    |
 
-- **F12:** solo si la prueba de tareas demuestra que una vista espacial mejora ranking/tabla.
-- **F17:** solo si existe uso recurrente y se acepta explícitamente actividad en segundo plano.
-- **F13b y snapshots completos de F4:** solo si la profundidad o formato de informes actuales resulta insuficiente.
-- **F8 ampliada:** nuevos proveedores/volúmenes únicamente con matriz de soporte y datos de demanda.
-- **F18, MFT, nube y móvil:** fuera del plan de ejecución hasta validar un problema, coste y diseño de privacidad.
+- **Orden:** H4a y H4b primero, después H4c. Entregar cada incremento por separado; no esperar a completar todos para obtener utilidad. H4d es independiente y **no bloquea H5a/b**: unidades, subanálisis y temas pueden ir después de la comparación si la capacidad es limitada. Drag-and-drop F14b también es opcional.
+- **Condición técnica:** filtrar todo el ámbito antes de paginar; recalibrar memoria al retener fechas/metadatos. Aislar trabajo de consulta para que no monopolice progreso/cancelación.
+- **Control de UI:** mantener dos vistas de trabajo con filtros, no multiplicar pestañas por atributo. Una nueva ruta de navegación debe tener un regreso equivalente.
+- **Salida interna:** T6–T9 de §5.5 y regresiones correspondientes. No hace falta una encuesta para decidir si el archivo objetivo aparece o si el estado se conserva.
+
+#### H5 · Retomar, comparar y organizar lo que revisar
+
+**Resultado para el usuario:** «Puedo volver mañana y ver qué cambió, sin repetir todo el razonamiento». **Valor esperado:** continuidad y motivo de uso recurrente, no retención demostrada.
+
+**Entrada:** contrato de snapshot estable, contexto navegable y metadatos de informe definidos. No requiere terminar H4d ni disponer de todas las categorías o fechas de archivo; estas últimas no son requisito para comparar tamaños agregados.
+
+1. **H5a · F4a:** guardar resúmenes locales de forma voluntaria y acotada. Lista con raíz, fecha, cobertura, tamaño y «Analizar de nuevo». Diferenciar recientes (rutas) de historial (informes).
+2. **H5b · F4b:** comparar dos informes compatibles; ordenar por crecimiento absoluto y mostrar signo/texto además del color. Separar desconocido, no observado y cero. No comparar profundidades/exclusiones distintas como si fueran iguales.
+3. **H5c · F13a + F20:** exportación del alcance anunciado y lista manual de archivos para revisar. Quitar de una lista no elimina un archivo. Guardado, retención y limpieza local explícitos.
+
+- **UX:** agregar «Historial» solo cuando haya persistencia real; estado vacío con «Guardar este análisis», no tarjetas vacías de funciones futuras. Comparación identifica ambos momentos y permite volver al informe.
+- **Política de datos:** definir qué se conserva al actualizar y qué se elimina al desinstalar; hoy se borra AppData. Informarlo y ofrecer exportación antes de depender de datos persistentes. No cambiar silenciosamente esa política.
+- **Salida interna:** fixture antes/después con crecimientos conocidos, rama inaccesible, reinicio, corrupción y migración de esquema; lista/exportación sin duplicados de ruta ni metadatos privados fuera del modo elegido.
+- **Fuera:** árbol completo persistente, sincronización, monitor, detección de renombrados y cifras de espacio “liberado” calculadas por diferencia de tamaños lógicos.
+
+#### H6 · Orientar la revisión con evidencia, sin limpiar automáticamente
+
+**Resultado para el usuario:** «Entiendo por qué merece la pena revisar esto y qué limitaciones tiene la recomendación».
+
+- **H6a · F3:** catálogo inicial pequeño sobre carpetas del usuario: regla, evidencia, fecha y motivo visible. Inspeccionar, ignorar o añadir manualmente a F20. No etiquetas de “seguro para borrar”.
+- **H6b · F8b/c:** investigación Windows acotada y, solo tras demostrarla, tamaño en disco/estado de disponibilidad para casos soportados. Representar desconocidos y no descargar contenidos de nube durante inspección.
+- **Criterios de salida:** fixtures positivos, contraejemplos y solapamientos; agregados sin doble conteo; cobertura declarada; efecto de cada regla explicable. Matriz de precisión para placeholders, compresión, sparse y enlaces físicos sin asumir igualdad con tamaño lógico.
+- **Decisión interna:** comparar el recorrido manual de H4/H5 con el asistido por reglas; mantener una regla solo si reduce pasos en un caso realista sin exceder lo que su evidencia permite concluir.
+- **Fuera:** operar sobre carpetas del sistema, elevar toda la app, borrar o abrir ejecutables automáticamente. F1b puede investigarse aparte con política explícita, no es requisito de orientación.
+
+#### H7 · Apuestas posteriores y acciones de mayor riesgo
+
+- **F1c, papelera individual:** solo con diseño de identidad/revalidación, ubicaciones permitidas, sincronización, confirmación y recuperación. Desactivada por defecto; sin fallback de borrado permanente, descuento ciego de snapshots ni promesa de liberar bytes al enviar a papelera.
+- **F12, treemap:** comparar mediante tareas internas con ranking/tabla. Si solo añade atractivo y no ayuda a identificar concentración o contexto, no priorizarlo.
+- **F17, monitor:** opcional y explícito, con consumo y frecuencia acotados. Historial no necesita un servicio permanente.
+- **F13b, snapshots completos y precisión ampliada:** solo si el alcance actual deja una tarea concreta sin resolver.
+- **F18, MFT, cuentas, sincronización y móvil:** fuera del plan activo. No retomar por tendencia; requerir problema, coste y privacidad definidos.
+
+**Regla de alcance:** la participación externa permanece diferida; ninguna de estas iniciativas la exige ahora. Eso no convierte estimaciones internas en prueba de demanda ni elimina revisiones de seguridad.
 
 ### 5.4 Definición de terminado compartida
 
-Una entrega se cierra cuando cumple **todos** los puntos aplicables:
+1. Incremento marcado como implementado solo cuando sus tareas y casos límite tienen evidencia reproducible. Distinguir ejecuciones actuales de tablas históricas.
+2. Estado/alcance/cobertura coherentes entre UI, DTO, API y datos guardados; nunca desconocido = cero, top-N = búsqueda exhaustiva ni histórico = dato vivo.
+3. Inglés/español, locale independiente, teclado, foco, contraste y adaptación según §4.4. Complementar axe con revisión interna manual; registrar lo no verificado.
+4. Regresiones pertinentes de backend, datos, escritorio, UI, TypeScript y build; integración real si cambia el contrato entre procesos. No reconstruir el instalador si el cambio es solo documental.
+5. Matriz de rendimiento con hardware/heap/versión, árboles profundos/anchos y dos scans. Presupuestos de consulta, payload y DOM, no solo memoria de snapshots; comparar contra una línea base registrada.
+6. Persistencia/IPC/privacidad revisados. Ningún envío de rutas, logs, contenido o métricas por defecto. Las nuevas mutaciones requieren una revisión específica, no basta pasar las pruebas de lectura.
+7. Actualizar contrato, guías, evidencia y estado del roadmap; Conventional Commits pequeños. Una función propuesta o un protocolo escrito no equivale a una verificación ejecutada.
+8. **No hay requisito de participantes externos.** El equipo puede cerrar calidad funcional y técnica; no puede atribuirse satisfacción, adopción o demanda que no haya medido.
 
-1. Criterios funcionales de su ficha demostrados con fixtures reproducibles, incluyendo cero resultados, errores, cancelación y cobertura parcial.
-2. API, modelos y validadores coherentes; solicitudes y respuestas acotadas. No mezclar snapshots ni interpretar desconocido como cero.
-3. Interacción por teclado, foco y anuncios revisados; inglés/español; layout compacto y texto ampliado. Las pruebas automáticas no sustituyen revisión manual de accesibilidad.
-4. Sin regresiones en TypeScript, build, pruebas de datos, Electron, UI y backend pertinentes. La integración real se prueba cuando cambia un contrato entre procesos.
-5. Casos de rendimiento definidos **antes de empezar**: cantidad de entradas, profundidad, anchura, longitud de rutas, dos scans, heap/configuración y hardware. Registrar latencia, memoria y tiempo de cancelación. Fijar umbrales tras obtener la línea base; no declarar «rápido» sin medición.
-6. Datos, permisos y errores revisados: no exponer rutas/logs ni ampliar IPC más de lo necesario; no introducir envíos de datos o telemetría por defecto.
-7. Documentación y estado del roadmap actualizados, con evidencia de pruebas y limitaciones. Conventional Commits granulares; una investigación solo se cierra con una decisión documentada, no cuenta como función entregada.
+### 5.5 Evaluación interna por tareas — reemplaza las sesiones externas
 
-### 5.5 Validación y métricas sin telemetría obligatoria
+No se recluta ni contacta a nadie. El responsable de desarrollo/producto realiza recorridos como operador interno y los complementa con automatización, inspección heurística y revisión accesible. Se reutilizan fixtures del repositorio; no se exploran carpetas personales para producir evidencia.
 
-**[Suposición de investigación]** Empezar con 5–8 participantes del segmento elegido y tareas sobre carpetas de prueba. Sirve para descubrir fricciones, no para inferir porcentajes de adopción de toda la población. Repetir tras corregir problemas.
+#### Matriz de aceptación propuesta
 
-| Pregunta                           | Medición propuesta                                                                                                   | Cómo evita conclusiones engañosas                        |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| ¿Se puede empezar?                 | Instalaciones y arranques correctos / intentos, con motivos de fallo.                                                | Máquina y condiciones registradas; no excluir fallos.    |
-| ¿Se encuentra algo útil?           | Participantes que localizan el objetivo y muestran su ubicación sin ayuda / participantes que intentan la tarea.     | Informar el número absoluto y la muestra pequeña.        |
-| ¿Cuánto cuesta llegar al hallazgo? | Tiempo desde resultados disponibles hasta identificar el objetivo; tiempo total de instalación/escaneo por separado. | No atribuir a la UX toda la velocidad del disco.         |
-| ¿Se comprenden las cifras?         | Pedir explicar tamaño lógico, parcialidad e histórico con sus palabras.                                              | No medir comprensión solo con clics.                     |
-| ¿La app es robusta?                | Crashes, errores bloqueantes, fallos de cancelación y presupuesto de memoria en la matriz de pruebas.                | Incluir escenarios de fallo, no solo el recorrido feliz. |
-| ¿Hay una razón para volver?        | Entrevista de seguimiento y ejemplos concretos de necesidades de comparación.                                        | No inventar retención sin observación longitudinal.      |
+| Caso | Tarea y escenario                                                                                                | Resultado verificable / hito                                                                                                                                |
+| ---- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1   | Instalar/abrir/cerrar/actualizar/desinstalar sin toolchain; limpio/offline y cuenta estándar.                    | Backend incluido, sin procesos huérfanos y política de datos cumplida. H3a; entorno no disponible se registra como pendiente.                               |
+| T2   | Analizar fixture profundo y hallar un archivo conocido, nombres duplicados incluidos.                            | Ranking correcto, ubicación distinguible y acción de Explorador por teclado. Regresión H2 y claridad H3b.                                                   |
+| T3   | Análisis parcial, servicio caído, ruta movida y snapshot caducado.                                               | Cobertura visible, resultado conservado cuando procede y recuperación contextual. H3.                                                                       |
+| T4   | Repetir tarea con teclado/lector de pantalla, colores forzados, 200 % de texto, compacto y zoom/reflow.          | Controles y foco alcanzables, texto comprensible y resultados operables. H3 y cada nueva vista.                                                             |
+| T5   | Consultar resultados a 1280×720; abrir ayuda de tamaños; no guardar recientes.                                   | Primeras filas visibles en caso completo normal, advertencia esencial presente y preferencia respetada. H3b.                                                |
+| T6   | Abrir contenedor del resultado profundo y volver, también en compacto.                                           | Mismo filtro, página, fila, scroll y foco; sin expansión masiva. H4a.                                                                                       |
+| T7   | Buscar coincidencia fuera del top 500; combinar texto/tamaño/tipo/fecha; cambiar consulta rápidamente.           | Filtrado global correcto, conteo fiable, ámbito claro y sin respuestas tardías que reemplacen la consulta actual. H4b/c.                                    |
+| T8   | Analizar subcarpeta, cambiar tema y seleccionar una unidad ausente/lenta.                                        | Sin mezcla de scans, pérdida de estado ni bloqueo global. H4d.                                                                                              |
+| T9   | Carpeta ancha, snapshot grande y dos scans mientras se consulta y cancela.                                       | Medir memoria/latencia/DOM; progreso y cancelación no quedan retenidos por consultas largas. H4 y regresiones.                                              |
+| T10  | Guardar/reabrir/comparar fixtures antes/después y uno parcialmente inaccesible.                                  | Delta conocido, incompatible explicado, desconocido distinto de cero; corrupción recuperable. H5a/b.                                                        |
+| T11  | Marcar archivo, exportar rutas reducidas, reiniciar, sustituir el archivo en la misma ruta y quitar de la lista. | Anotaciones recuperables; ninguna asociación automática con el sustituto; vista previa acotada y exportación fiel al alcance; sin cambios en archivos. H5c. |
+| T12  | Reglas con contraejemplos y archivos de disponibilidad/precisión diversas.                                       | Motivo explicable, sin doble suma, descarga involuntaria ni recomendación de borrado automático. H6.                                                        |
 
-**Puerta propuesta para continuar tras la beta:** ningún defecto bloqueante de seguridad/datos en los casos soportados; al menos 4 de los primeros 5 participantes completan el recorrido principal sin ayuda; todos los fallos quedan registrados y priorizados. Es un objetivo de prueba propuesto, no un resultado ni validación estadística.
+#### Métricas de trabajo, no de demanda
 
-Registrar notas y tiempos localmente con consentimiento. No capturar rutas personales ni contenido de archivos. Cualquier instrumentación persistente o envío de diagnósticos sería una decisión separada y opcional.
+| Dimensión               | Registro interno                                                                                         | Interpretación permitida                                                   |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Correctitud             | Esperado/obtenido por fixture: filas, bytes, fechas, diferencias y omisiones.                            | La función resuelve los casos ensayados.                                   |
+| Esfuerzo de interacción | Comandos, cambios de vista y pasos repetidos de cada tarea.                                              | La propuesta reduce recorrido; no demuestra satisfacción general.          |
+| Continuidad             | Pérdidas de consulta/selección/foco al ir y volver.                                                      | Objetivo: cero pérdidas no solicitadas en el recorrido definido.           |
+| Jerarquía visual        | Captura con resolución/zoom/idioma, primera fila y comando principal identificados.                      | Comprobar UX1 sin atribuir “facilidad” a usuarios no observados.           |
+| Rendimiento             | Primera consulta y cacheada, p50/p95 con repeticiones declaradas, memoria pico, respuesta a cancelación. | Comparación en el mismo entorno; no extrapolar del equipo de 48 GB a otro. |
+| Confianza y privacidad  | Campos persistidos/exportados, capacidades comprobadas y fallos explicados.                              | Evidencia de control de datos, no promesa de riesgo cero.                  |
 
-### 5.6 Decisiones abiertas que pueden cambiar el orden
+**Protocolo:** anotar versión/commit, entorno, fixture, pasos, esperado/obtenido, evidencia y defecto. Separar «aprobado», «falló», «no ejecutado» y «no soportado». Mantener capturas agregadas y datos sintéticos; no enviar telemetría.
 
-| Decisión                                             | Evidencia necesaria                                        | Consecuencia para el roadmap                                                                     |
-| ---------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Usuario principal: general, desarrollador o soporte. | Entrevistas y tareas observadas en H3.                     | Reordenar F3, F4 y F13; no construir las tres a la vez.                                          |
-| Windows y volúmenes soportados en la beta.           | Prueba de empaquetado y matriz de filesystem.              | Acotar F19/F6b; no anunciar soporte que no se ha verificado.                                     |
-| Necesidad real de borrar dentro de la app.           | Usuarios que no resuelven la tarea con F1a.                | Activar o descartar H5.                                                                          |
-| Relevancia de OneDrive y otros proveedores.          | Casos reales y prueba técnica sin descargar contenido.     | Ampliar F8 o bloquear acciones solo en contextos no verificados.                                 |
-| Mantenimiento de reglas y formatos históricos.       | Responsable y capacidad de pruebas/migración definidos.    | Limitar F3/F4 al alcance sostenible.                                                             |
-| Tamaño de datasets objetivo.                         | Mediciones en árboles profundos/anchos con heap declarado. | Decidir paginación, almacenamiento persistente o cambio de arquitectura antes de aumentar topes. |
+**Puerta interna:** todas las tareas aplicables al incremento pasan en los entornos declarados; ningún defecto bloqueante de datos/seguridad/operación principal; fallos restantes tienen gravedad y decisión explícitas. No se cuenta “no ejecutado” como aprobado. Los objetivos de tiempos se fijan antes de cada cambio a partir de la línea base, no después para hacer pasar el resultado.
 
-**Siguiente paso recomendado:** H0, H1 y H2 están cerrados; la parte técnica de H3 está lista. Para cerrar H3: ejecutar la verificación en Windows Sandbox, probar con una cuenta estándar, hacer las sesiones con participantes y decidir la siguiente iteración con sus resultados. No empezar H4 antes. Este documento mejora el plan; no autoriza ejecutar de una vez el resto del roadmap.
+**Límite honesto:** esta revisión interna no mide adopción, retención ni preferencia de mercado. Las hipótesis de valor se mantienen como hipótesis. El guion y la plantilla externos de `docs/beta/` quedan diferidos; se podrán reactivar únicamente mediante una decisión posterior, sin bloquear H3–H7 ahora.
+
+### 5.6 Riesgos, decisiones y siguiente paso
+
+| Decisión                      | Criterio interno disponible ahora                                                           | Consecuencia                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Soporte Windows/volúmenes     | Ejecución real de T1/T8, no solo configuración de empaquetado.                              | Acotar lo declarado y registrar matriz pendiente.                     |
+| Arquitectura de consultas     | T7/T9, top cacheado frente a snapshot completo y presupuesto de locks/DOM.                  | Corregir acotación antes de añadir más filtros/gráficos.              |
+| Persistencia y retención      | T10/T11 con límites, corrupción, desinstalación y borrado voluntario.                       | Entregar F4/F20 sin guardar rutas silenciosamente.                    |
+| Reglas útiles                 | T12 y contraejemplos documentados; pasos que evita cada regla.                              | Mantener catálogo pequeño y explicable.                               |
+| Necesidad de mutaciones       | Identificar una tarea concreta no resuelta con inspección/Explorador y demostrar seguridad. | Papelera permanece diferida; no es meta obligatoria.                  |
+| Preferencia/impacto comercial | No hay estudio externo ni datos longitudinales ahora.                                       | No justificar prioridades con conversiones o satisfacción inventadas. |
+
+**Siguiente paso recomendado:** registrar los pendientes técnicos auténticos de H3a y abordar UX1/UX2/UX6/UX7 en H3b; a continuación, **H4a: conectar ranking, detalle y carpeta sin perder contexto**. Si la VM o accesibilidad manual están temporalmente bloqueadas, continuar trabajo independiente sin falsear su cierre.
+
+Esta revisión actualiza el plan y sus criterios; no autoriza implementar automáticamente todas las funcionalidades ni publicar o distribuir el producto.

@@ -1,5 +1,7 @@
 # Registro de resultados de la beta
 
+> **Plantilla externa diferida desde el 2026-09-19.** No hay sesiones realizadas ni resultados que registrar. La puerta histórica de participantes que aparece abajo ya no rige el avance; usar los criterios internos de §5.5 de [`ANALISIS_PRODUCTO.md`](../../ANALISIS_PRODUCTO.md). Conservar esta plantilla no implica reactivar participación externa.
+
 Una fila por participante. Sin nombres ni rutas personales: usa P1, P2… y describe el equipo solo por versión de Windows y si es de trabajo o personal.
 
 ## Sesiones
@@ -32,7 +34,7 @@ En cada tarea anota: **sin ayuda / con ayuda / no completada**, y el tiempo si a
 | ------------ | ------------------------ |
 |              |                          |
 
-## Puerta de salida (§5.5)
+## Puerta histórica de salida (sin vigencia)
 
 | Criterio                                                               | Resultado |
 | ---------------------------------------------------------------------- | --------- |

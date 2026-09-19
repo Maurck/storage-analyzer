@@ -225,7 +225,7 @@ export const es: Dictionary = {
 
   "scanError.ROOT_UNREADABLE": "No se pudo leer la carpeta elegida.",
   "scanError.ENTRY_LIMIT":
-    "Esta carpeta contiene más de {limit} elementos, el máximo que admite un análisis. Elige una carpeta más pequeña.",
+    "Esta carpeta contiene más de {limit} elementos, el máximo que admite un análisis en este equipo. Elige una carpeta más pequeña.",
   "scanError.MEMORY_BUDGET":
     "El motor de análisis se quedó sin espacio para los resultados. Elige una carpeta más pequeña, o cancela otro análisis e inténtalo de nuevo.",
   "scanError.OUT_OF_MEMORY":
@@ -286,4 +286,89 @@ export const es: Dictionary = {
     "Los tamaños suman la longitud de los archivos, como los muestra el Explorador, no el espacio que ocupan en disco. Los archivos comprimidos y dispersos ocupan menos, los archivos con varios vínculos físicos se cuentan una vez por ruta y los archivos solo en la nube (por ejemplo, en OneDrive) cuentan completos aunque ocupen poco o nada en el equipo. Borrar archivos no libera necesariamente la misma cantidad.",
   "summary.volume": "Unidad al empezar el análisis: {free} libres de {total}",
   "summary.volumeUnknown": "Capacidad de la unidad: desconocida",
+
+  "common.close": "Cerrar",
+  "api.INVALID_PARAMETER": "La solicitud no era válida. Inténtalo de nuevo.",
+
+  "view.label": "Vista",
+  "view.folder": "Contenido de la carpeta",
+  "view.largest": "Archivos más grandes",
+
+  "largest.title": "Archivos más grandes de este análisis",
+  "largest.description":
+    "Los archivos más grandes encontrados en {root}. Solo incluye lo que cubrió este análisis, no todo el disco.",
+  "largest.minSizeLabel": "Tamaño mínimo",
+  "largest.anySize": "Cualquier tamaño",
+  "largest.atLeast": "{size} o más",
+  "largest.caption":
+    "Archivos más grandes de {root}, de mayor a menor. Los tamaños son tamaños lógicos de archivo.",
+  "largest.columnName": "Nombre",
+  "largest.columnLocation": "Ubicación",
+  "largest.columnSize": "Tamaño",
+  "largest.columnActions": "Acciones",
+  "largest.rootLocation": "Raíz de la carpeta analizada",
+  "largest.count":
+    "Se muestran {shown} de {matching} archivos que cumplen el filtro",
+  "largest.onlyLargest": "Solo se muestran los {limit} más grandes.",
+  "largest.partial":
+    "Este análisis omitió algunos elementos, así que los archivos que contienen no aparecen en la lista.",
+  "largest.emptyTitle": "No hay archivos que mostrar",
+  "largest.emptyAny": "Este análisis no encontró archivos.",
+  "largest.emptyFiltered": "Ningún archivo ocupa {size} o más.",
+  "largest.loading": "Ordenando archivos",
+  "largest.errorTitle": "No se pudieron ordenar los archivos",
+
+  "show.button": "Mostrar en el Explorador",
+  "show.itemLabel": "Mostrar {name} en el Explorador",
+  "show.errorTitle": "No se pudo mostrar {name}",
+  "show.ITEM_MISSING":
+    "Ya no está donde lo encontró el análisis. Puede que se haya movido o borrado después; vuelve a analizar para actualizar los resultados.",
+  "show.ITEM_UNAVAILABLE":
+    "Windows no permitió que la app lo comprobara. Puede que requiera permisos.",
+  "show.SERVICE_UNAVAILABLE":
+    "El motor de análisis no respondió. Inténtalo de nuevo cuando esté listo.",
+  "show.INVALID_REQUEST": "Este elemento no se puede mostrar.",
+  "show.unknown": "No se pudo mostrar el elemento.",
+
+  "skipped.open": "Ver elementos omitidos",
+  "skipped.title": "Elementos omitidos",
+  "skipped.description":
+    "Estos elementos no se midieron o solo se leyeron en parte, así que los totales que los incluyen son un mínimo.",
+  "skipped.close": "Cerrar elementos omitidos",
+  "skipped.caption": "Elementos omitidos y por qué se omitieron",
+  "skipped.columnItem": "Elemento",
+  "skipped.columnReason": "Motivo",
+  "skipped.root": "La carpeta analizada",
+  "skipped.range": "{from}–{to} de {total} elementos omitidos",
+  "skipped.truncated":
+    "Solo se registraron los primeros {recorded} de {total}.",
+  "skipped.empty": "No se omitió nada.",
+  "skipped.loading": "Cargando elementos omitidos",
+  "skipped.errorTitle": "No se pudieron cargar los elementos omitidos",
+
+  "quick.title": "Empieza rápido",
+  "quick.recent": "Carpetas recientes",
+  "quick.remove": "Quitar {name} de las carpetas recientes",
+  "quick.clear": "Borrar carpetas recientes",
+  "quick.common": "Carpetas habituales",
+  "quick.home": "Tu carpeta de usuario",
+  "quick.desktop": "Escritorio",
+  "quick.documents": "Documentos",
+  "quick.downloads": "Descargas",
+  "quick.pictures": "Imágenes",
+  "quick.music": "Música",
+  "quick.videos": "Vídeos",
+
+  "shortcuts.title": "Atajos de teclado",
+  "shortcuts.chooseFolder": "Elegir una carpeta",
+  "shortcuts.rescan": "Volver a analizar",
+  "shortcuts.search": "Buscar en la lista visible",
+  "shortcuts.parent": "Ir a la carpeta superior",
+  "shortcuts.note":
+    "Los atajos no hacen nada mientras escribes en un campo o hay un diálogo abierto.",
+
+  "capacity.title": "Capacidad de análisis",
+  "capacity.description":
+    "En este equipo, un análisis admite unos {count} elementos con rutas de unos {length} caracteres. Las carpetas más grandes se detienen con una explicación.",
+  "capacity.unavailable": "Se muestra cuando el motor de análisis esté listo.",
 };

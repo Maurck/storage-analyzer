@@ -2,6 +2,7 @@ import React from "react";
 import { DirectoryNode, Volume } from "../model/directory.types";
 import { Icon } from "../../../shared/ui/Icon";
 import { Alert } from "../../../shared/components/Alert";
+import { Button } from "../../../shared/ui/Button";
 import { formatBytes, formatNumber } from "../../../shared/lib/format";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
@@ -9,9 +10,15 @@ interface ScanSummaryProps {
   root: DirectoryNode;
   skippedCount: number;
   volume?: Volume | null;
+  onOpenSkipped?(): void;
 }
 
-export function ScanSummary({ root, skippedCount, volume }: ScanSummaryProps) {
+export function ScanSummary({
+  root,
+  skippedCount,
+  volume,
+  onOpenSkipped,
+}: ScanSummaryProps) {
   const { t } = useTranslation();
   return (
     <>
@@ -53,6 +60,16 @@ export function ScanSummary({ root, skippedCount, volume }: ScanSummaryProps) {
               ? t("summary.skippedIncomplete")
               : t("summary.skippedNone")}
           </small>
+          {skippedCount > 0 && onOpenSkipped && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="metric-action"
+              onClick={onOpenSkipped}
+            >
+              {t("skipped.open")}
+            </Button>
+          )}
         </div>
       </section>
       <div className="size-context">

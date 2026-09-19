@@ -1,11 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "react-query";
+import { useQuery, useQueryClient } from "react-query";
 import { useStorageScan } from "./hooks/useStorageScan";
 import { useServiceStatus } from "./hooks/useServiceStatus";
 import { ServiceStatusBanner } from "./components/ServiceStatusBanner";
 import { ScanProgress } from "./components/ScanProgress";
+import { useShowItem } from "./hooks/useShowItem";
+import { SHORTCUTS, useShortcuts } from "./hooks/useShortcuts";
 import { DirectoryNode, NodeCache } from "./model/directory.types";
-import { getDirectory } from "./api/directory.api";
+import { getCapacity, getDirectory } from "./api/directory.api";
+import { LargestFiles } from "./components/LargestFiles";
+import { SkippedItemsDialog } from "./components/SkippedItemsDialog";
+import { QuickStart } from "./components/QuickStart";
 import { DirectoryTree } from "./components/DirectoryTree";
 import { SpaceDistribution } from "./components/SpaceDistribution";
 import { ContentsTable } from "./components/ContentsTable";
@@ -26,6 +31,14 @@ import {
 } from "../../shared/i18n/useErrorMessage";
 import { useMediaQuery } from "../../shared/hooks/useMediaQuery";
 import { SplitPane } from "../../layouts/SplitPane";
+import { SegmentedControl } from "../../shared/ui/SegmentedControl";
+import { CommonFolder, desktopBridge } from "../../shared/lib/desktopBridge";
+import {
+  clearRecentFolders,
+  forgetFolder,
+  readRecentFolders,
+  rememberFolder,
+} from "../../shared/lib/recentFolders";
 import { AppShell } from "../../layouts/AppShell";
 import { SettingsDialog } from "../settings/SettingsDialog";
 import { useTranslation } from "../../shared/i18n/LanguageProvider";
@@ -50,6 +63,11 @@ export function StorageAnalysisPage() {
   const [showChart, setShowChart] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+  const [view, setView] = useState<"folder" | "largest">("folder");
+  const [skippedOpen, setSkippedOpen] = useState(false);
+  const [recent, setRecent] = useState(readRecentFolders);
+  const [common, setCommon] = useState<CommonFolder[]>([]);
+  const skippedDialog = useRef<HTMLDialogElement>(null);
   const pathDialog = useRef<HTMLDialogElement>(null);
   const explorerDialog = useRef<HTMLDialogElement>(null);
   const settingsDialog = useRef<HTMLDialogElement>(null);
@@ -58,6 +76,24 @@ export function StorageAnalysisPage() {
   currentSnapshot.current = snapshot?.id;
   const root = snapshot?.root;
   const selected = nodes[selectedPath] ?? root;
+  const showSelected = useShowItem(snapshot?.id);
+  const capacity = useQuery(["capacity"], ({ signal }) => getCapacity(signal), {
+    enabled: serviceReady,
+    staleTime: Infinity,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    desktopBridge()
+      ?.getCommonFolders?.()
+      .then(setCommon)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (skippedOpen) skippedDialog.current?.showModal();
+    else skippedDialog.current?.close();
+  }, [skippedOpen]);
 
   useEffect(() => {
     if (!snapshot?.root) return;
@@ -111,8 +147,10 @@ export function StorageAnalysisPage() {
 
   function selectNode(node: DirectoryNode) {
     setSelectedPath(node.absolutePath);
+    setView("folder");
     setBranchError(null);
     setCopyStatus("");
+    showSelected.clearFailure();
     setDrawerOpen(false);
     void loadNode(nodes[node.absolutePath] ?? node);
   }
@@ -121,7 +159,8 @@ export function StorageAnalysisPage() {
     if (busy || !serviceReady || !path.trim()) return;
     setPickerError("");
     cancel.reset();
-    await start.mutateAsync(path.trim());
+    const started = await start.mutateAsync(path.trim());
+    setRecent((folders) => rememberFolder(folders, started.path));
     pathDialog.current?.close();
   }
 
@@ -170,6 +209,33 @@ export function StorageAnalysisPage() {
     if (trail[0].absolutePath !== root.absolutePath) trail.unshift(root);
     return trail;
   }
+
+  function rescan() {
+    if (snapshot) void begin(snapshot.path).catch(() => {});
+  }
+
+  useShortcuts({
+    chooseFolder: () => {
+      if (!busy) void chooseFolder();
+    },
+    rescan: () => {
+      if (!busy) rescan();
+    },
+    search: () => {
+      const target =
+        view === "folder"
+          ? document.querySelector<HTMLInputElement>("#contents-search")
+          : null;
+      (
+        target ?? document.querySelector<HTMLInputElement>("#tree-search")
+      )?.focus();
+    },
+    parent: () => {
+      const trail = breadcrumbs();
+      if (view === "folder" && trail.length > 1)
+        selectNode(trail[trail.length - 2]);
+    },
+  });
 
   const explorer = root && (
     <>
@@ -228,7 +294,13 @@ export function StorageAnalysisPage() {
       onOpenSettings={() => settingsDialog.current?.showModal()}
       overlays={
         <>
-          <SettingsDialog dialogRef={settingsDialog} />
+          <SettingsDialog dialogRef={settingsDialog} capacity={capacity.data} />
+          <SkippedItemsDialog
+            dialogRef={skippedDialog}
+            scanId={snapshot?.id}
+            open={skippedOpen}
+            onClose={() => setSkippedOpen(false)}
+          />
           <FolderPathDialog
             dialogRef={pathDialog}
             pending={start.isLoading}
@@ -264,10 +336,9 @@ export function StorageAnalysisPage() {
           {snapshot && (
             <Button
               variant="secondary"
-              onClick={() => {
-                void begin(snapshot.path).catch(() => {});
-              }}
+              onClick={rescan}
               disabled={busy || !serviceReady}
+              aria-keyshortcuts={SHORTCUTS.rescan}
             >
               <Icon name="refresh" size={17} />
               {t("page.rescan")}
@@ -279,6 +350,7 @@ export function StorageAnalysisPage() {
             }}
             disabled={busy || !serviceReady}
             loading={start.isLoading}
+            aria-keyshortcuts={SHORTCUTS.chooseFolder}
           >
             <Icon name="folder-open" size={18} />
             {t("page.selectFolder")}
@@ -371,7 +443,24 @@ export function StorageAnalysisPage() {
         </div>
       )}
       {!root && !busy && (
-        <WelcomeState onChooseFolder={chooseFolder} disabled={!serviceReady} />
+        <WelcomeState
+          onChooseFolder={chooseFolder}
+          disabled={!serviceReady}
+          quickStart={
+            <QuickStart
+              recent={recent}
+              common={common}
+              disabled={!serviceReady}
+              onAnalyze={(path) => {
+                void begin(path).catch(() => {});
+              }}
+              onForget={(path) =>
+                setRecent((folders) => forgetFolder(folders, path))
+              }
+              onClear={() => setRecent(clearRecentFolders())}
+            />
+          }
+        />
       )}
       {!root && busy && (
         <div className="initial-skeleton" aria-hidden="true">
@@ -386,6 +475,7 @@ export function StorageAnalysisPage() {
             root={root}
             skippedCount={snapshot?.skippedCount ?? 0}
             volume={snapshot?.volume}
+            onOpenSkipped={() => setSkippedOpen(true)}
           />
           <SplitPane
             sidebar={
@@ -399,172 +489,227 @@ export function StorageAnalysisPage() {
               ) : null
             }
           >
-            <div className="selection-header">
-              <nav
-                className="path-breadcrumbs"
-                aria-label={t("selection.breadcrumbLabel")}
-              >
-                {breadcrumbs().map((node, index, all) => (
-                  <React.Fragment key={node.absolutePath}>
-                    {index > 0 && <Icon name="chevron-right" size={14} />}
-                    <button
-                      onClick={() => selectNode(node)}
-                      aria-current={
-                        index === all.length - 1 ? "location" : undefined
-                      }
-                      title={node.absolutePath}
-                    >
-                      {index === 0 && <Icon name="folder" size={15} />}
-                      <span>{node.name}</span>
-                    </button>
-                  </React.Fragment>
-                ))}
-              </nav>
-              <div className="selection-title-row">
-                <div className="selection-title">
-                  <span className="selection-icon">
-                    <Icon
-                      name={selected.type === "FILE" ? "file" : "folder-open"}
-                      size={24}
-                    />
-                  </span>
-                  <div>
-                    <h2>{selected.name}</h2>
-                    <span className="muted">
-                      {formatBytes(selected.sizeBytes)}
-                      {selected.type === "FOLDER" &&
-                        " · " +
-                          t("selection.files", {
-                            count: formatNumber(selected.fileCount),
-                          })}
-                      {selected.partial && " · " + t("selection.incomplete")}
-                    </span>
-                  </div>
-                </div>
-                <div className="selection-actions">
-                  {compact && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setDrawerOpen(true)}
-                    >
-                      <Icon name="menu" size={17} />
-                      {t("selection.explorer")}
-                    </Button>
-                  )}
-                  <IconButton
-                    label={t("selection.copyPath")}
-                    variant="ghost"
-                    onClick={() => {
-                      void copyPath();
-                    }}
-                  >
-                    <Icon name="copy" size={18} />
-                  </IconButton>
-                  {selected.type === "FOLDER" && (
-                    <IconButton
-                      label={
-                        showChart
-                          ? t("selection.hideChart")
-                          : t("selection.showChart")
-                      }
-                      aria-pressed={showChart}
-                      variant="ghost"
-                      onClick={() => setShowChart((value) => !value)}
-                    >
-                      <Icon name="grid" size={18} />
-                    </IconButton>
-                  )}
-                </div>
-              </div>
-              <p className="selected-full-path" title={selected.absolutePath}>
-                {selected.absolutePath}
-              </p>
-              {copyStatus && (
-                <p role="status" className="copy-status">
-                  {copyStatus}
-                </p>
-              )}
-            </div>
-            {branchError && (
-              <ErrorState
-                title={t("error.branchTitle", {
-                  name: branchError.node.name,
-                })}
-                description={branchError.message}
-                onRetry={() => {
-                  void loadNode(branchError.node);
-                }}
+            <SegmentedControl<"folder" | "largest">
+              name="workspace-view"
+              className="view-switch"
+              legend={t("view.label")}
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "folder", label: t("view.folder") },
+                { value: "largest", label: t("view.largest") },
+              ]}
+            />
+            {view === "largest" ? (
+              <LargestFiles
+                key={snapshot!.id}
+                scanId={snapshot!.id}
+                root={root}
+                onOpenSkipped={() => setSkippedOpen(true)}
               />
-            )}
-            {loadingPaths.has(selected.absolutePath) ? (
-              <div className="detail-skeleton" role="status">
-                <span className="sr-only">
-                  {t("selection.loadingContents")}
-                </span>
-                <Skeleton height={260} />
-                <Skeleton height={220} />
-              </div>
-            ) : selected.type === "FILE" ? (
-              <div className="file-detail">
-                <EmptyState
-                  title={t("file.title")}
-                  description={t("file.description")}
-                  icon={<Icon name="file" size={36} />}
-                />
-                <dl>
-                  <div>
-                    <dt>{t("file.name")}</dt>
-                    <dd>{selected.name}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("file.size")}</dt>
-                    <dd>{formatBytes(selected.sizeBytes)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t("file.path")}</dt>
-                    <dd>{selected.absolutePath}</dd>
-                  </div>
-                </dl>
-              </div>
-            ) : selected.type === "ERROR" ? (
-              <ErrorState
-                title={t("error.itemUnreadableTitle")}
-                description={describeCode(
-                  i18n,
-                  "nodeIssue",
-                  selected.errorCode,
-                  "error.itemUnreadableDescription",
-                )}
-              />
-            ) : selected.childrenLoaded ? (
-              <>
-                {showChart && (
-                  <SpaceDistribution node={selected} onSelect={selectNode} />
-                )}
-                <ContentsTable
-                  key={selected.absolutePath}
-                  node={selected}
-                  onSelect={selectNode}
-                />
-              </>
             ) : (
-              !branchError && (
-                <EmptyState
-                  title={t("load.title")}
-                  description={t("load.description")}
-                  action={
-                    <Button
-                      disabled={!serviceReady}
-                      onClick={() => {
-                        void loadNode(selected);
-                      }}
+              <>
+                <div className="selection-header">
+                  <nav
+                    className="path-breadcrumbs"
+                    aria-label={t("selection.breadcrumbLabel")}
+                  >
+                    {breadcrumbs().map((node, index, all) => (
+                      <React.Fragment key={node.absolutePath}>
+                        {index > 0 && <Icon name="chevron-right" size={14} />}
+                        <button
+                          onClick={() => selectNode(node)}
+                          aria-current={
+                            index === all.length - 1 ? "location" : undefined
+                          }
+                          title={node.absolutePath}
+                        >
+                          {index === 0 && <Icon name="folder" size={15} />}
+                          <span>{node.name}</span>
+                        </button>
+                      </React.Fragment>
+                    ))}
+                  </nav>
+                  <div className="selection-title-row">
+                    <div className="selection-title">
+                      <span className="selection-icon">
+                        <Icon
+                          name={
+                            selected.type === "FILE" ? "file" : "folder-open"
+                          }
+                          size={24}
+                        />
+                      </span>
+                      <div>
+                        <h2>{selected.name}</h2>
+                        <span className="muted">
+                          {formatBytes(selected.sizeBytes)}
+                          {selected.type === "FOLDER" &&
+                            " · " +
+                              t("selection.files", {
+                                count: formatNumber(selected.fileCount),
+                              })}
+                          {selected.partial &&
+                            " · " + t("selection.incomplete")}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="selection-actions">
+                      {compact && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setDrawerOpen(true)}
+                        >
+                          <Icon name="menu" size={17} />
+                          {t("selection.explorer")}
+                        </Button>
+                      )}
+                      {showSelected.available && (
+                        <IconButton
+                          label={t("show.itemLabel", { name: selected.name })}
+                          variant="ghost"
+                          onClick={() => {
+                            void showSelected.show(
+                              selected.name,
+                              selected.absolutePath,
+                            );
+                          }}
+                        >
+                          <Icon name="folder-open" size={18} />
+                        </IconButton>
+                      )}
+                      <IconButton
+                        label={t("selection.copyPath")}
+                        variant="ghost"
+                        onClick={() => {
+                          void copyPath();
+                        }}
+                      >
+                        <Icon name="copy" size={18} />
+                      </IconButton>
+                      {selected.type === "FOLDER" && (
+                        <IconButton
+                          label={
+                            showChart
+                              ? t("selection.hideChart")
+                              : t("selection.showChart")
+                          }
+                          aria-pressed={showChart}
+                          variant="ghost"
+                          onClick={() => setShowChart((value) => !value)}
+                        >
+                          <Icon name="grid" size={18} />
+                        </IconButton>
+                      )}
+                    </div>
+                  </div>
+                  <p
+                    className="selected-full-path"
+                    title={selected.absolutePath}
+                  >
+                    {selected.absolutePath}
+                  </p>
+                  {copyStatus && (
+                    <p role="status" className="copy-status">
+                      {copyStatus}
+                    </p>
+                  )}
+                  {showSelected.failure && (
+                    <Alert
+                      variant="error"
+                      title={t("show.errorTitle", {
+                        name: showSelected.failure.name,
+                      })}
                     >
-                      {t("load.button")}
-                    </Button>
-                  }
-                />
-              )
+                      {showSelected.failure.message}
+                    </Alert>
+                  )}
+                </div>
+                {branchError && (
+                  <ErrorState
+                    title={t("error.branchTitle", {
+                      name: branchError.node.name,
+                    })}
+                    description={branchError.message}
+                    onRetry={() => {
+                      void loadNode(branchError.node);
+                    }}
+                  />
+                )}
+                {loadingPaths.has(selected.absolutePath) ? (
+                  <div className="detail-skeleton" role="status">
+                    <span className="sr-only">
+                      {t("selection.loadingContents")}
+                    </span>
+                    <Skeleton height={260} />
+                    <Skeleton height={220} />
+                  </div>
+                ) : selected.type === "FILE" ? (
+                  <div className="file-detail">
+                    <EmptyState
+                      title={t("file.title")}
+                      description={t("file.description")}
+                      icon={<Icon name="file" size={36} />}
+                    />
+                    <dl>
+                      <div>
+                        <dt>{t("file.name")}</dt>
+                        <dd>{selected.name}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("file.size")}</dt>
+                        <dd>{formatBytes(selected.sizeBytes)}</dd>
+                      </div>
+                      <div>
+                        <dt>{t("file.path")}</dt>
+                        <dd>{selected.absolutePath}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ) : selected.type === "ERROR" ? (
+                  <ErrorState
+                    title={t("error.itemUnreadableTitle")}
+                    description={describeCode(
+                      i18n,
+                      "nodeIssue",
+                      selected.errorCode,
+                      "error.itemUnreadableDescription",
+                    )}
+                  />
+                ) : selected.childrenLoaded ? (
+                  <>
+                    {showChart && (
+                      <SpaceDistribution
+                        node={selected}
+                        onSelect={selectNode}
+                      />
+                    )}
+                    <ContentsTable
+                      key={selected.absolutePath}
+                      node={selected}
+                      onSelect={selectNode}
+                    />
+                  </>
+                ) : (
+                  !branchError && (
+                    <EmptyState
+                      title={t("load.title")}
+                      description={t("load.description")}
+                      action={
+                        <Button
+                          disabled={!serviceReady}
+                          onClick={() => {
+                            void loadNode(selected);
+                          }}
+                        >
+                          {t("load.button")}
+                        </Button>
+                      }
+                    />
+                  )
+                )}
+              </>
             )}
           </SplitPane>
         </>

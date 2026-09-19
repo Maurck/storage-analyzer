@@ -46,4 +46,51 @@ export interface Health {
   apiVersion: number;
 }
 
+export interface RankedFile {
+  name: string;
+  absolutePath: string;
+  /** From the scan root, including the file name. */
+  relativePath: string;
+  sizeBytes: number;
+}
+
+export interface LargestFiles {
+  scanId: string;
+  root: string;
+  /** The scan skipped something, so files there are missing. */
+  partial: boolean;
+  limit: number;
+  minSizeBytes: number;
+  /** Files at or above the minimum; may exceed `files.length`. */
+  matchingFiles: number;
+  files: RankedFile[];
+}
+
+export interface SkippedItem {
+  name: string;
+  absolutePath: string;
+  /** From the scan root; empty for the root itself. */
+  relativePath: string;
+  type: DirectoryNode["type"];
+  code: string;
+}
+
+export interface SkippedItems {
+  scanId: string;
+  /** Equals the scan's skippedCount. */
+  total: number;
+  /** Lower than `total` when the list was truncated. */
+  recorded: number;
+  offset: number;
+  items: SkippedItem[];
+}
+
+/** What this computer can hold per analysis, from the backend's heap. */
+export interface Capacity {
+  maxHeapBytes: number;
+  snapshotBudgetBytes: number;
+  maxEntries: number;
+  referencePathLength: number;
+}
+
 export type NodeCache = Record<string, DirectoryNode>;

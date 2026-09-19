@@ -1,6 +1,14 @@
 import { AppError, isApiCode, request } from "../../../shared/lib/http";
 import { backendUrl } from "../../../shared/lib/desktopBridge";
-import { DirectoryNode, Health, Scan, Volume } from "../model/directory.types";
+import {
+  Capacity,
+  DirectoryNode,
+  Health,
+  LargestFiles,
+  Scan,
+  SkippedItems,
+  Volume,
+} from "../model/directory.types";
 
 /** Must match HealthResource in the backend and API_VERSION in backend-process.js. */
 export const APPLICATION = "storage-analyzer";
@@ -162,4 +170,108 @@ export const getDirectory = async (
       `/scans/${encodeURIComponent(id)}/directory?path=${encodeURIComponent(path)}`,
       { signal },
     ),
+  );
+
+const text = (value: unknown): value is string => typeof value === "string";
+
+export function validateLargest(value: unknown): LargestFiles {
+  const largest = value as LargestFiles | null;
+  const paths = new Set<string>();
+  if (
+    !isRecord(largest) ||
+    !text(largest.scanId) ||
+    !text(largest.root) ||
+    typeof largest.partial !== "boolean" ||
+    ![largest.limit, largest.minSizeBytes, largest.matchingFiles].every(
+      validCount,
+    ) ||
+    !Array.isArray(largest.files) ||
+    largest.files.length > largest.limit ||
+    !largest.files.every((file) => {
+      const valid =
+        isRecord(file) &&
+        text(file.name) &&
+        text(file.absolutePath) &&
+        file.absolutePath.length > 0 &&
+        !paths.has(file.absolutePath) &&
+        text(file.relativePath) &&
+        validCount(file.sizeBytes) &&
+        file.sizeBytes >= largest.minSizeBytes;
+      if (valid) paths.add(file.absolutePath);
+      return valid;
+    })
+  ) {
+    throw invalidData();
+  }
+  return largest;
+}
+
+export function validateSkipped(value: unknown): SkippedItems {
+  const skipped = value as SkippedItems | null;
+  if (
+    !isRecord(skipped) ||
+    !text(skipped.scanId) ||
+    ![skipped.total, skipped.recorded, skipped.offset].every(validCount) ||
+    skipped.recorded > skipped.total ||
+    !Array.isArray(skipped.items) ||
+    !skipped.items.every(
+      (item) =>
+        isRecord(item) &&
+        text(item.name) &&
+        text(item.absolutePath) &&
+        text(item.relativePath) &&
+        text(item.type) &&
+        ["FOLDER", "FILE", "ERROR"].includes(item.type) &&
+        isApiCode(item.code),
+    )
+  ) {
+    throw invalidData();
+  }
+  return skipped;
+}
+
+export function validateCapacity(value: unknown): Capacity {
+  const capacity = value as Capacity | null;
+  if (
+    !isRecord(capacity) ||
+    ![
+      capacity.maxHeapBytes,
+      capacity.snapshotBudgetBytes,
+      capacity.maxEntries,
+      capacity.referencePathLength,
+    ].every(validCount)
+  ) {
+    throw invalidData();
+  }
+  return capacity;
+}
+
+export const getLargest = async (
+  id: string,
+  { limit = 100, minSizeBytes = 0 } = {},
+  signal?: AbortSignal,
+) =>
+  validateLargest(
+    await request(
+      backendUrl(),
+      `/scans/${encodeURIComponent(id)}/largest?limit=${limit}&minSizeBytes=${minSizeBytes}`,
+      { signal },
+    ),
+  );
+export const getSkipped = async (
+  id: string,
+  offset: number,
+  limit: number,
+  signal?: AbortSignal,
+) =>
+  validateSkipped(
+    await request(
+      backendUrl(),
+      `/scans/${encodeURIComponent(id)}/skipped?offset=${offset}&limit=${limit}`,
+      { signal },
+    ),
+  );
+export const getCapacity = async (signal?: AbortSignal) =>
+  validateCapacity(
+    await request(backendUrl(), "/capacity", { signal, timeoutMs: 3000 }),
   );

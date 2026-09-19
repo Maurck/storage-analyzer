@@ -1,4 +1,4 @@
-import React from "react";
+import React, { ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Icon } from "../../../shared/ui/Icon";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
@@ -6,9 +6,14 @@ import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 interface WelcomeStateProps {
   onChooseFolder(): void;
   disabled?: boolean;
+  quickStart?: ReactNode;
 }
 
-export function WelcomeState({ onChooseFolder, disabled }: WelcomeStateProps) {
+export function WelcomeState({
+  onChooseFolder,
+  disabled,
+  quickStart,
+}: WelcomeStateProps) {
   const { t } = useTranslation();
   return (
     <section className="welcome-panel">
@@ -37,6 +42,7 @@ export function WelcomeState({ onChooseFolder, disabled }: WelcomeStateProps) {
         <Icon name="check" size={15} />
         {t("welcome.privacy")}
       </span>
+      {quickStart}
       <div className="welcome-features">
         <span>
           <Icon name="grid" />

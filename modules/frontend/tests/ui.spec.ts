@@ -2,7 +2,10 @@ import { expect, Page, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import type {
   DirectoryNode,
+  LargestFiles,
+  RankedFile,
   Scan,
+  SkippedItems,
 } from "../src/features/storage-analysis/model/directory.types";
 import type { BackendLifecycle } from "../src/shared/lib/desktopBridge";
 
@@ -89,16 +92,48 @@ interface ApiOptions {
   /** Added to every scan the mock returns, including its status. */
   scanExtras?: Partial<Scan>;
   /** What preload.js exposes; lifecycle methods only when a lifecycle is given. */
-  bridge?: { lifecycle?: BackendLifecycle; numberLocale?: string };
+  bridge?: {
+    lifecycle?: BackendLifecycle;
+    numberLocale?: string;
+    common?: { id: string; path: string }[];
+  };
+  /** Marks the analysis partial, as if something had been skipped. */
+  partialRoot?: boolean;
+  /** Files ranked by GET /largest; by default the fixture's own files. */
+  ranking?: RankedFile[];
+  skipped?: Omit<SkippedItems, "scanId" | "offset">;
+}
+
+function rankFiles(root: DirectoryNode): RankedFile[] {
+  const files: RankedFile[] = [];
+  const visit = (node: DirectoryNode) => {
+    if (node.type === "FILE")
+      files.push({
+        name: node.name,
+        absolutePath: node.absolutePath,
+        relativePath: node.absolutePath.slice(root.absolutePath.length + 1),
+        sizeBytes: node.sizeBytes,
+      });
+    node.subdirectories.forEach(visit);
+  };
+  visit(root);
+  return files.sort(
+    (a, b) =>
+      b.sizeBytes - a.sizeBytes || (a.absolutePath < b.absolutePath ? -1 : 1),
+  );
 }
 async function prepare(page: Page, options: ApiOptions = {}) {
   const data = fixture(options.extraFiles);
+  if (options.partialRoot) data.root.partial = true;
+  const ranking = options.ranking ?? rankFiles(data.root);
   const requests = {
     starts: 0,
     polls: 0,
     branches: [] as string[],
     cancels: 0,
     health: 0,
+    largest: [] as string[],
+    skipped: [] as string[],
   };
   const state = {
     pending: !!options.pending,
@@ -109,6 +144,7 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     cancelGate: undefined as Promise<void> | undefined,
     health: options.health ?? "up",
     extras: options.scanExtras ?? ({} as Partial<Scan>),
+    expiredQueries: false,
   };
   const scan = (
     status: Scan["status"],
@@ -138,10 +174,20 @@ async function prepare(page: Page, options: ApiOptions = {}) {
       },
     };
     (window as any).__backend = backend;
+    const desktop = {
+      shown: [] as { scanId: string; path: string }[],
+      showResult: { ok: true } as { ok: boolean; code?: string },
+    };
+    (window as any).__desktop = desktop;
     window.storageAnalyzer = {
       backendUrl: "http://localhost:5000",
       numberLocale: bridge.numberLocale,
       selectDirectory: async () => "/fixture",
+      showItemInFolder: async (scanId: string, path: string) => {
+        desktop.shown.push({ scanId, path });
+        return desktop.showResult;
+      },
+      getCommonFolders: async () => bridge.common ?? [],
       ...(bridge.lifecycle && {
         getBackendStatus: async () => backend.status!,
         retryBackend: async () => {
@@ -178,6 +224,19 @@ async function prepare(page: Page, options: ApiOptions = {}) {
         }),
       });
   });
+  await page.route("http://localhost:5000/capacity", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: CORS,
+      body: JSON.stringify({
+        maxHeapBytes: 4 * GB,
+        snapshotBudgetBytes: 2 * GB,
+        maxEntries: 3862380,
+        referencePathLength: 120,
+      }),
+    }),
+  );
   await page.route("http://localhost:5000/scans**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -206,6 +265,40 @@ async function prepare(page: Page, options: ApiOptions = {}) {
       requests.cancels += 1;
       if (state.cancelGate) await state.cancelGate;
       await respond(scan("CANCELLED", url.pathname.split("/")[2]));
+    } else if (url.pathname.endsWith("/largest")) {
+      requests.largest.push(url.search);
+      const limit = Number(url.searchParams.get("limit"));
+      const minSizeBytes = Number(url.searchParams.get("minSizeBytes"));
+      if (state.expiredQueries) {
+        await respond(
+          { code: "SCAN_NOT_FOUND", message: "This scan has expired." },
+          404,
+        );
+        return;
+      }
+      const matching = ranking.filter((file) => file.sizeBytes >= minSizeBytes);
+      const body: LargestFiles = {
+        scanId: url.pathname.split("/")[2],
+        root: data.root.absolutePath,
+        partial: data.root.partial,
+        limit,
+        minSizeBytes,
+        matchingFiles: matching.length,
+        files: matching.slice(0, limit),
+      };
+      await respond(body);
+    } else if (url.pathname.endsWith("/skipped")) {
+      requests.skipped.push(url.search);
+      const offset = Number(url.searchParams.get("offset"));
+      const limit = Number(url.searchParams.get("limit"));
+      const skipped = options.skipped ?? { total: 0, recorded: 0, items: [] };
+      const body: SkippedItems = {
+        ...skipped,
+        scanId: url.pathname.split("/")[2],
+        offset,
+        items: skipped.items.slice(offset, offset + limit),
+      };
+      await respond(body);
     } else if (url.pathname.endsWith("/directory")) {
       const path = url.searchParams.get("path")!;
       requests.branches.push(path);
@@ -953,7 +1046,7 @@ test("coded errors follow the interface language while numbers follow the system
   // The browser locale is en-US, so the number keeps English separators.
   await expect(
     page.getByText(
-      "Esta carpeta contiene más de 250,000 elementos, el máximo que admite un análisis. Elige una carpeta más pequeña.",
+      "Esta carpeta contiene más de 250,000 elementos, el máximo que admite un análisis en este equipo. Elige una carpeta más pequeña.",
     ),
   ).toBeVisible();
   await expect(page.getByText(/exceeded the limit/)).toHaveCount(0);
@@ -1013,6 +1106,365 @@ test("forced colors keep the selection and share bars distinguishable", async ({
   await checkAccessibility(page, ["color-contrast"]);
   await page.screenshot({
     path: "test-results/forced-colors.png",
+    fullPage: true,
+  });
+});
+
+async function showLargest(page: Page) {
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  return page.getByRole("table", { name: /^Largest files in Fixture/ });
+}
+
+test("the largest files of the whole analysis are found without opening folders", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page);
+  await analyze(page);
+  const table = await showLargest(page);
+  const rows = table.locator("tbody tr");
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toContainText("package.zip");
+  await expect(rows.nth(0)).toContainText("Projects");
+  await expect(rows.nth(0)).toContainText("512 MB");
+  // Equal sizes keep the backend's order: by path.
+  await expect(rows.nth(1)).toContainText("sun.jpg");
+  await expect(rows.nth(2)).toContainText("assets.png");
+  await expect(rows.nth(3)).toContainText("readme.txt");
+  await expect(rows.nth(3)).toContainText("Top of the analyzed folder");
+  await expect(
+    page.getByText("Showing 4 of 4 matching files", { exact: true }),
+  ).toBeVisible();
+  expect(requests.branches).toEqual([]);
+  await checkAccessibility(page);
+
+  await page.getByRole("radio", { name: "100 MB or more" }).check();
+  await expect(rows).toHaveCount(3);
+  await page.getByRole("radio", { name: "1.00 GB or more" }).check();
+  await expect(page.getByText("No file is 1.00 GB or larger.")).toBeVisible();
+  expect(requests.largest).toEqual([
+    "?limit=100&minSizeBytes=0",
+    "?limit=100&minSizeBytes=104857600",
+    "?limit=100&minSizeBytes=1073741824",
+  ]);
+
+  await treeNode(page, "Photos").click();
+  await expect(
+    page.getByRole("radio", { name: "Folder contents" }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("heading", { name: "Photos", exact: true }),
+  ).toBeVisible();
+});
+
+test("deep files and duplicate names are told apart by their location", async ({
+  page,
+}) => {
+  const file = (relativePath: string, sizeBytes: number) => ({
+    name: relativePath.split("/").pop()!,
+    absolutePath: `/fixture/${relativePath}`,
+    relativePath,
+    sizeBytes,
+  });
+  await prepare(page, {
+    ranking: [
+      file("a/b/c/d/e/f/movie.mkv", 3 * GB),
+      file("left/copy.bin", GB),
+      file("right/copy.bin", GB),
+    ],
+  });
+  await analyze(page);
+  const rows = (await showLargest(page)).locator("tbody tr");
+  await expect(rows.nth(0)).toContainText("movie.mkv");
+  await expect(rows.nth(0)).toContainText("a/b/c/d/e/f");
+  await expect(rows.nth(0)).toContainText("3.00 GB");
+  await expect(rows.nth(1)).toContainText("left");
+  await expect(rows.nth(2)).toContainText("right");
+  await expect(rows.filter({ hasText: "copy.bin" })).toHaveCount(2);
+});
+
+test("show in Explorer targets the chosen item and explains a moved one", async ({
+  page,
+}) => {
+  await prepare(page);
+  await analyze(page);
+  await showLargest(page);
+  const shown = () => page.evaluate(() => (window as any).__desktop.shown);
+  await page
+    .getByRole("button", { name: "Show package.zip in Explorer" })
+    .focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(shown)
+    .toEqual([
+      { scanId: "scan-fixture-1", path: "/fixture/Projects/package.zip" },
+    ]);
+
+  await page.evaluate(() => {
+    (window as any).__desktop.showResult = {
+      ok: false,
+      code: "ITEM_MISSING",
+    };
+  });
+  await page.getByRole("button", { name: "Show sun.jpg in Explorer" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Could not show sun.jpg" }),
+  ).toContainText("It is no longer where the analysis found it");
+
+  await page.evaluate(() => {
+    (window as any).__desktop.showResult = { ok: true };
+  });
+  await page.getByRole("radio", { name: "Folder contents" }).check();
+  await page.getByRole("button", { name: "Show Fixture in Explorer" }).click();
+  await expect.poll(async () => (await shown()).length).toBe(3);
+  expect((await shown())[2].path).toBe("/fixture");
+});
+
+test("a browser preview never offers to show items in Explorer", async ({
+  page,
+}) => {
+  await prepare(page);
+  await page.evaluate(() => {
+    delete (window as any).storageAnalyzer.showItemInFolder;
+  });
+  await analyze(page);
+  await showLargest(page);
+  await expect(page.getByRole("button", { name: /in Explorer$/ })).toHaveCount(
+    0,
+  );
+  await expect(page.getByRole("columnheader", { name: "Actions" })).toHaveCount(
+    0,
+  );
+});
+
+test("an expired analysis explains why the ranking is unavailable", async ({
+  page,
+}) => {
+  const { state } = await prepare(page);
+  await analyze(page);
+  state.expiredQueries = true;
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  const error = page
+    .getByRole("alert")
+    .filter({ hasText: "Could not rank the files" });
+  await expect(error).toContainText(
+    "This analysis has expired or no longer exists. Start a new one.",
+  );
+});
+
+test("a partial analysis warns about its ranking and lists what it skipped", async ({
+  page,
+}) => {
+  await prepare(page, {
+    partialRoot: true,
+    scanExtras: { skippedCount: 3 },
+    skipped: {
+      total: 3,
+      recorded: 2,
+      items: [
+        {
+          name: "deep",
+          absolutePath: "/fixture/Projects/deep",
+          relativePath: "Projects/deep",
+          type: "ERROR",
+          code: "DEPTH_LIMIT",
+        },
+        {
+          name: "Fixture",
+          absolutePath: "/fixture",
+          relativePath: "",
+          type: "FOLDER",
+          code: "CONTENTS_PARTIALLY_UNREADABLE",
+        },
+      ],
+    },
+  });
+  await analyze(page);
+  await showLargest(page);
+  const card = page.locator(".largest-card");
+  await expect(card).toContainText(
+    "This analysis skipped some items, so files inside them are not ranked.",
+  );
+  const open = card.getByRole("button", { name: "View skipped items" });
+  await open.click();
+  const dialog = page.getByRole("dialog", { name: "Skipped items" });
+  await expect(dialog).toBeVisible();
+  const rows = dialog.getByRole("table").locator("tbody tr");
+  await expect(rows.nth(0)).toContainText("Projects/deep");
+  await expect(rows.nth(0)).toContainText(
+    "Too deep to analyze; its contents are not counted.",
+  );
+  await expect(rows.nth(1)).toContainText("The analyzed folder");
+  await expect(rows.nth(1)).toContainText(
+    "Some of its items could not be read.",
+  );
+  await expect(dialog).toContainText("1–2 of 3 skipped items");
+  await expect(dialog).toContainText("Only the first 2 of 3 were recorded.");
+  await checkAccessibility(page);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(open).toBeFocused();
+  // The summary opens the same list.
+  await expect(
+    page
+      .getByRole("region", { name: "Analysis summary" })
+      .getByRole("button", { name: "View skipped items" }),
+  ).toBeVisible();
+});
+
+test("recent and common folders start an analysis in one click", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page, {
+    bridge: { common: [{ id: "downloads", path: "/fixture" }] },
+  });
+  const quick = page.getByRole("region", { name: "Start quickly" });
+  await expect(
+    quick.getByRole("heading", { name: "Recent folders" }),
+  ).toHaveCount(0);
+  await quick.getByRole("button", { name: /^Downloads/ }).click();
+  await expect(
+    page.getByRole("tree", { name: "Folders and files" }),
+  ).toBeVisible();
+  expect(requests.starts).toBe(1);
+
+  await page.reload();
+  await expect(
+    quick.getByRole("heading", { name: "Recent folders" }),
+  ).toBeVisible();
+  await checkAccessibility(page);
+  await quick.getByRole("button", { name: "fixture /fixture" }).click();
+  await expect(
+    page.getByRole("tree", { name: "Folders and files" }),
+  ).toBeVisible();
+  expect(requests.starts).toBe(2);
+
+  await page.reload();
+  await quick
+    .getByRole("button", { name: "Remove fixture from recent folders" })
+    .click();
+  await expect(
+    quick.getByRole("heading", { name: "Recent folders" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(
+    quick.getByRole("heading", { name: "Recent folders" }),
+  ).toHaveCount(0);
+});
+
+test("keyboard shortcuts work outside fields and dialogs", async ({ page }) => {
+  const { requests } = await prepare(page);
+  await expect(selectFolder(page)).toBeEnabled();
+  await expect(selectFolder(page)).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Control+O",
+  );
+  await page.keyboard.press("Control+O");
+  await expect(
+    page.getByRole("tree", { name: "Folders and files" }),
+  ).toBeVisible();
+  expect(requests.starts).toBe(1);
+
+  await page.keyboard.press("F5");
+  await expect.poll(() => requests.starts).toBe(2);
+  await expect(
+    page.getByRole("table", { name: /^Contents of Fixture/ }),
+  ).toBeVisible();
+
+  await treeNode(page, "Projects").click();
+  await expect(
+    page.getByRole("heading", { name: "Projects", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(
+    page.getByRole("heading", { name: "Fixture", exact: true }),
+  ).toBeVisible();
+
+  await page.keyboard.press("Control+F");
+  const search = page.getByRole("searchbox", { name: "Search this folder" });
+  await expect(search).toBeFocused();
+  await page.keyboard.press("Control+O");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.keyboard.press("Control+O");
+  await page.waitForTimeout(300);
+  expect(requests.starts).toBe(2);
+
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings).toContainText(
+    "one analysis can hold about 3,862,380 items with paths of about 120 characters",
+  );
+  await expect(settings).toContainText("Ctrl+O");
+  await expect(settings).toContainText("Go to the parent folder");
+  await checkAccessibility(page);
+});
+
+test("the ranking works in Spanish on a narrow window", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepare(page);
+  await analyze(page);
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("Language").selectOption("es");
+  await page.getByRole("button", { name: "Listo" }).click();
+  await page.getByRole("radio", { name: "Archivos más grandes" }).check();
+  const table = page.getByRole("table", {
+    name: /^Archivos más grandes de Fixture/,
+  });
+  await expect(table.locator("tbody tr")).toHaveCount(4);
+  await expect(table).toContainText("Raíz de la carpeta analizada");
+  // The location moves under the name instead of a truncated column.
+  await expect(table.locator(".location-inline").first()).toBeVisible();
+  await expect(table.locator(".location-inline").first()).toHaveText(
+    "Projects",
+  );
+  await expect(
+    table.getByRole("columnheader", { name: "Ubicación" }),
+  ).toBeHidden();
+  await page.evaluate(() => {
+    (window as any).__desktop.showResult = {
+      ok: false,
+      code: "ITEM_MISSING",
+    };
+  });
+  await page
+    .getByRole("button", { name: "Mostrar package.zip en el Explorador" })
+    .click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "No se pudo mostrar package.zip" }),
+  ).toContainText("Ya no está donde lo encontró el análisis");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+    ),
+  ).toBe(true);
+  await checkAccessibility(page);
+  await page.screenshot({
+    path: "test-results/largest-compact-es.png",
+    fullPage: true,
+  });
+});
+
+test("forced colors keep the chosen view and filter visible", async ({
+  page,
+}) => {
+  await page.emulateMedia({ forcedColors: "active" });
+  await prepare(page);
+  await analyze(page);
+  await showLargest(page);
+  const checked = page.locator(".sa-segmented__option.is-checked");
+  await expect(checked).toHaveCount(2);
+  for (const option of await checked.all()) {
+    expect(
+      await option.evaluate(
+        (element) => getComputedStyle(element).outlineStyle,
+      ),
+    ).toBe("solid");
+  }
+  // See the other forced-colors test for why color-contrast is skipped.
+  await checkAccessibility(page, ["color-contrast"]);
+  await page.screenshot({
+    path: "test-results/largest-forced-colors.png",
     fullPage: true,
   });
 });

@@ -222,7 +222,7 @@ export const en = {
 
   "scanError.ROOT_UNREADABLE": "The selected folder could not be read.",
   "scanError.ENTRY_LIMIT":
-    "This folder holds more than {limit} items, the most one analysis can hold. Choose a smaller folder.",
+    "This folder holds more than {limit} items, the most one analysis can hold on this computer. Choose a smaller folder.",
   "scanError.MEMORY_BUDGET":
     "The analysis engine ran out of room for results. Choose a smaller folder, or cancel another analysis and try again.",
   "scanError.OUT_OF_MEMORY":
@@ -281,4 +281,87 @@ export const en = {
   "summary.volume":
     "Drive at the start of the analysis: {free} free of {total}",
   "summary.volumeUnknown": "Drive capacity: unknown",
+
+  "common.close": "Close",
+  "api.INVALID_PARAMETER": "The request was not valid. Please try again.",
+
+  "view.label": "View",
+  "view.folder": "Folder contents",
+  "view.largest": "Largest files",
+
+  "largest.title": "Largest files in this analysis",
+  "largest.description":
+    "The largest files found in {root}. Only what this analysis covered is included, not the whole disk.",
+  "largest.minSizeLabel": "Minimum size",
+  "largest.anySize": "Any size",
+  "largest.atLeast": "{size} or more",
+  "largest.caption":
+    "Largest files in {root}, largest first. Sizes are logical file sizes.",
+  "largest.columnName": "Name",
+  "largest.columnLocation": "Location",
+  "largest.columnSize": "Size",
+  "largest.columnActions": "Actions",
+  "largest.rootLocation": "Top of the analyzed folder",
+  "largest.count": "Showing {shown} of {matching} matching files",
+  "largest.onlyLargest": "Only the {limit} largest are listed.",
+  "largest.partial":
+    "This analysis skipped some items, so files inside them are not ranked.",
+  "largest.emptyTitle": "No files to rank",
+  "largest.emptyAny": "This analysis found no files.",
+  "largest.emptyFiltered": "No file is {size} or larger.",
+  "largest.loading": "Ranking files",
+  "largest.errorTitle": "Could not rank the files",
+
+  "show.button": "Show in Explorer",
+  "show.itemLabel": "Show {name} in Explorer",
+  "show.errorTitle": "Could not show {name}",
+  "show.ITEM_MISSING":
+    "It is no longer where the analysis found it. It may have been moved or deleted since; rescan to update the results.",
+  "show.ITEM_UNAVAILABLE":
+    "Windows did not let the app check it. It may need permission.",
+  "show.SERVICE_UNAVAILABLE":
+    "The analysis engine did not answer. Try again when it is ready.",
+  "show.INVALID_REQUEST": "This item cannot be shown.",
+  "show.unknown": "The item could not be shown.",
+
+  "skipped.open": "View skipped items",
+  "skipped.title": "Skipped items",
+  "skipped.description":
+    "These items were not measured or were only partly read, so totals that include them are lower bounds.",
+  "skipped.close": "Close skipped items",
+  "skipped.caption": "Skipped items and why they were skipped",
+  "skipped.columnItem": "Item",
+  "skipped.columnReason": "Reason",
+  "skipped.root": "The analyzed folder",
+  "skipped.range": "{from}–{to} of {total} skipped items",
+  "skipped.truncated": "Only the first {recorded} of {total} were recorded.",
+  "skipped.empty": "Nothing was skipped.",
+  "skipped.loading": "Loading skipped items",
+  "skipped.errorTitle": "Could not load the skipped items",
+
+  "quick.title": "Start quickly",
+  "quick.recent": "Recent folders",
+  "quick.remove": "Remove {name} from recent folders",
+  "quick.clear": "Clear recent folders",
+  "quick.common": "Common folders",
+  "quick.home": "Your user folder",
+  "quick.desktop": "Desktop",
+  "quick.documents": "Documents",
+  "quick.downloads": "Downloads",
+  "quick.pictures": "Pictures",
+  "quick.music": "Music",
+  "quick.videos": "Videos",
+
+  "shortcuts.title": "Keyboard shortcuts",
+  "shortcuts.chooseFolder": "Choose a folder",
+  "shortcuts.rescan": "Rescan",
+  "shortcuts.search": "Search the visible list",
+  "shortcuts.parent": "Go to the parent folder",
+  "shortcuts.note":
+    "Shortcuts do nothing while you type in a field or while a dialog is open.",
+
+  "capacity.title": "Analysis capacity",
+  "capacity.description":
+    "On this computer, one analysis can hold about {count} items with paths of about {length} characters. Larger folders stop with an explanation.",
+  "capacity.unavailable": "Shown once the analysis engine is ready.",
 };

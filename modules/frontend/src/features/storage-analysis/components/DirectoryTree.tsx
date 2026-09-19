@@ -103,6 +103,9 @@ export function DirectoryTree({
     });
 
   const onKeyDown = (event: React.KeyboardEvent, node: DirectoryNode) => {
+    // Let modified keys and F5 reach the window's shortcuts.
+    if (event.ctrlKey || event.metaKey || event.altKey || event.key === "F5")
+      return;
     event.stopPropagation();
     const index = visible.findIndex(
       (item) => item.node.absolutePath === node.absolutePath,

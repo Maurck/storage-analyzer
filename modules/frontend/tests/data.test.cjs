@@ -23,7 +23,9 @@ const { createFormatters, resolveNumberLocale, percentOf, UNAVAILABLE } = requir
 const { AppError, request, errorMessage } = require('../src/shared/lib/http.ts');
 const {
   validateDirectory, validateScan, validateHealth, startScan, getScan, cancelScan, getDirectory, getHealth,
+  validateLargest, validateSkipped, validateCapacity, getLargest, getSkipped, getCapacity,
 } = require('../src/features/storage-analysis/api/directory.api.ts');
+const recentFolders = require('../src/shared/lib/recentFolders.ts');
 // Pinned: the default formatters follow this machine's regional settings.
 const { formatBytes, formatNumber } = createFormatters('en-US');
 
@@ -464,4 +466,100 @@ test('health documents are validated before the app trusts them', async t => {
   const fetchMock = t.mock.method(globalThis, 'fetch', async () => response(health));
   assert.deepEqual(await getHealth(), health);
   assert.equal(fetchMock.mock.calls[0].arguments[0], 'http://127.0.0.1:5050/health');
+});
+
+function largest(overrides = {}) {
+  return {
+    scanId: 'scan-1', root: 'C:\\Data', partial: false, limit: 100, minSizeBytes: 0, matchingFiles: 1,
+    files: [{ name: 'a.bin', absolutePath: 'C:\\Data\\a.bin', relativePath: 'a.bin', sizeBytes: 5 }],
+    ...overrides,
+  };
+}
+
+test('rankings are validated before they are shown', () => {
+  const valid = largest();
+  assert.equal(validateLargest(valid), valid);
+  assert.equal(validateLargest(largest({ files: [], matchingFiles: 0 })).files.length, 0);
+  const file = valid.files[0];
+  for (const value of [
+    null, [], largest({ partial: 'no' }), largest({ limit: -1 }), largest({ files: null }),
+    largest({ limit: 0 }), // more files than the limit
+    largest({ minSizeBytes: 6 }), // a file under the requested minimum
+    largest({ files: [file, { ...file }] }), // duplicate identity
+    largest({ files: [{ ...file, sizeBytes: 1.5 }] }), largest({ files: [{ ...file, absolutePath: '' }] }),
+    largest({ files: [{ ...file, relativePath: 3 }] }),
+  ]) {
+    assert.throws(() => validateLargest(value), error => assertAppError(error, /analysis data is incomplete/i, 0, 'invalid-data'));
+  }
+});
+
+test('skipped-item pages and capacity are validated', () => {
+  const page = {
+    scanId: 'scan-1', total: 3, recorded: 2, offset: 0,
+    items: [{ name: 'deep', absolutePath: 'C:\\Data\\deep', relativePath: 'deep', type: 'ERROR', code: 'DEPTH_LIMIT' }],
+  };
+  assert.equal(validateSkipped(page), page);
+  for (const value of [
+    { ...page, recorded: 4 }, { ...page, total: -1 }, { ...page, items: [{ ...page.items[0], code: 'depth' }] },
+    { ...page, items: [{ ...page.items[0], type: 'LINK' }] }, { ...page, items: null },
+  ]) {
+    assert.throws(() => validateSkipped(value), error => assertAppError(error, /analysis data is incomplete/i));
+  }
+  const capacity = { maxHeapBytes: 4, snapshotBudgetBytes: 2, maxEntries: 100000, referencePathLength: 120 };
+  assert.equal(validateCapacity(capacity), capacity);
+  assert.throws(() => validateCapacity({ ...capacity, maxEntries: '100000' }), error => assertAppError(error, /incomplete/i));
+});
+
+test('ranking, skipped and capacity requests encode their parameters', async t => {
+  const oldWindow = globalThis.window;
+  globalThis.window = { storageAnalyzer: { backendUrl: 'http://127.0.0.1:5050' } };
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const urls = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    urls.push(url);
+    return response(url.includes('/largest') ? largest({ limit: 10, minSizeBytes: 0 })
+      : url.includes('/skipped') ? { scanId: 'x', total: 0, recorded: 0, offset: 5, items: [] }
+      : { maxHeapBytes: 1, snapshotBudgetBytes: 1, maxEntries: 1, referencePathLength: 120 });
+  });
+  await getLargest('scan/1', { limit: 10, minSizeBytes: 104857600 });
+  await getSkipped('scan/1', 5, 100);
+  await getCapacity();
+  assert.deepEqual(urls, [
+    'http://127.0.0.1:5050/scans/scan%2F1/largest?limit=10&minSizeBytes=104857600',
+    'http://127.0.0.1:5050/scans/scan%2F1/skipped?offset=5&limit=100',
+    'http://127.0.0.1:5050/capacity',
+  ]);
+});
+
+test('recent folders keep five, most recent first, and survive blocked storage', t => {
+  const oldWindow = globalThis.window;
+  const store = new Map();
+  globalThis.window = { localStorage: {
+    getItem: key => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, value),
+  } };
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const { readRecentFolders, rememberFolder, forgetFolder, clearRecentFolders, folderName } = recentFolders;
+  let folders = readRecentFolders();
+  assert.deepEqual(folders, []);
+  for (const folder of ['A', 'B', 'C', 'D', 'E', 'F']) folders = rememberFolder(folders, folder);
+  assert.deepEqual(folders, ['F', 'E', 'D', 'C', 'B']);
+  folders = rememberFolder(folders, 'C');
+  assert.deepEqual(readRecentFolders(), ['C', 'F', 'E', 'D', 'B']);
+  assert.deepEqual(forgetFolder(folders, 'F'), ['C', 'E', 'D', 'B']);
+  assert.deepEqual(clearRecentFolders(), []);
+  assert.deepEqual(readRecentFolders(), []);
+
+  store.set('storage-analyzer:recent-folders', '{"not":"a list"}');
+  assert.deepEqual(readRecentFolders(), []);
+  store.set('storage-analyzer:recent-folders', JSON.stringify(['ok', 3, '', 'x'.repeat(40000)]));
+  assert.deepEqual(readRecentFolders(), ['ok']);
+  globalThis.window = { localStorage: { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } } };
+  assert.deepEqual(readRecentFolders(), []);
+  assert.deepEqual(rememberFolder([], 'G'), ['G'], 'a list that cannot be stored still works');
+
+  assert.equal(folderName('C:\\Users\\me\\Downloads'), 'Downloads');
+  assert.equal(folderName('C:\\Users\\me\\Downloads\\'), 'Downloads');
+  assert.equal(folderName('/home/me/Videos'), 'Videos');
+  assert.equal(folderName('C:\\'), 'C:\\');
 });

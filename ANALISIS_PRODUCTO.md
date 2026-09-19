@@ -71,7 +71,7 @@ El hero, cuatro tarjetas, la explicación técnica y la dona desplazan los resul
 
 ### 2.2 Encuentro un archivo grande, pero no puedo investigarlo dentro de la app
 
-El ranking presenta nombre y ubicación como texto y una acción de Explorador. Falta «Ver carpeta en el análisis» y un detalle útil. Volver desde el contexto debe conservar consulta, umbral, orden, página, desplazamiento y foco, no obligar a reconstruir el hallazgo.
+El ranking presenta nombre y ubicación como texto y una acción de Explorador. Falta «Ver carpeta en el análisis» y un detalle útil. Volver desde el contexto debe conservar consulta, umbral, orden, página, desplazamiento y foco, no obligar a reconstruir el hallazgo. **Atendido en H4a** (§5.2): detalle, carpeta contenedora y regreso con estado conservado.
 
 ### 2.3 No sé qué está buscando cada buscador
 
@@ -79,7 +79,7 @@ El ranking presenta nombre y ubicación como texto y una acción de Explorador. 
 
 ### 2.4 Pierdo contexto al cambiar de vista
 
-La tabla se monta por ruta y el ranking se desmonta al salir; filtros/página/umbral locales pueden reiniciarse. Estado de vista por análisis y ámbito, regreso al resultado y recuperación de foco son una mejora funcional, no solo estética. No conservar filtros de otro scan sin hacerlo explícito.
+La tabla se monta por ruta y el ranking se desmonta al salir; filtros/página/umbral locales pueden reiniciarse. Estado de vista por análisis y ámbito, regreso al resultado y recuperación de foco son una mejora funcional, no solo estética. No conservar filtros de otro scan sin hacerlo explícito. **Atendido en H4a** para ranking y tablas de carpeta: el estado vive en la página por análisis y ámbito, y un nuevo análisis empieza limpio.
 
 ### 2.5 El tamaño no basta para decidir
 
@@ -140,7 +140,7 @@ El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta e
 
 ### F2. Los archivos más grandes de todo el análisis
 
-**Estado al 2026-09-19:** F2a implementada en H2. Se prioriza F2b en H4, como ampliación del recorrido existente.
+**Estado al 2026-09-19:** F2a implementada en H2. F2b.1 entregada en H4a (detalle, carpeta contenedora y regreso). Siguen F2b.2 (H4b) y F2b.3 (H4c).
 
 **Necesidad:** encontrar un archivo grande sin abrir sus carpetas antecesoras. **Impacto esperado: alto. Complejidad: M.**
 
@@ -427,7 +427,7 @@ Las siguientes decisiones son **propuestas de diseño para este producto**, no m
 - Menú contextual opcional para acciones secundarias, con equivalente visible y teclado; no construirlo antes de resolver navegación.
 - **Aceptación:** etiquetas y estado deshabilitado explican objeto y consecuencia; los fallos se muestran junto al comando, sin alertas globales duplicadas por la misma causa.
 
-#### UX3 · Navegación que no borra el trabajo — H4a
+#### UX3 · Navegación que no borra el trabajo — H4a (entregado; evidencia en §5.2)
 
 - Mantener «Contenido de carpeta | Archivos más grandes»; no convertir cada filtro en otra pestaña. Cuando exista búsqueda global, integrarla con ese ámbito y una etiqueta estable.
 - Seleccionar un archivo muestra detalle dentro del área de trabajo; «Ver carpeta» carga solo la cadena necesaria. «Volver a resultados» recupera fila, filtro, orden, página, scroll y foco.
@@ -507,7 +507,7 @@ No se fijan fechas sin capacidad estimada. Una entrega principal y, como máximo
 | H1 · Motor, errores y progreso       | Cerrado según verificación registrada.           | Revisar accesibilidad manual pendiente; diálogo nativo ya corregido en H3.                                                                            |
 | H2 · Primer hallazgo                 | Cerrado según verificación registrada.           | Integrar ranking/contexto; no rehacer F1a/F2a/F6a/F10/F14a.                                                                                           |
 | H3 · Distribución interna y claridad | Instalador y UX de H3b entregados; hito abierto. | H3a: entorno limpio/offline, cuenta estándar y Windows 10 no verificados. H3b: falta la revisión manual con lector de pantalla y alto contraste real. |
-| H4 · Encontrar y comprender          | Propuesto, ordenado en incrementos.              | Contexto → búsqueda global → fechas/categorías → comodidad.                                                                                           |
+| H4 · Encontrar y comprender          | H4a entregado; H4b–d propuestos.                 | H4b: consulta global real. H4a queda sin revisión manual con lector de pantalla, como H3b. Después fechas/categorías y comodidad.                     |
 | H5 · Retomar y comparar              | Propuesto.                                       | Resúmenes locales compatibles, comparación, informes y revisión manual.                                                                               |
 | H6 · Orientación y precisión         | Propuesto, alcance acotado.                      | Catálogo explicable y precisión Windows verificada.                                                                                                   |
 | H7 · Apuestas de mayor riesgo        | Diferido.                                        | Papelera, mapa, monitor e iniciativas sin retorno suficientemente claro.                                                                              |
@@ -662,6 +662,32 @@ Los avisos (parcial, errores) y el zoom pueden aumentar la altura; no se retirar
 **Límites conocidos:** la visibilidad de la dona no se recuerda entre sesiones; la fecha es la del reloj del equipo que analiza; las mediciones de altura son de Chromium en el equipo de desarrollo, no de todas las escalas de Windows.
 
 **Pendientes de H3a registrados como no verificados:** ejecución en Windows Sandbox o VM limpia sin red (Sandbox no está activado en este equipo y activarlo requiere administrador y reinicio), prueba con una cuenta estándar real (la cuenta disponible es administradora), Windows 10 y firma del instalador. No se extrapolan resultados de Windows 11 ni de una cuenta administradora.
+
+#### Evidencia de H4a (2026-09-19) — entregado, revisión manual pendiente
+
+**Entregado** en la rama `feat/h4a-connect-finding` (F2b.1 + UX3/UX5), con fixtures y sin rutas personales:
+
+- **Contrato nuevo, aditivo:** `GET /scans/{id}/ancestors?path=…` devuelve la entrada con su ruta canónica y las carpetas desde la raíz hasta su padre, cada una con sus hijos directos. Una sola petición y un solo snapshot; la pertenencia se comprueba por componentes de ruta, como `entry`. No cambia `apiVersion`: ningún cliente anterior se rompe. El frontend valida que sea una cadena sin huecos (cada carpeta lista la siguiente) antes de usarla.
+- **Detalle del hallazgo:** activar el nombre de un archivo del ranking abre su detalle en la misma tarjeta, con regreso explícito y foco en su título: tamaño lógico, proporción de lo medido, posición, carpeta y ruta completa, más «Ver carpeta en el análisis», «Mostrar en el Explorador» y «Copiar ruta» con texto. Una nota recuerda que los datos son de ese análisis.
+- **Carpeta contenedora:** «Ver carpeta en el análisis» expande en el árbol solo la cadena que lleva al archivo, selecciona su carpeta, abre la tabla en la página que lo contiene sin filtros que lo oculten, marca la fila con texto («Desde los más grandes»), barra y `aria-current`, y la enfoca. El árbol se desplaza en su propio panel, sin mover la página.
+- **Regreso sin pérdida:** «Volver a los archivos más grandes», desde el detalle o desde la carpeta, restaura umbral, fila marcada y enfocada y desplazamiento de la página, sin volver a pedir el ranking.
+- **Estado por análisis y ámbito:** umbral y último archivo del ranking, y búsqueda, tipo, orden y página de cada tabla de carpeta, viven en la página y sobreviven a cambiar de vista o de carpeta. Un nuevo análisis los descarta. Una respuesta tardía de otra petición o de otro análisis no cambia la vista actual.
+- **Compacto:** el detalle es una vista con regreso explícito y el explorador se abre desde ambas vistas, devolviendo el foco a su botón.
+- **Corrección de accesibilidad detectada al probar:** los segmentos de la barra de distribución podían medir menos de 24 px con muchos elementos de tamaño parecido en 390 px (WCAG 2.5.8, detectado por axe con el fixture nuevo). Ahora miden al menos 24 px; la cifra exacta sigue en la tabla. `api.PATH_NOT_IN_SCAN` dice «elemento» en lugar de «carpeta», porque también se aplica a archivos.
+
+**Recorridos internos (§5.5).** Operador: automatización con fixtures. No hubo recorrido manual del responsable en esta entrega.
+
+| Caso | Resultado                | Evidencia y límites                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T6   | Aprobado (automatizado). | Prueba de UI: archivo a seis niveles y en la segunda página de su carpeta; una petición `/ancestors`, ninguna `/directory`, 6 nodos expandidos (raíz y a–e), migas completas, fila marcada y enfocada; al volver, mismo umbral, fila enfocada, desplazamiento a ±2 px y sin nuevo ranking. Igual en 390 px y en español. Recorrido real con Electron y el JAR nuevo (`electron-first-finding.cjs`). |
+| T2   | Aprobado (automatizado). | Las pruebas de ranking de H2 siguen pasando con la fila convertida en botón; recorrido real completo.                                                                                                                                                                                                                                                                                               |
+| T3   | Aprobado (automatizado). | Carpeta no encontrada: error traducido junto al comando, sin cambiar de vista. Respuesta tardía de un archivo anterior retenida por la prueba: no sustituye la carpeta abierta después.                                                                                                                                                                                                             |
+| T4   | **Parcial.**             | Automatizado: teclado y foco, axe WCAG 2.2 AA en detalle, carpeta revelada, compacto y español; contorno de la fila marcada con colores forzados emulados; sin desbordamiento horizontal a 390 px. **No ejecutado:** lector de pantalla (Narrador/NVDA) y alto contraste real de Windows.                                                                                                           |
+| T9   | **No ejecutado.**        | `/ancestors` construye bajo el lock del servicio la lista de hijos de cada ancestro, con el mismo coste que pedir cada carpeta por separado. No se midió con carpetas anchas ni con dos análisis; queda para H4b junto con las consultas globales.                                                                                                                                                  |
+
+**Regresiones:** backend 39 pruebas (1 omitida por enlaces simbólicos; 1 de servicio y 1 de API nuevas). Frontend: `tsc`, webpack sin avisos, 36 pruebas de datos (1 nueva), 29 de escritorio y 52 de UI (5 nuevas). Integración real con Electron (`electron-smoke.cjs`, `electron-first-finding.cjs` ampliado) contra el backend empaquetado.
+
+**Límites conocidos:** volver desde la carpeta lleva a la lista, no al detalle abierto; el detalle solo existe para archivos del ranking (la vista de carpeta conserva su ficha de archivo); Ctrl+F en el ranking sigue enfocando la búsqueda del árbol, que en compacto está en un diálogo cerrado (se corrige con H4b); la marca «Desde los más grandes» desaparece al volver al ranking; el estado de vista no se guarda entre sesiones.
 
 ### 5.3 Secuencia de entregas
 
@@ -828,6 +854,6 @@ No se recluta ni contacta a nadie. El responsable de desarrollo/producto realiza
 | Necesidad de mutaciones       | Identificar una tarea concreta no resuelta con inspección/Explorador y demostrar seguridad. | Papelera permanece diferida; no es meta obligatoria.                  |
 | Preferencia/impacto comercial | No hay estudio externo ni datos longitudinales ahora.                                       | No justificar prioridades con conversiones o satisfacción inventadas. |
 
-**Siguiente paso recomendado:** registrar los pendientes técnicos auténticos de H3a y abordar UX1/UX2/UX6/UX7 en H3b; a continuación, **H4a: conectar ranking, detalle y carpeta sin perder contexto**. Si la VM o accesibilidad manual están temporalmente bloqueadas, continuar trabajo independiente sin falsear su cierre.
+**Siguiente paso recomendado:** H4a (conectar ranking, detalle y carpeta sin perder contexto) está entregado con verificación automatizada. Lo siguiente es **H4b: consulta global real** (nombre/ruta/tamaño sobre todo el análisis, ámbito visible y Ctrl+F hacia la búsqueda visible), con la medición T9 de consultas bajo el lock del servicio. Siguen abiertos, en paralelo y sin bloquear H4b, los pendientes de H3a y la revisión manual con lector de pantalla y alto contraste real de H3b y H4a.
 
 Esta revisión actualiza el plan y sus criterios; no autoriza implementar automáticamente todas las funcionalidades ni publicar o distribuir el producto.

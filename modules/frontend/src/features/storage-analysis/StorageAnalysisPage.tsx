@@ -74,7 +74,6 @@ export function StorageAnalysisPage() {
     message: string;
   } | null>(null);
   const [pickerError, setPickerError] = useState("");
-  const [showChart, setShowChart] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   const [view, setView] = useState<"folder" | "largest">("folder");
@@ -676,21 +675,6 @@ export function StorageAnalysisPage() {
                         <Icon name="copy" size={17} />
                         {t("selection.copyPath")}
                       </Button>
-                      {selected.type === "FOLDER" &&
-                        selected.childrenLoaded && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-expanded={showChart}
-                            aria-controls="space-distribution"
-                            onClick={() => setShowChart((value) => !value)}
-                          >
-                            <Icon name="grid" size={17} />
-                            {showChart
-                              ? t("selection.hideChart")
-                              : t("selection.showChart")}
-                          </Button>
-                        )}
                     </div>
                   </div>
                   <p
@@ -768,20 +752,13 @@ export function StorageAnalysisPage() {
                   />
                 ) : selected.childrenLoaded ? (
                   <>
+                    {/* One line of composition before the rows it summarizes. */}
+                    <SpaceDistribution node={selected} onSelect={selectNode} />
                     <ContentsTable
                       key={selected.absolutePath}
                       node={selected}
                       onSelect={selectNode}
                     />
-                    {/* After the table: the chart complements the list. */}
-                    <div id="space-distribution" hidden={!showChart}>
-                      {showChart && (
-                        <SpaceDistribution
-                          node={selected}
-                          onSelect={selectNode}
-                        />
-                      )}
-                    </div>
                   </>
                 ) : (
                   !branchError && (

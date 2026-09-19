@@ -5,8 +5,6 @@ import {
   formatPercent,
   percentOf,
 } from "../../../shared/lib/format";
-import { EmptyState } from "../../../shared/components/EmptyState";
-import { Icon } from "../../../shared/ui/Icon";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 
 const colors = [
@@ -17,6 +15,9 @@ const colors = [
   "#FB7185",
   "#94A3B8",
 ];
+/** One labelled stacked bar above the contents table: the composition at a
+ * glance in a fixed single line. Each segment says as much as its width
+ * allows; exact values stay in the table. */
 export function SpaceDistribution({
   node,
   onSelect,
@@ -39,91 +40,59 @@ export function SpaceDistribution({
     ...(other > 0 ? [{ name: t("distribution.other"), size: other }] : []),
   ];
   const total = parts.reduce((sum, part) => sum + part.size, 0);
-  let offset = 0;
-  const gradient = parts
-    .map((part, i) => {
-      const start = offset;
-      offset += percentOf(part.size, total);
-      return `${colors[i]} ${start}% ${offset}%`;
-    })
-    .join(", ");
+  // Nothing to compare: the table's own empty state explains the folder.
+  if (total === 0) return null;
   return (
-    <section className="distribution-card" aria-labelledby="distribution-title">
-      <div className="card-heading">
-        <div>
-          <span className="eyebrow">{t("distribution.eyebrow")}</span>
-          <h3 id="distribution-title">{t("distribution.title")}</h3>
-        </div>
-        <span className="subtle-badge">
-          {node.partial ? t("distribution.partial") : t("distribution.logical")}
+    <figure
+      className="distribution-strip"
+      aria-label={t("distribution.figureLabel", {
+        name: node.name,
+        size: formatBytes(total),
+      })}
+    >
+      <figcaption className="distribution-label" aria-hidden="true">
+        <span className="distribution-label__title">
+          {t("distribution.title")}
         </span>
-      </div>
-      {total === 0 ? (
-        <EmptyState
-          title={t("distribution.emptyTitle")}
-          description={t("distribution.emptyDescription")}
-          icon={<Icon name="grid" size={28} />}
-        />
-      ) : (
-        <div className="distribution-content">
-          <figure
-            className="donut-figure"
-            aria-label={t("distribution.figureLabel", {
-              name: node.name,
-              size: formatBytes(total),
-            })}
-          >
-            <div
-              className="donut"
-              style={{ background: `conic-gradient(${gradient})` }}
-              aria-hidden="true"
+        <span className="distribution-label__total">{formatBytes(total)}</span>
+      </figcaption>
+      <div className="stacked-bar">
+        {parts.map((part, i) => {
+          const size = formatBytes(part.size);
+          const content = (
+            <span className="bar-segment__label">
+              <span className="bar-segment__name">{part.name}</span>
+              <span className="bar-segment__size"> · {size}</span>
+              <span className="bar-segment__share">
+                <span className="bar-segment__separator"> · </span>
+                {formatPercent(percentOf(part.size, total))}
+              </span>
+            </span>
+          );
+          const style = { flexGrow: part.size, background: colors[i] };
+          const title = `${part.name} · ${size}`;
+          return part.node ? (
+            <button
+              key={part.node.absolutePath}
+              className="bar-segment"
+              style={style}
+              title={title}
+              onClick={() => onSelect(part.node!)}
             >
-              <div className="donut-center">
-                <span>{formatBytes(total)}</span>
-                <small>{t("distribution.inThisFolder")}</small>
-              </div>
-            </div>
-          </figure>
-          <div className="chart-legend">
-            {parts.map((part, i) => (
-              <div
-                className="legend-item"
-                key={part.node?.absolutePath ?? "other"}
-              >
-                <span
-                  className="legend-dot"
-                  style={{ background: colors[i] }}
-                  aria-hidden="true"
-                />
-                <div className="legend-label">
-                  {part.node ? (
-                    <button
-                      onClick={() => onSelect(part.node!)}
-                      title={part.name}
-                    >
-                      {part.name}
-                    </button>
-                  ) : (
-                    <span>{part.name}</span>
-                  )}
-                  <span className="legend-bar" aria-hidden="true">
-                    <span
-                      style={{
-                        width: `${percentOf(part.size, total)}%`,
-                        background: colors[i],
-                      }}
-                    />
-                  </span>
-                </div>
-                <span className="legend-value">
-                  {formatBytes(part.size)}
-                  <small>{formatPercent(percentOf(part.size, total))}</small>
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
+              {content}
+            </button>
+          ) : (
+            <span
+              key="other"
+              className="bar-segment"
+              style={style}
+              title={title}
+            >
+              {content}
+            </span>
+          );
+        })}
+      </div>
+    </figure>
   );
 }

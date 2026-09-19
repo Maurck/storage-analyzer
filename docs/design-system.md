@@ -19,7 +19,7 @@ The implemented product has one storage-analysis workspace. New primitives shoul
 
 The layer order is declared at the top of `tokens.css`, the first stylesheet injected; a declaration in `index.css` would arrive after the imported files and let `app` override `utilities`, which silently disabled the forced-colors rules before.
 
-Decorative borders may use a quieter token. Controls need the stronger border. Never use color as the sole explanation for errors or partial analysis. Add text and an icon. The chart's exact values remain in its adjacent legend and contents table.
+Decorative borders may use a quieter token. Controls need the stronger border. Never use color as the sole explanation for errors or partial analysis. Add text and an icon. The space bar labels only the segments wide enough to read; every value, exact size included, stays in the contents table below it.
 
 Spacing follows a 4px scale with a 2px half step. Shared typography uses rem units, medium/bold weights and a system font stack. Radius tokens cover 4/8/12/16px and pill shapes. Shadows are reserved for overlays. Z-index tokens define sticky, dropdown, overlay, dialog, toast and tooltip layers. Motion is short and reduced-motion preferences disable nonessential animation.
 
@@ -50,7 +50,7 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 
 ## States and navigation
 
-- Results first: with results, a compact work header (the root, its state as text, "Analyzed {date}" from the scan contract, the path and the actions) and a summary strip replace the welcome heading and cards. Long explanations go in a native `<details>`; warnings that change how to read the numbers (logical size, partial analysis, drive capacity) stay visible. Charts follow the table they complement and can be hidden. Acceptance: at 1280×720 and 100 % the actions and the first row are visible without scrolling.
+- Results first: with results, a compact work header (the root, its state as text, "Analyzed {date}" from the scan contract, the path and the actions) and a summary strip replace the welcome heading and cards. Long explanations go in a native `<details>`; warnings that change how to read the numbers (logical size, partial analysis, drive capacity) stay visible. Composition is one fixed-height line above the table it summarizes: a stacked bar named on its left with the folder total ("Distribution 1.00 GB", so it never reads as progress), the five largest items plus "Other" as selectable segments that show name, size and share, then name and share, then share alone as their width shrinks, never a figure that pushes the rows down. Acceptance: at 1280×720 and 100 % the actions and the first row are visible without scrolling.
 - Commands name their object ("Rescan {name}", "Show in Explorer" with text) and never depend on a tooltip. A menu button such as the one next to "New analysis" is a disclosure: `aria-expanded`, Escape returns focus to it, and a click outside or tabbing away closes it.
 - One cause, one message: when the engine's banner explains a failure, the page does not repeat it in another alert.
 - Personal data: remembering recent folders can be turned off, which hides the list without deleting it; clearing it is a separate, named action.

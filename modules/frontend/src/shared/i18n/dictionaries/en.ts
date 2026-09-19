@@ -132,8 +132,6 @@ export const en = {
   "selection.copied": "Path copied",
   "selection.copyFailed":
     "Could not copy. Select and copy the path displayed below.",
-  "selection.hideChart": "Hide chart",
-  "selection.showChart": "Show chart",
   "selection.loadingContents": "Loading folder contents",
 
   "file.title": "File details",
@@ -147,16 +145,9 @@ export const en = {
   "load.description": "Load its contents to explore the next level.",
   "load.button": "Load contents",
 
-  "distribution.eyebrow": "AT A GLANCE",
-  "distribution.title": "Space distribution",
-  "distribution.partial": "Partial results",
-  "distribution.logical": "Logical size",
-  "distribution.emptyTitle": "No storage to chart",
-  "distribution.emptyDescription":
-    "This folder contains no readable file bytes. Empty folders and skipped items are listed below.",
+  "distribution.title": "Distribution",
   "distribution.figureLabel":
     "{name}: {size} in listed items. Exact sizes and percentages are available in the contents table below.",
-  "distribution.inThisFolder": "IN THIS FOLDER",
   "distribution.other": "Other items",
 
   "contents.title": "Folder contents",

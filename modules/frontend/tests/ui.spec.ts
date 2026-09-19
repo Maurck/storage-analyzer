@@ -1536,7 +1536,7 @@ test("forced colors keep the chosen view and filter visible", async ({
   });
 });
 
-test("at 1280×720 the controls and first rows come before any chart (T5)", async ({
+test("at 1280×720 the controls, a one-line composition and the first rows fit (T5)", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -1554,18 +1554,19 @@ test("at 1280×720 the controls and first rows come before any chart (T5)", asyn
     page.getByRole("heading", { name: "Analysis of Fixture", level: 1 }),
   ).toBeVisible();
   await expect(page.locator(".state-tag")).toHaveText("Complete");
-  // The chart follows the table and can be hidden.
+  // A compact stacked bar sums up the rows it precedes; its key selects.
   const figure = page.getByRole("figure", { name: /Fixture: 1.00 GB/ });
-  expect((await figure.boundingBox())!.y).toBeGreaterThan(
-    (await table.boundingBox())!.y,
+  await expect(figure).toBeInViewport({ ratio: 1 });
+  const figureBox = (await figure.boundingBox())!;
+  expect(figureBox.y).toBeLessThan((await table.boundingBox())!.y);
+  expect(figureBox.height).toBeLessThan(64);
+  await expect(page.getByRole("button", { name: /chart/i })).toHaveCount(0);
+  await expect(figure).toContainText("Projects");
+  // Named on the same line, so it does not read as a progress bar.
+  await expect(figure.locator("figcaption")).toHaveText(
+    /^Distribution\s*1\.00 GB$/,
   );
-  const chartToggle = page.getByRole("button", { name: "Hide chart" });
-  await expect(chartToggle).toHaveAttribute("aria-expanded", "true");
-  await chartToggle.click();
-  await expect(figure).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Show chart" }),
-  ).toHaveAttribute("aria-expanded", "false");
+  await expect(figure).toContainText("Projects · 768 MB · 75.0%");
   // The size explanation opens from the keyboard; the essentials stay visible.
   const summary = page.getByRole("region", { name: "Analysis summary" });
   await expect(summary).toContainText("Logical file size, not disk usage");
@@ -1579,9 +1580,13 @@ test("at 1280×720 the controls and first rows come before any chart (T5)", asyn
   ).toBeVisible();
   await checkAccessibility(page);
   await page.screenshot({ path: "test-results/workspace-1280x720.png" });
+  await figure.getByRole("button", { name: /^Projects/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Projects", level: 2 }),
+  ).toBeVisible();
 });
 
-test("at 390 px the compact summary does not push results below cards and a chart", async ({
+test("at 390 px the compact summary and bar do not push results below the fold", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1596,9 +1601,9 @@ test("at 390 px the compact summary does not push results below cards and a char
   ).toBeVisible();
   const table = page.getByRole("table", { name: /^Contents of Fixture/ });
   const figure = page.getByRole("figure", { name: /Fixture: 1.00 GB/ });
-  expect((await figure.boundingBox())!.y).toBeGreaterThan(
-    (await table.boundingBox())!.y,
-  );
+  const figureBox = (await figure.boundingBox())!;
+  expect(figureBox.y).toBeLessThan((await table.boundingBox())!.y);
+  expect(figureBox.height).toBeLessThan(80);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth + 1,

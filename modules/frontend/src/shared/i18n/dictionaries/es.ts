@@ -133,8 +133,6 @@ export const es: Dictionary = {
   "selection.copied": "Ruta copiada",
   "selection.copyFailed":
     "No se pudo copiar. Selecciona y copia la ruta que aparece abajo.",
-  "selection.hideChart": "Ocultar el gráfico",
-  "selection.showChart": "Mostrar el gráfico",
   "selection.loadingContents": "Cargando el contenido de la carpeta",
 
   "file.title": "Detalles del archivo",
@@ -148,16 +146,9 @@ export const es: Dictionary = {
   "load.description": "Carga su contenido para explorar el siguiente nivel.",
   "load.button": "Cargar el contenido",
 
-  "distribution.eyebrow": "DE UN VISTAZO",
-  "distribution.title": "Distribución del espacio",
-  "distribution.partial": "Resultados parciales",
-  "distribution.logical": "Tamaño lógico",
-  "distribution.emptyTitle": "No hay nada que graficar",
-  "distribution.emptyDescription":
-    "Esta carpeta no contiene bytes legibles. Las carpetas vacías y los elementos omitidos aparecen abajo.",
+  "distribution.title": "Distribución",
   "distribution.figureLabel":
     "{name}: {size} en los elementos listados. Los tamaños y porcentajes exactos están en la tabla de contenido de abajo.",
-  "distribution.inThisFolder": "EN ESTA CARPETA",
   "distribution.other": "Otros elementos",
 
   "contents.title": "Contenido de la carpeta",

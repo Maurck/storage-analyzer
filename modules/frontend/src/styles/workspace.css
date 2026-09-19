@@ -617,7 +617,6 @@
     font-size: 12px;
     margin: 8px 0 0;
   }
-  .distribution-card,
   .contents-card,
   .file-detail {
     border: 1px solid #29374e;
@@ -644,113 +643,108 @@
   .card-heading > .muted {
     font-size: 10px;
   }
-  .distribution-content {
-    display: flex;
-    align-items: center;
-    gap: 30px;
-    padding: 2px 28px 26px;
-  }
-  .donut-figure {
+  /* A single fixed line: what it is on the left, then segments that say
+     as much as their width allows. */
+  .distribution-strip {
     margin: 0;
-    display: grid;
-    place-items: center;
-    flex: 0 0 210px;
-  }
-  .donut {
-    width: 210px;
-    height: 210px;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    transform: rotate(-0.001deg);
-  }
-  .donut-center {
-    width: 158px;
-    height: 158px;
-    border-radius: 50%;
-    background: var(--color-surface);
     display: flex;
-    flex-direction: column;
-    justify-content: center;
     align-items: center;
-    gap: 7px;
-    box-shadow: 0 0 0 5px var(--color-surface);
-  }
-  .donut-center > span {
-    font-size: 28px;
-    font-weight: 600;
-    letter-spacing: -0.8px;
-  }
-  .donut-center small {
-    color: var(--color-text-muted);
-    font-size: 8px;
-    letter-spacing: 1.5px;
-  }
-  .chart-legend {
-    flex: 1;
+    gap: 12px;
+    height: 24px;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 17px;
   }
-  .legend-item {
+  .distribution-label {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .legend-dot {
-    height: 7px;
-    width: 7px;
-    border-radius: 50%;
+    align-items: baseline;
+    gap: 6px;
     flex-shrink: 0;
-    margin-top: 9px;
+    font-size: 12px;
+    white-space: nowrap;
   }
-  .legend-label {
+  .distribution-label__title {
+    color: var(--color-text-muted);
+  }
+  .distribution-label__total {
+    color: var(--color-text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .stacked-bar {
     flex: 1;
     min-width: 0;
-  }
-  .legend-label > button,
-  .legend-label > span:not(.legend-bar) {
-    font-size: 12px;
-    color: var(--color-text-secondary);
-    background: none;
-    border: 0;
-    display: block;
-    padding: 3px 0;
-    max-width: 100%;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
-    min-height: 24px;
-  }
-  .legend-label button:hover {
-    color: #93c5fd;
-    text-decoration: underline;
-  }
-  .legend-bar {
-    display: block;
-    height: 3px;
-    margin-top: 6px;
-    background: #1e2b40;
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  .legend-bar > span {
-    display: block;
     height: 100%;
-    border-radius: inherit;
+    display: flex;
+    gap: 3px;
   }
-  .legend-value {
-    font-size: 12px;
+  .bar-segment {
+    container-type: inline-size;
+    flex-basis: 0;
+    min-width: 4px;
+    display: flex;
+    align-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    overflow: hidden;
+    color: #0b1220;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    transition: filter 120ms ease;
+  }
+  button.bar-segment:hover {
+    filter: brightness(1.12);
+    box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.35);
+  }
+  button.bar-segment:focus-visible {
+    outline: var(--focus-width) solid var(--color-text);
+    outline-offset: -3px;
+  }
+  .bar-segment__label {
+    display: flex;
+    min-width: 0;
+    padding-inline: 8px;
+    white-space: pre;
     font-variant-numeric: tabular-nums;
-    text-align: right;
-    padding-top: 4px;
   }
-  .legend-value small {
-    display: block;
-    font-size: 10px;
-    color: var(--color-text-muted);
-    margin-top: 5px;
+  .bar-segment__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bar-segment__size,
+  .bar-segment__share {
+    flex-shrink: 0;
+    font-weight: 500;
+  }
+  /* Medium: name and share. Narrow: share only. What is dropped stays for
+     assistive technology and the tooltip. */
+  @container (max-width: 190px) {
+    .bar-segment__size {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+  }
+  @container (max-width: 110px) {
+    .bar-segment__name {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+    }
+    .bar-segment__separator {
+      display: none;
+    }
+  }
+  /* Too narrow to read: the table carries the value. */
+  @container (max-width: 56px) {
+    .bar-segment__label {
+      opacity: 0;
+    }
   }
   .inline-heading {
     display: flex;
@@ -1465,14 +1459,6 @@
   .skip-link:focus {
     transform: translateY(0);
   }
-  @media (min-width: 1600px) {
-    .distribution-content {
-      gap: 50px;
-    }
-    .chart-legend {
-      max-width: 600px;
-    }
-  }
   @media (max-width: 1199px) {
     .app-header {
       padding-inline: 26px;
@@ -1482,24 +1468,6 @@
     }
     .workspace {
       grid-template-columns: minmax(240px, 28%) 16px minmax(0, 1fr);
-    }
-    .distribution-content {
-      gap: 20px;
-      padding: 0 20px 24px;
-    }
-    .donut-figure {
-      flex-basis: 155px;
-    }
-    .donut {
-      width: 155px;
-      height: 155px;
-    }
-    .donut-center {
-      width: 116px;
-      height: 116px;
-    }
-    .donut-center > span {
-      font-size: 23px;
     }
     .share-bar {
       display: none;
@@ -1513,12 +1481,6 @@
     }
   }
   @media (max-width: 950px) {
-    .distribution-content {
-      flex-direction: column;
-    }
-    .chart-legend {
-      width: 100%;
-    }
     .card-heading {
       padding: 18px;
     }
@@ -1616,39 +1578,6 @@
       justify-content: flex-start;
       width: 100%;
     }
-    .distribution-content {
-      flex-direction: row;
-      gap: 18px;
-      padding: 0 18px 22px;
-    }
-    .donut-figure {
-      flex-basis: 134px;
-    }
-    .donut {
-      width: 134px;
-      height: 134px;
-    }
-    .donut-center {
-      width: 100px;
-      height: 100px;
-    }
-    .donut-center > span {
-      font-size: 20px;
-    }
-    .donut-center small {
-      font-size: 6px;
-    }
-    .chart-legend {
-      gap: 12px;
-    }
-    .legend-label > button,
-    .legend-label > span:not(.legend-bar),
-    .legend-value {
-      font-size: 10px;
-    }
-    .legend-value small {
-      font-size: 9px;
-    }
     .type-column {
       display: none;
     }
@@ -1716,14 +1645,8 @@
     }
   }
   @media (max-width: 420px) {
-    .distribution-content {
-      flex-direction: column;
-    }
-    .donut-figure {
-      flex-basis: auto;
-    }
-    .chart-legend {
-      padding-top: 5px;
+    .distribution-label__title {
+      display: none;
     }
     .header-status {
       max-width: 88px;
@@ -1765,12 +1688,10 @@
     }
     /* Forced colors drop backgrounds: keep bars and status dots visible with
        system colors. Their values are also written out as text. */
-    .share-bar,
-    .legend-bar {
+    .share-bar {
       border: 1px solid CanvasText;
     }
     .share-bar > span,
-    .legend-bar > span,
     .status-dot {
       forced-color-adjust: none;
       background: Highlight !important;
@@ -1787,8 +1708,12 @@
     .skipped-table {
       border: 1px solid CanvasText;
     }
-    .donut {
+    /* The bar keeps its palette and dark labels so segments stay apart. */
+    .stacked-bar {
       forced-color-adjust: none;
+    }
+    .bar-segment {
+      outline: 1px solid CanvasText;
     }
   }
 }

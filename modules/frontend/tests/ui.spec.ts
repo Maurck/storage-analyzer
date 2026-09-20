@@ -1739,6 +1739,29 @@ for (const screen of SCREENS) {
   });
 }
 
+test("the rows get their height back when the size explanation closes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await prepare(page, { extraFiles: 60 });
+  await analyze(page);
+  const rows = page.locator(".table-scroll").first();
+  const height = async () => (await rows.boundingBox())!.height;
+  const initial = await height();
+  const explanation = page.getByText("How sizes are calculated");
+  await explanation.click();
+  await expect(page.locator(".size-help[open]")).toBeVisible();
+  const opened = await height();
+  expect(opened, "the explanation takes its room from the rows").toBeLessThan(
+    initial,
+  );
+  await explanation.click();
+  await expect(page.locator(".size-help[open]")).toHaveCount(0);
+  await expect
+    .poll(height, { message: "the rows fill the window again" })
+    .toBe(initial);
+});
+
 test("the controls keep their place across views, paths and filters", async ({
   page,
 }) => {

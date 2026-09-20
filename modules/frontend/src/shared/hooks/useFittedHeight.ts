@@ -9,6 +9,16 @@ const MINIMUM = 150;
 const COMPACT = 768;
 
 /**
+ * What the page actually fills. The shell around it is a window tall whatever
+ * it holds, so measuring against the body would read that empty space as
+ * content below the region, and closing a block above the region would leave
+ * the room it freed unused.
+ */
+function contentBox(): HTMLElement {
+  return document.querySelector("main") ?? document.body;
+}
+
+/**
  * Bounds a scrolling region to the window, counting what sits above it and
  * everything that follows it (its own count and pagination, the page footer),
  * so the rows scroll inside it and the page itself does not scroll at all.
@@ -31,7 +41,7 @@ export function useFittedHeight(
       const top = rect.top + window.scrollY;
       const below = Math.max(
         0,
-        document.body.getBoundingClientRect().bottom - rect.bottom,
+        contentBox().getBoundingClientRect().bottom - rect.bottom,
       );
       const height = window.innerHeight - top - below - 1;
       const bound =
@@ -42,8 +52,11 @@ export function useFittedHeight(
     };
     fit();
     // Whatever sits above or below the region decides its room: a warning, the
-    // size explanation opening, another language with longer labels.
+    // size explanation opening or closing, another language with longer labels.
+    // The content box grows and shrinks with all of it; the body only grows,
+    // because it is a window tall at the least.
     const observer = new ResizeObserver(fit);
+    observer.observe(contentBox());
     observer.observe(document.body);
     window.addEventListener("resize", fit);
     return () => {

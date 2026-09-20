@@ -1739,6 +1739,81 @@ for (const screen of SCREENS) {
   });
 }
 
+test("the controls keep their place across views, paths and filters", async ({
+  page,
+}) => {
+  await prepare(page, { extraFiles: 60, deep: true });
+  await analyze(page);
+  const box = async (selector: string) =>
+    page.evaluate((target) => {
+      const element = document.querySelector(target);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        height: Math.round(rect.height),
+      };
+    }, selector);
+
+  // Which list you are reading is the one control that must never move: the
+  // breadcrumbs beside it grow with the path, the switch does not budge.
+  const settled = await box(".view-switch");
+  const toolbar = await box(".workspace-toolbar");
+  await showLargest(page);
+  expect(await box(".view-switch"), "switch in the files view").toEqual(settled);
+  expect(await box(".workspace-toolbar"), "toolbar in the files view").toEqual(
+    toolbar,
+  );
+  const search = page.getByRole("searchbox", {
+    name: "Search files by name or path",
+  });
+  await search.fill("clip");
+  await expect(page.getByText(/of 30 matching files/)).toBeVisible();
+  expect(await box(".view-switch"), "switch while searching").toEqual(settled);
+
+  // Pages appear and disappear with the filter; the count keeps its height so
+  // the rows above it do not move.
+  const paged = await box(".table-footer");
+  await search.fill("movie");
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+  expect((await box(".table-footer"))!.height, "count without pages").toBe(
+    paged!.height,
+  );
+
+  // A path seven folders deep scrolls in its own line instead of wrapping.
+  await page.getByRole("button", { name: "movie.mkv", exact: true }).click();
+  await page
+    .getByRole("button", { name: "View folder in the analysis" })
+    .click();
+  await expect(page.getByRole("heading", { name: "f", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Folder path" }).getByRole("button"),
+  ).toHaveCount(7);
+  expect(await box(".view-switch"), "switch on a deep path").toEqual(settled);
+  expect(await box(".workspace-toolbar"), "toolbar on a deep path").toEqual(
+    toolbar,
+  );
+
+  // The line that explains the list says something else once a search starts,
+  // and at narrow widths one of the two wraps: its height is reserved so the
+  // rows stay where they are.
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  const explanation = await box(".search-scope");
+  const firstRow = await box("tbody tr");
+  await search.fill("note");
+  await expect(page.getByText(/of 60 matching files/)).toBeVisible();
+  expect(await box(".search-scope"), "explanation while searching").toEqual(
+    explanation,
+  );
+  // Its own height belongs to the file it shows; where it starts does not.
+  expect(
+    (await box("tbody tr"))!.y,
+    "first row while searching",
+  ).toEqual(firstRow!.y);
+});
+
 test("a partial analysis of a whole drive still fits a QHD window", async ({
   page,
 }) => {

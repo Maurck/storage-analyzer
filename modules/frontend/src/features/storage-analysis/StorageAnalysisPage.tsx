@@ -732,6 +732,17 @@ export function StorageAnalysisPage() {
             }
           >
             <div className="workspace-toolbar">
+              <SegmentedControl<"folder" | "largest">
+                name="workspace-view"
+                className="view-switch"
+                legend={t("view.label")}
+                value={view}
+                onChange={switchView}
+                options={[
+                  { value: "folder", label: t("view.folder") },
+                  { value: "largest", label: t("view.largest") },
+                ]}
+              />
               {view === "folder" && selected && (
                 <nav
                   className="path-breadcrumbs"
@@ -754,17 +765,6 @@ export function StorageAnalysisPage() {
                   ))}
                 </nav>
               )}
-              <SegmentedControl<"folder" | "largest">
-                name="workspace-view"
-                className="view-switch"
-                legend={t("view.label")}
-                value={view}
-                onChange={switchView}
-                options={[
-                  { value: "folder", label: t("view.folder") },
-                  { value: "largest", label: t("view.largest") },
-                ]}
-              />
             </div>
             {view === "largest" ? (
               <LargestFiles

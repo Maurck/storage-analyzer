@@ -527,22 +527,30 @@
   .selection-header {
     padding: 0 2px;
   }
-  /* Where you are and which list you are reading, on one line. */
+  /* Which list you are reading, then where you are, on one line. The switch
+     comes first so it stays put whatever the path does. */
   .workspace-toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
     gap: 8px 16px;
     min-width: 0;
+  }
+  .workspace-toolbar .view-switch {
+    flex-shrink: 0;
   }
   .path-breadcrumbs {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 3px;
     min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
     color: var(--color-text-muted);
+  }
+  .path-breadcrumbs > svg,
+  .path-breadcrumbs button {
+    flex-shrink: 0;
   }
   .path-breadcrumbs > svg {
     flex-shrink: 0;
@@ -932,6 +940,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    /* The same height with or without pagination: a filter that removes the
+       pages must not resize the region above. */
+    min-height: 3.6875rem;
     padding: 13px 22px;
     border-top: 1px solid #29374e;
     font-size: 0.625rem;
@@ -1345,7 +1356,7 @@
     margin-top: 10px;
   }
   .largest-search {
-    padding-bottom: 10px;
+    padding-bottom: 16px;
   }
   .largest-filters {
     flex-wrap: wrap;
@@ -1362,6 +1373,9 @@
     padding: 0 22px 14px;
     font-size: 0.75rem;
     line-height: 1.45;
+    /* Two lines are reserved because the sentence changes when a search
+       starts: a longer or shorter explanation must not move the rows. */
+    min-height: calc(2 * 1.45em + 14px);
   }
   /* Rows that answer the previous search while the new one runs; the footer
      says so in text and the table is marked busy. */

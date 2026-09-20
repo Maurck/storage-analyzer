@@ -416,7 +416,7 @@ Las siguientes decisiones son **propuestas de diseño para este producto**, no m
 - Con resultados, sustituir el hero grande por un encabezado de trabajo: raíz, momento del análisis, estado completo/parcial y acciones. Resumen compacto: tamaño lógico, archivos y omitidos; conteo de carpetas secundario.
 - Mantener siempre «Tamaño lógico» y cobertura. Mover el párrafo largo a «Cómo se calcula», ampliable por teclado. La unidad conserva su lectura temporal; no presentar una medida al iniciar como actual.
 - Colocar tabla/ranking antes de la visualización grande; dona opcional/colapsable. No ocultar resultados tras un muro de tarjetas ni añadir métricas de relleno.
-- **Aceptación propuesta:** con fixture completo y sin errores, a 1280×720 y 100 % se ven controles y primeras filas sin scroll de página; a 390 px el resumen compacto no antepone cuatro tarjetas y una dona a los resultados. Mensajes de error y zoom pueden aumentar la altura sin perder acceso.
+- **Aceptación (actualizada 2026-09-19):** con fixture completo y sin errores, la medición se hace en las cuatro pantallas de referencia en píxeles CSS —**HD** 1280×720, **FHD** 1920×1080, **QHD** 2560×1440 y **UHD** 3840×2160— y se registra el número de filas visibles en cada una; nunca en una sola. El escalado de Windows es lo que la persona ve: un 4K al 200 % que trae por defecto **es** FHD en píxeles CSS, 4K al 150 % es QHD y QHD al 150 % da 1707×960. A 390 px el resumen compacto no antepone cuatro tarjetas y una dona a los resultados. Mensajes de error y zoom pueden aumentar la altura sin perder acceso.
 - **Valor:** menor distancia visual hasta la siguiente acción, sin retirar advertencias relevantes.
 
 #### UX2 · Acciones reconocibles y con alcance — H3/H4
@@ -643,7 +643,7 @@ No se fijan fechas sin capacidad estimada. Una entrega principal y, como máximo
 | 390 × 844                         | La primera fila empezaba en y = 1022, tras 4 tarjetas en 2 × 2. | La primera fila termina en y = 892; resumen de < 200 px y dona después de la tabla. |
 | Bienvenida 1280 × 720 con accesos | Accesos rápidos en y = 736, bajo el pliegue.                    | Accesos en y = 534.                                                                 |
 
-Los avisos (parcial, errores) y el zoom pueden aumentar la altura; no se retiraron para ganar espacio.
+Los avisos (parcial, errores) y el zoom pueden aumentar la altura; no se retiraron para ganar espacio. **Medición de una sola ventana:** estas cifras son de 1280×720 y 390 px. La medición en cuatro pantallas y sus resultados posteriores están en «Recorte del área de trabajo» más abajo; aquella entrega no las tenía.
 
 **Recorridos internos (§5.5).** Operador: automatización con fixtures. No hubo recorrido manual del responsable en esta entrega; se anota como tal.
 
@@ -738,6 +738,30 @@ Al medir cuántas filas caben por pantalla se comprobó que **el texto al 200 % 
 **Medición (1920×1080, fixture de 64 elementos):** con texto al 200 % la primera fila pasa de y = 669 a y = 893 y la página de 2.046 a 2.311 px; se ven 3 filas completas en vez de 8. Antes de la corrección, los tres números eran idénticos a los del 100 %.
 
 **Límite:** los iconos siguen midiéndose en px y no crecen con el texto; el zoom del navegador sí los escala. Sigue sin ejecutarse la revisión manual con lector de pantalla y alto contraste real de Windows.
+
+#### Recorte del área de trabajo y medición en cuatro pantallas (2026-09-19, tras H4b)
+
+La medición de UX1 registrada en H3b era de **una sola ventana** (1280×720) y en filas «visibles» se quedaba en la primera. Al medir las cuatro pantallas de referencia se vio el problema real: por encima de la primera fila había **669 px** de cabecera de app, encabezado, resumen, conmutador, migas, título de selección, barra de composición, título de tarjeta y controles. Ningún tamaño de página lo arregla: para ver 10 filas hacían falta ~1.220 px de alto de ventana, justo donde con 25 por página ya se veían 15.
+
+**Entregado:** migas y conmutador de vista comparten fila; el nombre de cada tarjeta se muda a la fila que la filtra; el bloque de encabezado de la tarjeta de archivos se sustituye por una línea (la advertencia del ranking sin consulta, lo que cubre la búsqueda con ella); la ruta completa aparece cuando falla copiarla, no siempre; y las filas se desplazan en **su propia región**, con la cabecera de columnas pegada arriba, acotada a lo que queda de ventana, de modo que el conteo y la paginación no se van con la página. Cuando quedarían menos de 240 px —o la ventana es compacta— el límite se retira y la página se desplaza como antes.
+
+**Filas completas visibles sin desplazar la página** (carpeta / búsqueda; fixture de 64 elementos, Chromium, inglés):
+
+| Pantalla (píxeles CSS)          | Antes  | Con recorte | Con región propia         | Altura de página |
+| ------------------------------- | ------ | ----------- | ------------------------- | ---------------- |
+| HD 1280×720                     | 1 / 2  | 3 / 4       | 3 / 4, sin acotar         | 1.904 px         |
+| FHD 1920×1080 (= 4K al 200 %)   | 8 / 8  | 11 / 10     | 11 / 10 **con el pie**    | 1.132 px         |
+| QHD 2560×1440 (= 4K al 150 %)   | 15 / 15 | 18 / 17    | 18 / 17 **con el pie**    | 1.492 px         |
+| UHD 3840×2160                   | 25 / 28 | 25 / 30    | 25 / 30 **con el pie**    | 2.160 / 2.211 px |
+| FHD con texto al 200 % (ya en rem) | 3 / 3 | 7 / 7      | 7 / 7 **con el pie**      | 1.184 px         |
+
+La primera fila pasa de y = 669 a y = 527 en la vista de carpeta y de y = 586 a y = 490 en la búsqueda. La altura de página era de 2.046 px en todas antes del recorte; lo que aún la alarga por encima de la ventana es el gráfico que sigue a la tabla, no la lista.
+
+**Criterio fijado en las pruebas:** `SCREENS` en `tests/ui.spec.ts` ejecuta la misma aceptación en las cuatro pantallas con un mínimo por pantalla (HD ≥ 3 filas, FHD ≥ 10, QHD ≥ 16, UHD ≥ 20), exige el pie a la vista donde la región se acota, y comprueba que no hay desplazamiento horizontal de página ni se pierden el conmutador ni la búsqueda. La garantía se escribe **por pantalla**, no como número de filas por página: ninguna de las cuatro comparte ese número.
+
+**Regresiones:** 61 pruebas de UI (4 nuevas por pantalla, las demás adaptadas), 38 de datos, 29 de escritorio, `tsc` y webpack sin avisos, y el recorrido real con Electron contra el backend real.
+
+**Límites conocidos:** en HD la región no se acota (quedarían 127 px, que no merecen una barra propia), así que allí el pie sigue bajo el pliegue; el gráfico posterior a la tabla mantiene la página algo más alta que la ventana; los iconos no crecen con el texto; las cifras son de Chromium en el equipo de desarrollo, no de todas las escalas de Windows ni de otros navegadores; y sigue sin ejecutarse la revisión manual con lector de pantalla y alto contraste real.
 
 ### 5.3 Secuencia de entregas
 
@@ -848,7 +872,7 @@ Al medir cuántas filas caben por pantalla se comprobó que **el texto al 200 % 
 
 1. Incremento marcado como implementado solo cuando sus tareas y casos límite tienen evidencia reproducible. Distinguir ejecuciones actuales de tablas históricas.
 2. Estado/alcance/cobertura coherentes entre UI, DTO, API y datos guardados; nunca desconocido = cero, top-N = búsqueda exhaustiva ni histórico = dato vivo.
-3. Inglés/español, locale independiente, teclado, foco, contraste y adaptación según §4.4. Complementar axe con revisión interna manual; registrar lo no verificado.
+3. Inglés/español, locale independiente, teclado, foco, contraste y adaptación según §4.4. Todo cambio de disposición se mide en las cuatro pantallas de referencia (HD 1280×720, FHD 1920×1080, QHD 2560×1440, UHD 3840×2160) más 390 px y texto al 200 %, y las cifras se registran; una sola resolución no basta para declararlo terminado. Complementar axe con revisión interna manual; registrar lo no verificado.
 4. Regresiones pertinentes de backend, datos, escritorio, UI, TypeScript y build; integración real si cambia el contrato entre procesos. No reconstruir el instalador si el cambio es solo documental.
 5. Matriz de rendimiento con hardware/heap/versión, árboles profundos/anchos y dos scans. Presupuestos de consulta, payload y DOM, no solo memoria de snapshots; comparar contra una línea base registrada.
 6. Persistencia/IPC/privacidad revisados. Ningún envío de rutas, logs, contenido o métricas por defecto. Las nuevas mutaciones requieren una revisión específica, no basta pasar las pruebas de lectura.
@@ -883,7 +907,7 @@ No se recluta ni contacta a nadie. El responsable de desarrollo/producto realiza
 | Correctitud             | Esperado/obtenido por fixture: filas, bytes, fechas, diferencias y omisiones.                            | La función resuelve los casos ensayados.                                   |
 | Esfuerzo de interacción | Comandos, cambios de vista y pasos repetidos de cada tarea.                                              | La propuesta reduce recorrido; no demuestra satisfacción general.          |
 | Continuidad             | Pérdidas de consulta/selección/foco al ir y volver.                                                      | Objetivo: cero pérdidas no solicitadas en el recorrido definido.           |
-| Jerarquía visual        | Captura con resolución/zoom/idioma, primera fila y comando principal identificados.                      | Comprobar UX1 sin atribuir “facilidad” a usuarios no observados.           |
+| Jerarquía visual        | Filas visibles y primera fila en HD, FHD, QHD y UHD, más captura con zoom/idioma y el comando principal. | Comprobar UX1 en las cuatro pantallas, sin atribuir “facilidad” a usuarios no observados. |
 | Rendimiento             | Primera consulta y cacheada, p50/p95 con repeticiones declaradas, memoria pico, respuesta a cancelación. | Comparación en el mismo entorno; no extrapolar del equipo de 48 GB a otro. |
 | Confianza y privacidad  | Campos persistidos/exportados, capacidades comprobadas y fallos explicados.                              | Evidencia de control de datos, no promesa de riesgo cero.                  |
 

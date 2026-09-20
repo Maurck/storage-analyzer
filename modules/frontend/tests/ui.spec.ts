@@ -1666,32 +1666,65 @@ async function visibleRows(page: Page) {
   });
 }
 
-test("a taller window is spent on rows, not on what sits above them", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1920, height: 1080 });
-  await prepare(page, { extraFiles: 60 });
-  await analyze(page);
-  // The folder table and the search results both start high enough that a
-  // 1080p window shows ten rows. The count and pagination still sit below
-  // them: only a table that scrolls in its own region would keep those up.
-  expect(await visibleRows(page)).toBeGreaterThanOrEqual(10);
-  await page.getByRole("radio", { name: "Largest files" }).check();
-  await page
-    .getByRole("searchbox", { name: "Search files by name or path" })
-    .fill("note");
-  await expect(page.getByText("1–50 of 60 matching files")).toBeVisible();
-  expect(await visibleRows(page)).toBeGreaterThanOrEqual(10);
-  // Where you are, which list you read and what filters it stay on screen.
-  for (const name of ["Folder contents", "Largest files"])
-    await expect(page.getByRole("radio", { name })).toBeInViewport({
-      ratio: 1,
+/**
+ * The four screen sizes every layout change is measured at, in CSS pixels.
+ * Windows scaling is what a person actually sees: a 4K screen at the 200% it
+ * defaults to gives the CSS pixels of FHD, and QHD at 150% gives 1707×960, so
+ * FHD is the common case and UHD is the unscaled extreme.
+ */
+const SCREENS = [
+  { name: "HD", width: 1280, height: 720, rows: 3, footer: false },
+  { name: "FHD", width: 1920, height: 1080, rows: 10, footer: true },
+  { name: "QHD", width: 2560, height: 1440, rows: 16, footer: true },
+  { name: "UHD", width: 3840, height: 2160, rows: 20, footer: true },
+];
+
+for (const screen of SCREENS) {
+  test(`${screen.name} (${screen.width}×${screen.height}) spends its height on rows`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: screen.width, height: screen.height });
+    await prepare(page, { extraFiles: 60 });
+    await analyze(page);
+    const fits = async (view: string) => {
+      expect(
+        await visibleRows(page),
+        `${view} rows at ${screen.name}`,
+      ).toBeGreaterThanOrEqual(screen.rows);
+      // Below a useful height the rows keep the page's scroll instead of a
+      // region of their own, and the count then sits under the fold.
+      if (screen.footer)
+        await expect(page.locator(".table-footer").first()).toBeInViewport({
+          ratio: 1,
+        });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+        ),
+        `${view} without sideways page scroll at ${screen.name}`,
+      ).toBe(true);
+    };
+    await fits("folder contents");
+    await page.getByRole("radio", { name: "Largest files" }).check();
+    await page
+      .getByRole("searchbox", { name: "Search files by name or path" })
+      .fill("note");
+    await expect(page.getByText("1–50 of 60 matching files")).toBeVisible();
+    await fits("search results");
+    // Where you are, which list you read and what filters it stay on screen.
+    for (const name of ["Folder contents", "Largest files"])
+      await expect(page.getByRole("radio", { name })).toBeInViewport({
+        ratio: 1,
+      });
+    await expect(
+      page.getByRole("searchbox", { name: "Search files by name or path" }),
+    ).toBeInViewport({ ratio: 1 });
+    await checkAccessibility(page);
+    await page.screenshot({
+      path: `test-results/workspace-${screen.name.toLowerCase()}.png`,
     });
-  await expect(
-    page.getByRole("searchbox", { name: "Search files by name or path" }),
-  ).toBeInViewport({ ratio: 1 });
-  await checkAccessibility(page);
-});
+  });
+}
 
 test("at 1280×720 the controls, a one-line composition and the first rows fit (T5)", async ({
   page,
@@ -1877,6 +1910,13 @@ test("an engine that stops during a scan is reported once, by its banner", async
   await expect(page.getByText("Connection interrupted")).toHaveCount(0);
 });
 
+/** How far the rows of the files card are scrolled inside their own region. */
+async function regionScroll(page: Page) {
+  return page.evaluate(
+    () => document.querySelector(".largest-card .table-scroll")!.scrollTop,
+  );
+}
+
 async function openFinding(page: Page, name: string) {
   await page
     .getByRole("table", { name: /^Largest files in Fixture/ })
@@ -1900,8 +1940,17 @@ test("a deep ranked file opens in its folder and the way back keeps the list (T6
     exact: true,
   });
   await movieRow.scrollIntoViewIfNeeded();
-  const listScroll = await page.evaluate(() => window.scrollY);
+  // The rows scroll in their own region, so the page itself stays put and the
+  // count and the column header remain on screen.
+  const listScroll = await regionScroll(page);
   expect(listScroll).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(page.locator(".largest-card .table-footer")).toBeInViewport({
+    ratio: 1,
+  });
+  await expect(
+    table.getByRole("columnheader", { name: "Size" }),
+  ).toBeInViewport({ ratio: 1 });
 
   // The details say what the file is, where it sits and what to do next.
   await openFinding(page, "movie.mkv");
@@ -1967,7 +2016,7 @@ test("a deep ranked file opens in its folder and the way back keeps the list (T6
   await expect(movieRow).toBeFocused();
   await expect(movieRow).toHaveAttribute("aria-current", "true");
   expect(
-    Math.abs((await page.evaluate(() => window.scrollY)) - listScroll),
+    Math.abs((await regionScroll(page)) - listScroll),
   ).toBeLessThanOrEqual(2);
   // Nothing was ranked again for the way back.
   expect(requests.largest).toEqual([

@@ -281,8 +281,8 @@ export function LargestFiles({
       className="contents-card largest-card"
       aria-labelledby="largest-title"
     >
-      <div className="card-heading largest-heading">
-        <div>
+      <div className="table-tools largest-search">
+        <div className="inline-heading">
           <h3 id="largest-title">
             {!searching
               ? t("largest.title")
@@ -290,15 +290,7 @@ export function LargestFiles({
                 ? t("search.titleFolder", { name: scope.name })
                 : t("search.titleAll")}
           </h3>
-          <p className="muted">
-            {searching
-              ? t("search.description", { root: root.name })
-              : t("largest.description", { root: root.name })}
-          </p>
         </div>
-        {headingAction}
-      </div>
-      <div className="table-tools largest-search">
         <div className="search-field">
           <Icon name="search" size={18} />
           <label className="sr-only" htmlFor="file-search">
@@ -315,6 +307,7 @@ export function LargestFiles({
             onChange={(event) => change({ query: event.target.value })}
           />
         </div>
+        {headingAction}
       </div>
       <div className="table-tools largest-filters">
         {folders.length > 0 && (
@@ -353,7 +346,9 @@ export function LargestFiles({
         />
       </div>
       <p id="file-search-scope" className="search-scope muted">
-        {t("search.scopeNote", { where })}
+        {searching
+          ? t("search.scopeNote", { where })
+          : t("largest.description", { root: root.name })}
         {folders.length === 0 && " " + t("search.scopeHint")}
       </p>
       {partial && (

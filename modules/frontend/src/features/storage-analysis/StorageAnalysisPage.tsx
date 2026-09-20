@@ -724,17 +724,41 @@ export function StorageAnalysisPage() {
               ) : null
             }
           >
-            <SegmentedControl<"folder" | "largest">
-              name="workspace-view"
-              className="view-switch"
-              legend={t("view.label")}
-              value={view}
-              onChange={switchView}
-              options={[
-                { value: "folder", label: t("view.folder") },
-                { value: "largest", label: t("view.largest") },
-              ]}
-            />
+            <div className="workspace-toolbar">
+              {view === "folder" && selected && (
+                <nav
+                  className="path-breadcrumbs"
+                  aria-label={t("selection.breadcrumbLabel")}
+                >
+                  {breadcrumbs().map((node, index, all) => (
+                    <React.Fragment key={node.absolutePath}>
+                      {index > 0 && <Icon name="chevron-right" size={14} />}
+                      <button
+                        onClick={() => selectNode(node)}
+                        aria-current={
+                          index === all.length - 1 ? "location" : undefined
+                        }
+                        title={node.absolutePath}
+                      >
+                        {index === 0 && <Icon name="folder" size={15} />}
+                        <span>{node.name}</span>
+                      </button>
+                    </React.Fragment>
+                  ))}
+                </nav>
+              )}
+              <SegmentedControl<"folder" | "largest">
+                name="workspace-view"
+                className="view-switch"
+                legend={t("view.label")}
+                value={view}
+                onChange={switchView}
+                options={[
+                  { value: "folder", label: t("view.folder") },
+                  { value: "largest", label: t("view.largest") },
+                ]}
+              />
+            </div>
             {view === "largest" ? (
               <LargestFiles
                 key={snapshot!.id}
@@ -788,26 +812,6 @@ export function StorageAnalysisPage() {
                   </div>
                 )}
                 <div className="selection-header">
-                  <nav
-                    className="path-breadcrumbs"
-                    aria-label={t("selection.breadcrumbLabel")}
-                  >
-                    {breadcrumbs().map((node, index, all) => (
-                      <React.Fragment key={node.absolutePath}>
-                        {index > 0 && <Icon name="chevron-right" size={14} />}
-                        <button
-                          onClick={() => selectNode(node)}
-                          aria-current={
-                            index === all.length - 1 ? "location" : undefined
-                          }
-                          title={node.absolutePath}
-                        >
-                          {index === 0 && <Icon name="folder" size={15} />}
-                          <span>{node.name}</span>
-                        </button>
-                      </React.Fragment>
-                    ))}
-                  </nav>
                   <div className="selection-title-row">
                     <div className="selection-title">
                       <span className="selection-icon">
@@ -870,16 +874,22 @@ export function StorageAnalysisPage() {
                       </Button>
                     </div>
                   </div>
-                  <p
-                    className="selected-full-path"
-                    title={selected.absolutePath}
-                  >
-                    {selected.absolutePath}
-                  </p>
+                  {/* Reading the path off the screen only matters when it
+                      could not be copied; the breadcrumbs carry it otherwise. */}
                   {copyStatus && (
-                    <p role="status" className="copy-status">
-                      {copyStatus}
-                    </p>
+                    <>
+                      <p role="status" className="copy-status">
+                        {copyStatus}
+                      </p>
+                      {copyStatus === t("selection.copyFailed") && (
+                        <p
+                          className="selected-full-path"
+                          title={selected.absolutePath}
+                        >
+                          {selected.absolutePath}
+                        </p>
+                      )}
+                    </>
                   )}
                   {showSelected.failure && (
                     <Alert

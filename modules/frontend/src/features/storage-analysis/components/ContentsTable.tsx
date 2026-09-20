@@ -100,15 +100,14 @@ export function ContentsTable({
 
   return (
     <section className="contents-card" aria-labelledby="contents-title">
-      <div className="card-heading">
-        <div className="inline-heading">
-          <h3 id="contents-title">{t("contents.title")}</h3>
-          <span className="count-badge">
-            {formatNumber(node.subdirectories.length)}
-          </span>
+      {node.subdirectories.length === 0 ? (
+        <div className="table-tools">
+          <div className="inline-heading">
+            <h3 id="contents-title">{t("contents.title")}</h3>
+            <span className="count-badge">0</span>
+          </div>
         </div>
-        <span className="muted">{t("contents.largestFirst")}</span>
-      </div>
+      ) : null}
       {node.subdirectories.length === 0 ? (
         <EmptyState
           title={t("contents.emptyTitle")}
@@ -118,6 +117,13 @@ export function ContentsTable({
       ) : (
         <>
           <div className="table-tools">
+            {/* The card's name shares the row with what filters it. */}
+            <div className="inline-heading">
+              <h3 id="contents-title">{t("contents.title")}</h3>
+              <span className="count-badge">
+                {formatNumber(node.subdirectories.length)}
+              </span>
+            </div>
             <div className="search-field">
               <Icon name="search" size={18} />
               <label className="sr-only" htmlFor="contents-search">

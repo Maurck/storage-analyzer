@@ -1656,6 +1656,43 @@ test("forced colors keep the chosen view and filter visible", async ({
   });
 });
 
+/** Rows of the visible table that end above the fold, with no page scroll. */
+async function visibleRows(page: Page) {
+  return page.evaluate(() => {
+    if (window.scrollY !== 0) return -1;
+    return Array.from(document.querySelectorAll("tbody tr")).filter(
+      (row) => row.getBoundingClientRect().bottom <= window.innerHeight,
+    ).length;
+  });
+}
+
+test("a taller window is spent on rows, not on what sits above them", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await prepare(page, { extraFiles: 60 });
+  await analyze(page);
+  // The folder table and the search results both start high enough that a
+  // 1080p window shows ten rows. The count and pagination still sit below
+  // them: only a table that scrolls in its own region would keep those up.
+  expect(await visibleRows(page)).toBeGreaterThanOrEqual(10);
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  await page
+    .getByRole("searchbox", { name: "Search files by name or path" })
+    .fill("note");
+  await expect(page.getByText("1–50 of 60 matching files")).toBeVisible();
+  expect(await visibleRows(page)).toBeGreaterThanOrEqual(10);
+  // Where you are, which list you read and what filters it stay on screen.
+  for (const name of ["Folder contents", "Largest files"])
+    await expect(page.getByRole("radio", { name })).toBeInViewport({
+      ratio: 1,
+    });
+  await expect(
+    page.getByRole("searchbox", { name: "Search files by name or path" }),
+  ).toBeInViewport({ ratio: 1 });
+  await checkAccessibility(page);
+});
+
 test("at 1280×720 the controls, a one-line composition and the first rows fit (T5)", async ({
   page,
 }) => {
@@ -1666,6 +1703,9 @@ test("at 1280×720 the controls, a one-line composition and the first rows fit (
   const firstRow = table.locator("tbody tr").first();
   await expect(firstRow).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  // How many rows a window of this height is worth: the guarantee is stated
+  // per window height, because no page size fits every screen and scaling.
+  expect(await visibleRows(page)).toBeGreaterThanOrEqual(3);
   for (const name of ["New analysis", "Rescan Fixture", "Show in Explorer"])
     await expect(
       page.getByRole("button", { name, exact: true }),
@@ -2107,14 +2147,21 @@ test("search finds files in folders never opened, counts every match and pages t
   await analyze(page);
   await showLargest(page);
   const search = fileSearch(page);
+  // Without a query the line explains the ranking; a search replaces it with
+  // what that search covers.
   await expect(
     page.getByText(
-      "Search covers every file in the whole analysis, including folders you have not opened. To search one folder and its subfolders, select it in the explorer first.",
+      "The largest files found in Fixture. Only what this analysis covered is included, not the whole disk. To search one folder and its subfolders, select it in the explorer first.",
     ),
   ).toBeVisible();
 
   // A deep file, in a branch nobody expanded.
   await search.fill("MOVIE");
+  await expect(
+    page.getByText(
+      "Search covers every file in the whole analysis, including folders you have not opened. To search one folder and its subfolders, select it in the explorer first.",
+    ),
+  ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Files in this analysis" }),
   ).toBeVisible();

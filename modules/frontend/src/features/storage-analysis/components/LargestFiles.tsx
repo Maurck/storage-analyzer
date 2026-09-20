@@ -119,7 +119,6 @@ export function LargestFiles({
   const showItem = useShowItem(scanId);
   const rowButtons = useRef(new Map<string, HTMLButtonElement>());
   const scrollRegion = useRef<HTMLDivElement>(null);
-  const footer = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const restore = useRef(restoreList);
   const typed = state.query.trim();
@@ -203,7 +202,6 @@ export function LargestFiles({
   // them stay on screen.
   useFittedHeight(
     scrollRegion,
-    footer,
     scanId,
     list?.files.length,
     searching,
@@ -519,7 +517,7 @@ export function LargestFiles({
         </div>
       )}
       {list && (stale || list.files.length > 0) && (
-        <div className="table-footer" ref={footer}>
+        <div className="table-footer">
           <span role="status">
             {stale
               ? t("search.searching")

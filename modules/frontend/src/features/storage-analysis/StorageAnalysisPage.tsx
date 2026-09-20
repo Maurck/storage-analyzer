@@ -45,6 +45,7 @@ import {
   useErrorMessage,
 } from "../../shared/i18n/useErrorMessage";
 import { useMediaQuery } from "../../shared/hooks/useMediaQuery";
+import { useFittedHeight } from "../../shared/hooks/useFittedHeight";
 import { SplitPane } from "../../layouts/SplitPane";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { CommonFolder, desktopBridge } from "../../shared/lib/desktopBridge";
@@ -120,6 +121,7 @@ export function StorageAnalysisPage() {
   const explorerDialog = useRef<HTMLDialogElement>(null);
   const settingsDialog = useRef<HTMLDialogElement>(null);
   const currentSnapshot = useRef<string>();
+  const explorerPanel = useRef<HTMLElement>(null);
   const compact = useMediaQuery("(max-width: 767px)");
   currentSnapshot.current = snapshot?.id;
   const root = snapshot?.root;
@@ -130,6 +132,10 @@ export function StorageAnalysisPage() {
     staleTime: Infinity,
     retry: 1,
   });
+
+  // The explorer is as tall as the window allows, like the tables: a column
+  // taller than the window would make the whole page scroll.
+  useFittedHeight(explorerPanel, compact, snapshot?.id);
 
   useEffect(() => {
     desktopBridge()
@@ -717,6 +723,7 @@ export function StorageAnalysisPage() {
               !compact ? (
                 <aside
                   className="explorer-panel"
+                  ref={explorerPanel}
                   aria-label={t("explorer.label")}
                 >
                   {explorer}

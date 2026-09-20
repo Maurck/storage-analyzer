@@ -78,7 +78,6 @@ export function ContentsTable({
   const { search, filter, sort, page } = state;
   const revealedButton = useRef<HTMLButtonElement>(null);
   const scrollRegion = useRef<HTMLDivElement>(null);
-  const footer = useRef<HTMLDivElement>(null);
   const items = useMemo(() => contentsItems(node, state), [node, state]);
   const pages = Math.ceil(items.length / PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(pages - 1, 0));
@@ -97,7 +96,7 @@ export function ContentsTable({
 
   // The rows scroll inside their region, so the count and the pages under
   // them stay on screen.
-  useFittedHeight(scrollRegion, footer, node.absolutePath, items.length, query, filter);
+  useFittedHeight(scrollRegion, node.absolutePath, items.length, query, filter);
 
   useEffect(() => {
     if (!focusRevealed || !revealedButton.current) return;
@@ -337,7 +336,7 @@ export function ContentsTable({
               </table>
             </div>
           )}
-          <div className="table-footer" ref={footer}>
+          <div className="table-footer">
             <span role="status">
               {items.length
                 ? t("contents.range", {

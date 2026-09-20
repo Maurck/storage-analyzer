@@ -1673,10 +1673,12 @@ async function visibleRows(page: Page) {
  * FHD is the common case and UHD is the unscaled extreme.
  */
 const SCREENS = [
-  { name: "HD", width: 1280, height: 720, rows: 3, footer: false },
-  { name: "FHD", width: 1920, height: 1080, rows: 10, footer: true },
-  { name: "QHD", width: 2560, height: 1440, rows: 16, footer: true },
-  { name: "UHD", width: 3840, height: 2160, rows: 20, footer: true },
+  // HD has no room left for a region of rows once the blocks above them are
+  // there, so it keeps the page's scroll; the rest fit the window exactly.
+  { name: "HD", width: 1280, height: 720, rows: 3, fits: false },
+  { name: "FHD", width: 1920, height: 1080, rows: 9, fits: true },
+  { name: "QHD", width: 2560, height: 1440, rows: 16, fits: true },
+  { name: "UHD", width: 3840, height: 2160, rows: 20, fits: true },
 ];
 
 for (const screen of SCREENS) {
@@ -1693,10 +1695,21 @@ for (const screen of SCREENS) {
       ).toBeGreaterThanOrEqual(screen.rows);
       // Below a useful height the rows keep the page's scroll instead of a
       // region of their own, and the count then sits under the fold.
-      if (screen.footer)
+      if (screen.fits) {
         await expect(page.locator(".table-footer").first()).toBeInViewport({
           ratio: 1,
         });
+        // Nothing is left over: neither the rows, nor the explorer beside
+        // them, nor the page footer make the window scroll.
+        expect(
+          await page.evaluate(() => ({
+            page: document.documentElement.scrollHeight,
+            window: window.innerHeight,
+          })),
+          `${view} fits ${screen.name} without a page scroll`,
+        ).toEqual({ page: screen.height, window: screen.height });
+        await expect(page.locator(".app-footer")).toBeInViewport({ ratio: 1 });
+      }
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= window.innerWidth + 1,
@@ -1725,6 +1738,35 @@ for (const screen of SCREENS) {
     });
   });
 }
+
+test("a partial analysis of a whole drive still fits a QHD window", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  // What scanning C:\ looks like: many items, a warning and a skipped count
+  // above the rows, which is where the height goes.
+  await prepare(page, {
+    extraFiles: 60,
+    partialRoot: true,
+    scanExtras: { skippedCount: 481 },
+  });
+  await analyze(page);
+  await expect(page.getByText("Some items could not be measured")).toBeVisible();
+  expect(await visibleRows(page)).toBeGreaterThanOrEqual(12);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollHeight),
+  ).toBe(1440);
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  await expect(
+    page.getByText("This analysis skipped some items", { exact: false }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollHeight),
+  ).toBe(1440);
+  await expect(page.locator(".largest-card .table-footer")).toBeInViewport({
+    ratio: 1,
+  });
+});
 
 test("at 1280×720 the controls, a one-line composition and the first rows fit (T5)", async ({
   page,

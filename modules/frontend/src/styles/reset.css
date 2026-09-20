@@ -9,7 +9,9 @@
     min-width: 320px;
     min-height: 100%;
     font-family: var(--font-sans);
-    font-size: 16px;
+    /* The browser's font-size preference, not a fixed 16px: every size below
+       is in rem, so text grows with it and with zoom. */
+    font-size: 100%;
     line-height: 1.5;
     background: var(--color-background);
     color: var(--color-text);

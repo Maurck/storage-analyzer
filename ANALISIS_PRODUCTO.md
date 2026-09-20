@@ -305,7 +305,7 @@ El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta e
 
 **Necesidad:** mantener legibilidad y control en preferencias visuales distintas. **Impacto esperado: medio; accesibilidad es un requisito transversal.**
 
-- **F15a · Calidad de la beta, B–M:** verificar y corregir `forced-colors`, foco, selección, errores y gráficos con alternativas textuales.
+- **F15a · Calidad de la beta, B–M:** verificar y corregir `forced-colors`, foco, selección, errores y gráficos con alternativas textuales. **Corregido tras H4b:** la tipografía estaba en px y la raíz fijada en 16px, así que la preferencia de tamaño de texto del sistema no hacía nada; ahora todo es rem con raíz al 100 %.
 - **F15b · Ampliación, M:** «Sistema | Claro | Oscuro», tokens completos y persistencia tolerante a fallos.
 - **Aceptación de F15a:** selección distinguible sin depender solo del color, controles y foco visibles, contraste en el tema actual y alto contraste, y 200 % de texto.
 - **Aceptación adicional de F15b:** revisar claro/oscuro/sistema y persistencia. Cambiar tema no cierra un scan ni reinicia selección.
@@ -728,6 +728,16 @@ Con un segundo análisis del mismo fixture en curso y 24 búsquedas concurrentes
 **Regresiones:** backend 44 pruebas (1 omitida por enlaces simbólicos; 5 nuevas). Frontend: `tsc`, webpack sin avisos, 38 pruebas de datos (2 nuevas), 29 de escritorio y 57 de UI (5 nuevas). Integración real con Electron (`electron-smoke.cjs`, `electron-first-finding.cjs` ampliado con la búsqueda) contra el backend real.
 
 **Límites conocidos:** la búsqueda compara texto, no palabras sueltas ni acentos equivalentes («cancion» no encuentra «canción»); más allá de 10.000 coincidencias hay que precisar la consulta; solo se buscan archivos, no carpetas por nombre; el buscador del árbol sigue cubriendo únicamente lo cargado; el ámbito se elige entre la carpeta seleccionada y la ya fijada, no en un selector de carpetas propio; una búsqueda en curso sigue trabajando en el servidor aunque el cliente la descarte; y el estado de la búsqueda no se guarda entre sesiones.
+
+#### Corrección de accesibilidad detectada al medir (2026-09-19, tras H4b)
+
+Al medir cuántas filas caben por pantalla se comprobó que **el texto al 200 % no cambiaba un solo píxel**: las 84 declaraciones `font-size` del CSS estaban en px y `html` fijaba `font-size: 16px`, de modo que ni la preferencia de tamaño de texto del sistema ni los tokens rem existentes tenían efecto. La prueba que registraba «200 % de texto sin desbordamiento» pasaba de forma trivial: comprobaba el desbordamiento, no que el texto creciera. El zoom del navegador sí escalaba px, así que no era un incumplimiento de WCAG 1.4.4, pero la evidencia afirmaba más de lo que medía y `docs/design-system.md` declaraba una tipografía en rem que el código no seguía.
+
+**Corregido:** las 84 tallas pasan a rem (equivalencia exacta al tamaño raíz por defecto, sin cambio visual al 100 %), `html` usa `font-size: 100%` y los anchos fijos que contenían texto (selector de tipo, columna de acciones, columna de etiquetas del detalle) pasan a rem. La tabla recibe `min-width` en rem: con texto grande se ensancha y su región se desplaza en horizontal, en vez de comprimir columnas hasta recortar «Carpeta» o «1,00 GB»; en ventanas compactas ese mínimo se retira, porque allí el diseño ya oculta columnas. La prueba ahora exige que el tamaño calculado de cuatro textos se duplique, que no haya desbordamiento horizontal de la página y que ninguna celda, cabecera o control recorte su contenido.
+
+**Medición (1920×1080, fixture de 64 elementos):** con texto al 200 % la primera fila pasa de y = 669 a y = 893 y la página de 2.046 a 2.311 px; se ven 3 filas completas en vez de 8. Antes de la corrección, los tres números eran idénticos a los del 100 %.
+
+**Límite:** los iconos siguen midiéndose en px y no crecen con el texto; el zoom del navegador sí los escala. Sigue sin ejecutarse la revisión manual con lector de pantalla y alto contraste real de Windows.
 
 ### 5.3 Secuencia de entregas
 

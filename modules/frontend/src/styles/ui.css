@@ -253,7 +253,7 @@
   .sa-segmented__legend {
     float: left;
     color: var(--color-text-muted);
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .sa-segmented__options {
     display: inline-flex;
@@ -272,7 +272,7 @@
     padding: 0 12px;
     border-radius: 6px;
     color: var(--color-text-secondary);
-    font-size: 12px;
+    font-size: 0.75rem;
     cursor: pointer;
   }
   .sa-segmented__option input {

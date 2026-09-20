@@ -87,4 +87,4 @@ Optional real integration: with the backend running, `node tests/electron-first-
 
 The active application is `App.tsx` → `StorageAnalysisPage`, loaded as a separate production chunk. Domain components/hooks/API/types live in `features/storage-analysis`, shared accessible primitives in `shared`, and structural components in `layouts`.
 
-Styles are plain CSS with ordered layers: `tokens`, `reset`, `components`, `app`, `utilities`. The order is declared at the top of `tokens.css`, the first stylesheet the page receives; see [design-system guidance](../../docs/design-system.md).
+Styles are plain CSS with ordered layers: `tokens`, `reset`, `components`, `app`, `utilities`. Every font size is in rem and the root keeps the browser's own size, so the system's font-size preference and zoom both scale the interface; tables widen and their region scrolls instead of clipping. The order is declared at the top of `tokens.css`, the first stylesheet the page receives; see [design-system guidance](../../docs/design-system.md).

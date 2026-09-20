@@ -865,9 +865,26 @@ test("compact windows and 200 percent text retain reachable content without body
   ).toBe(true);
   await page.screenshot({ path: "test-results/mobile.png", fullPage: true });
   await page.setViewportSize({ width: 768, height: 900 });
+  const sizes = () =>
+    page.evaluate(() =>
+      [
+        "h1",
+        ".work-path",
+        "table tbody .item-link span",
+        ".table-footer span",
+      ].map((selector) =>
+        parseFloat(
+          getComputedStyle(document.querySelector(selector)!).fontSize,
+        ),
+      ),
+    );
+  const before = await sizes();
   await page.evaluate(() => {
     document.documentElement.style.fontSize = "200%";
   });
+  // Text follows the preferred size instead of staying pinned to 16px, which
+  // a px-based scale would do while the overflow check below still passed.
+  expect(await sizes()).toEqual(before.map((size) => size * 2));
   await expect(
     page.getByRole("button", { name: "New analysis", exact: true }).first(),
   ).toBeVisible();
@@ -876,6 +893,13 @@ test("compact windows and 200 percent text retain reachable content without body
       () => document.documentElement.scrollWidth <= window.innerWidth + 1,
     ),
   ).toBe(true);
+  // Nothing that holds text is clipped by a size fixed in pixels.
+  const clipped = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>("select, td, th, dt"))
+      .filter((element) => element.scrollWidth > element.clientWidth + 1)
+      .map((element) => element.className || element.tagName),
+  );
+  expect(clipped).toEqual([]);
   await checkAccessibility(page);
 });
 

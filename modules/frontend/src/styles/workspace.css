@@ -3,7 +3,7 @@
     background: var(--color-background);
     color: var(--color-text);
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: 0.875rem;
   }
   button,
   input,
@@ -55,7 +55,7 @@
     gap: 12px;
     color: var(--color-text);
     text-decoration: none;
-    font-size: 20px;
+    font-size: 1.25rem;
     letter-spacing: -0.5px;
     font-weight: 650;
   }
@@ -79,14 +79,14 @@
     background: var(--color-border);
   }
   .header-label {
-    font-size: 10px;
+    font-size: 0.625rem;
     letter-spacing: 2px;
     color: var(--color-text-muted);
   }
   .header-status {
     margin-left: auto;
     color: var(--color-text-secondary);
-    font-size: 12px;
+    font-size: 0.75rem;
     display: flex;
     align-items: center;
     gap: 9px;
@@ -123,7 +123,7 @@
   }
   .eyebrow {
     color: var(--color-text-muted);
-    font-size: 10px;
+    font-size: 0.625rem;
     font-weight: 600;
     letter-spacing: 1.8px;
     display: flex;
@@ -178,7 +178,7 @@
     min-width: 0;
   }
   .work-heading h1 {
-    font-size: 22px;
+    font-size: 1.375rem;
     line-height: 1.3;
     letter-spacing: -0.4px;
     margin: 0 0 6px;
@@ -192,11 +192,11 @@
     gap: 6px 14px;
     margin: 0;
     color: var(--color-text-muted);
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .work-path {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 0.6875rem;
     overflow-wrap: anywhere;
     user-select: text;
   }
@@ -205,7 +205,7 @@
     border-radius: 999px;
     padding: 2px 10px;
     font-weight: 600;
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--color-text-secondary);
   }
   .state-tag--complete {
@@ -269,7 +269,7 @@
     align-items: center;
     gap: 6px;
     color: var(--color-text-secondary);
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .summary-figure dd {
     display: flex;
@@ -279,14 +279,14 @@
     margin: 2px 0 0;
   }
   .summary-figure strong {
-    font-size: 20px;
+    font-size: 1.25rem;
     font-weight: 600;
     letter-spacing: -0.4px;
     font-variant-numeric: tabular-nums;
   }
   .summary-figure small {
     color: var(--color-text-muted);
-    font-size: 11px;
+    font-size: 0.6875rem;
   }
   .summary-figure--primary strong {
     color: #93c5fd;
@@ -295,7 +295,7 @@
     color: #fbbf24;
   }
   .summary-figure--secondary strong {
-    font-size: 16px;
+    font-size: 1rem;
     color: var(--color-text-secondary);
   }
   .summary-figure .sa-button {
@@ -309,7 +309,7 @@
     flex-direction: column;
     gap: 4px;
     color: var(--color-text-muted);
-    font-size: 12px;
+    font-size: 0.75rem;
     line-height: 1.5;
   }
   .volume-note {
@@ -369,7 +369,7 @@
     flex-shrink: 0;
   }
   .explorer-heading h2 {
-    font-size: 14px;
+    font-size: 0.875rem;
     font-weight: 600;
     margin: 0;
     flex: 1;
@@ -379,7 +379,7 @@
     color: var(--color-text-muted);
     padding: 3px 7px;
     border-radius: 5px;
-    font-size: 10px;
+    font-size: 0.625rem;
     white-space: nowrap;
   }
   .explorer-search {
@@ -396,11 +396,11 @@
   .explorer-search input {
     width: 100%;
     padding-left: 35px;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .explorer-hint {
     color: var(--color-text-muted);
-    font-size: 11px;
+    font-size: 0.6875rem;
     padding: 0 17px;
     margin: 10px 0 17px;
   }
@@ -431,7 +431,7 @@
     cursor: pointer;
     border: 1px solid transparent;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .tree-row:hover {
     background: var(--color-surface-hover);
@@ -471,7 +471,7 @@
     flex: 1;
   }
   .tree-size {
-    font-size: 10px;
+    font-size: 0.625rem;
     color: var(--color-text-muted);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -490,11 +490,11 @@
     align-items: center;
     gap: 5px;
     color: var(--color-text-muted);
-    font-size: 10px;
+    font-size: 0.625rem;
   }
   kbd {
     font-family: inherit;
-    font-size: 9px;
+    font-size: 0.5625rem;
     border: 1px solid #41516b;
     background: #172338;
     padding: 2px 4px;
@@ -545,7 +545,7 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    font-size: 11px;
+    font-size: 0.6875rem;
     padding: 4px;
     max-width: 250px;
     min-height: 28px;
@@ -577,7 +577,7 @@
     min-width: 0;
   }
   .selection-title h2 {
-    font-size: 21px;
+    font-size: 1.3125rem;
     font-weight: 600;
     letter-spacing: -0.4px;
     margin: 0 0 4px;
@@ -594,7 +594,7 @@
     flex-shrink: 0;
   }
   .selection-title .muted {
-    font-size: 11px;
+    font-size: 0.6875rem;
   }
   .selection-actions {
     display: flex;
@@ -605,7 +605,7 @@
     min-width: 0;
   }
   .selected-full-path {
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--color-text-muted);
     font-family: var(--font-mono);
     margin: 8px 0 0;
@@ -614,7 +614,7 @@
   }
   .copy-status {
     color: #93c5fd;
-    font-size: 12px;
+    font-size: 0.75rem;
     margin: 8px 0 0;
   }
   .contents-card,
@@ -632,16 +632,16 @@
     padding: 20px 23px;
   }
   .card-heading .eyebrow {
-    font-size: 9px;
+    font-size: 0.5625rem;
     margin-bottom: 7px;
   }
   .card-heading h3 {
-    font-size: 14px;
+    font-size: 0.875rem;
     font-weight: 600;
     margin: 0;
   }
   .card-heading > .muted {
-    font-size: 10px;
+    font-size: 0.625rem;
   }
   /* A single fixed line: what it is on the left, then segments that say
      as much as their width allows. */
@@ -658,7 +658,7 @@
     align-items: baseline;
     gap: 6px;
     flex-shrink: 0;
-    font-size: 12px;
+    font-size: 0.75rem;
     white-space: nowrap;
   }
   .distribution-label__title {
@@ -688,7 +688,7 @@
     overflow: hidden;
     color: #0b1220;
     font: inherit;
-    font-size: 11px;
+    font-size: 0.6875rem;
     font-weight: 600;
     transition: filter 120ms ease;
   }
@@ -757,7 +757,7 @@
     gap: 9px;
   }
   .count-badge {
-    font-size: 10px;
+    font-size: 0.625rem;
     padding: 2px 7px;
     border-radius: 5px;
     background: #243248;
@@ -783,11 +783,11 @@
   .search-field input {
     width: 100%;
     padding-left: 37px;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .table-tools select {
-    font-size: 12px;
-    width: 128px;
+    font-size: 0.75rem;
+    width: 8rem;
   }
   .table-scroll {
     overflow: auto;
@@ -795,16 +795,19 @@
   }
   table {
     width: 100%;
+    /* In rem, so larger text makes the table wider and .table-scroll scroll
+       sideways instead of squeezing its columns until they clip. */
+    min-width: 34rem;
     border-collapse: collapse;
     table-layout: fixed;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   th {
     color: var(--color-text-muted);
     background: #121e31;
     text-align: left;
     font-weight: 400;
-    font-size: 10px;
+    font-size: 0.625rem;
     padding: 11px 20px;
     border-top: 1px solid #26344a;
     border-bottom: 1px solid #26344a;
@@ -872,7 +875,7 @@
     color: #93c5fd;
   }
   .partial-label {
-    font-size: 9px;
+    font-size: 0.5625rem;
     color: #fbbf24;
   }
   .share-value {
@@ -880,7 +883,7 @@
     align-items: center;
     gap: 9px;
     justify-content: flex-end;
-    font-size: 10px;
+    font-size: 0.625rem;
     color: var(--color-text-muted);
   }
   .share-bar {
@@ -902,7 +905,7 @@
     justify-content: space-between;
     padding: 13px 22px;
     border-top: 1px solid #29374e;
-    font-size: 10px;
+    font-size: 0.625rem;
     color: var(--color-text-muted);
     gap: 12px;
   }
@@ -940,12 +943,12 @@
     gap: 6px;
   }
   .scan-progress-text strong {
-    font-size: 15px;
+    font-size: 0.9375rem;
     font-weight: 600;
   }
   .scan-progress-text > span {
     color: var(--color-text-muted);
-    font-size: 12px;
+    font-size: 0.75rem;
     overflow-wrap: anywhere;
   }
   .scan-path {
@@ -960,7 +963,7 @@
   }
   .scan-activity {
     color: var(--color-warning-text);
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .scan-activity:empty {
     display: none;
@@ -981,7 +984,7 @@
     border: 1px solid #2d5085;
     border-radius: 12px;
     color: var(--color-text-secondary);
-    font-size: 13px;
+    font-size: 0.8125rem;
   }
   .service-banner__title {
     color: var(--color-text);
@@ -1079,7 +1082,7 @@
     transform: rotate(45deg);
   }
   .welcome-panel h2 {
-    font-size: 28px;
+    font-size: 1.75rem;
     font-weight: 600;
     letter-spacing: -0.6px;
     margin: 14px 0 11px;
@@ -1088,19 +1091,19 @@
     color: var(--color-text-muted);
     max-width: 450px;
     line-height: 1.8;
-    font-size: 14px;
+    font-size: 0.875rem;
     margin: 0 0 22px;
   }
   .welcome-panel > .eyebrow {
     color: #91b9ec;
-    font-size: 9px;
+    font-size: 0.5625rem;
   }
   .privacy-note {
     margin-top: 15px;
     display: flex;
     align-items: center;
     gap: 5px;
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--color-text-muted);
   }
   .privacy-note svg {
@@ -1120,7 +1123,7 @@
     display: flex;
     align-items: center;
     gap: 9px;
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--color-text-secondary);
   }
   .welcome-features svg {
@@ -1134,7 +1137,7 @@
     justify-content: space-between;
     gap: 16px;
     padding: 26px 0;
-    font-size: 10px;
+    font-size: 0.625rem;
     color: var(--color-text-muted);
   }
   .app-footer > span {
@@ -1184,7 +1187,7 @@
   }
   .dialog-heading h2 {
     margin: 0;
-    font-size: 22px;
+    font-size: 1.375rem;
   }
   .path-dialog p {
     color: var(--color-text-secondary);
@@ -1218,7 +1221,7 @@
   .settings-hint,
   .settings-note {
     color: var(--color-text-muted);
-    font-size: 13px;
+    font-size: 0.8125rem;
     line-height: 1.6;
     margin: 8px 0 0;
   }
@@ -1262,7 +1265,7 @@
   }
   .settings-section h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: 0.875rem;
     font-weight: 600;
   }
   .shortcut-list {
@@ -1275,7 +1278,7 @@
     grid-template-columns: 90px minmax(0, 1fr);
     align-items: center;
     gap: 12px;
-    font-size: 13px;
+    font-size: 0.8125rem;
   }
   .shortcut-list dt {
     margin: 0;
@@ -1302,7 +1305,7 @@
   }
   .largest-heading p {
     margin: 6px 0 0;
-    font-size: 12px;
+    font-size: 0.75rem;
     line-height: 1.5;
   }
   .largest-partial,
@@ -1328,7 +1331,7 @@
   .search-scope {
     margin: 0;
     padding: 0 22px 16px;
-    font-size: 12px;
+    font-size: 0.75rem;
     line-height: 1.5;
   }
   /* Rows that answer the previous search while the new one runs; the footer
@@ -1342,7 +1345,7 @@
     flex-wrap: wrap;
     gap: 8px 14px;
     padding: 0 22px 16px;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .item-name {
     display: flex;
@@ -1368,11 +1371,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--color-text-muted);
   }
   .action-column {
-    width: 68px;
+    width: 4.25rem;
     text-align: right;
   }
   /* The row of the file last opened, or reached from the ranking. The bar and
@@ -1386,7 +1389,7 @@
   }
   .revealed-label {
     flex-shrink: 0;
-    font-size: 9px;
+    font-size: 0.5625rem;
     color: var(--color-selection-text);
     border: 1px solid var(--color-focus);
     border-radius: 999px;
@@ -1401,7 +1404,7 @@
     border: 1px solid #29374e;
     border-radius: 10px;
     background: var(--color-surface);
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .finding-detail {
     padding-bottom: 22px;
@@ -1420,7 +1423,7 @@
     min-width: 0;
   }
   .finding-heading h3 {
-    font-size: 19px;
+    font-size: 1.1875rem;
     font-weight: 600;
     letter-spacing: -0.3px;
     margin: 0 0 4px;
@@ -1435,7 +1438,7 @@
   }
   .finding-heading p {
     margin: 0;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .finding-actions {
     display: flex;
@@ -1454,20 +1457,20 @@
   }
   .finding-facts > div {
     display: grid;
-    grid-template-columns: 130px minmax(0, 1fr);
+    grid-template-columns: 8.125rem minmax(0, 1fr);
     gap: 20px;
     padding: 13px 0;
     border-top: 1px solid var(--color-border);
-    font-size: 12px;
+    font-size: 0.75rem;
   }
   .finding-path {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 0.6875rem;
     user-select: text;
   }
   .finding-note {
     margin: 4px 23px 0;
-    font-size: 11px;
+    font-size: 0.6875rem;
     line-height: 1.5;
   }
   /* Room for the focus ring of the last button in a row. */
@@ -1483,7 +1486,7 @@
     text-align: left;
   }
   .quick-start > h2 {
-    font-size: 15px;
+    font-size: 0.9375rem;
     margin: 0 0 12px;
   }
   .quick-group + .quick-group {
@@ -1498,7 +1501,7 @@
   }
   .quick-group-heading h3 {
     margin: 0;
-    font-size: 12px;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--color-text-secondary);
   }
@@ -1546,7 +1549,7 @@
     color: #93c5fd;
   }
   .quick-folder-name {
-    font-size: 13px;
+    font-size: 0.8125rem;
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1554,7 +1557,7 @@
   }
   .quick-folder-path {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 0.6875rem;
     color: var(--color-text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1635,7 +1638,7 @@
       gap: 12px;
     }
     .work-heading h1 {
-      font-size: 20px;
+      font-size: 1.25rem;
     }
     .summary-strip {
       padding: 10px 14px;
@@ -1644,7 +1647,7 @@
       gap: 6px 20px;
     }
     .summary-figure strong {
-      font-size: 17px;
+      font-size: 1.0625rem;
     }
     .largest-card .location-column {
       display: none;
@@ -1681,7 +1684,7 @@
       gap: 12px;
     }
     .brand {
-      font-size: 17px;
+      font-size: 1.0625rem;
       gap: 9px;
     }
     .brand-mark {
@@ -1693,7 +1696,7 @@
       display: none;
     }
     .header-status {
-      font-size: 10px;
+      font-size: 0.625rem;
     }
     main {
       padding: 25px 18px 0;
@@ -1705,10 +1708,10 @@
       margin-bottom: 24px;
     }
     .page-heading h1 {
-      font-size: 30px;
+      font-size: 1.875rem;
     }
     .page-heading p {
-      font-size: 12px;
+      font-size: 0.75rem;
     }
     .page-actions {
       width: 100%;
@@ -1724,7 +1727,7 @@
       flex-wrap: wrap;
     }
     .selection-title h2 {
-      font-size: 20px;
+      font-size: 1.25rem;
     }
     .selection-actions {
       justify-content: flex-start;
@@ -1732,6 +1735,11 @@
     }
     .type-column {
       display: none;
+    }
+    /* Compact windows drop columns and move the location under the name, so
+       the table fits the width it has and never scrolls sideways. */
+    table {
+      min-width: 0;
     }
     th:first-child {
       width: 48%;
@@ -1748,10 +1756,10 @@
     }
     .item-link {
       gap: 6px;
-      font-size: 11px;
+      font-size: 0.6875rem;
     }
     .numeric {
-      font-size: 11px;
+      font-size: 0.6875rem;
     }
     .table-footer {
       flex-wrap: wrap;
@@ -1770,10 +1778,10 @@
       min-height: 0;
     }
     .welcome-panel h2 {
-      font-size: 23px;
+      font-size: 1.4375rem;
     }
     .welcome-panel > p {
-      font-size: 12px;
+      font-size: 0.75rem;
     }
     .welcome-art {
       transform: scale(0.9);
@@ -1786,7 +1794,7 @@
       margin-top: 28px;
     }
     .privacy-note {
-      font-size: 10px;
+      font-size: 0.625rem;
     }
     .app-footer {
       align-items: flex-start;

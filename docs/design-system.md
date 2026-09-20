@@ -21,7 +21,7 @@ The layer order is declared at the top of `tokens.css`, the first stylesheet inj
 
 Decorative borders may use a quieter token. Controls need the stronger border. Never use color as the sole explanation for errors or partial analysis. Add text and an icon. The space bar labels only the segments wide enough to read; every value, exact size included, stays in the contents table below it.
 
-Spacing follows a 4px scale with a 2px half step. Shared typography uses rem units, medium/bold weights and a system font stack. Radius tokens cover 4/8/12/16px and pill shapes. Shadows are reserved for overlays. Z-index tokens define sticky, dropdown, overlay, dialog, toast and tooltip layers. Motion is short and reduced-motion preferences disable nonessential animation.
+Spacing follows a 4px scale with a 2px half step. Typography is in rem everywhere, and the root size is the browser's own (`font-size: 100%`), never a pinned 16px: text follows the system's font-size preference as well as zoom. A size in px that holds text is a defect; where larger text no longer fits, the table widens (`min-width` in rem) and its region scrolls, rather than squeezing columns until they clip. Weights are medium/bold over a system font stack. Radius tokens cover 4/8/12/16px and pill shapes. Shadows are reserved for overlays. Z-index tokens define sticky, dropdown, overlay, dialog, toast and tooltip layers. Motion is short and reduced-motion preferences disable nonessential animation.
 
 ## Component ownership
 
@@ -79,7 +79,7 @@ Shared UI must not import feature code. Domain types remain with their feature. 
 
 Compact mode is below 768px; regular mode is 768–1199px; wide is 1200px and above. Breakpoint values are documented tokens but media queries use literal values because CSS custom properties cannot be media conditions.
 
-Test keyboard-only operation, 390px windows, long paths, 200% text, 400% browser zoom/reflow and Windows forced colors. In forced colors, selection uses a thicker `Highlight` border (a `Highlight` outline for marked table rows), bars get a `CanvasText` outline and a `Highlight` fill, and status dots keep a system color; values are always written out as text. Focus indicators are distinct from selection. Decorative icons are hidden from assistive technology. Interactive targets are at least 24×24 CSS px (WCAG 2.5.8), including the segments of the composition bar. ARIA tree navigation follows the [W3C tree-view pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/); the target is [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/).
+Test keyboard-only operation, 390px windows, long paths, 200% text (checking that text actually doubles, not only that nothing overflows), 400% browser zoom/reflow and Windows forced colors. In forced colors, selection uses a thicker `Highlight` border (a `Highlight` outline for marked table rows), bars get a `CanvasText` outline and a `Highlight` fill, and status dots keep a system color; values are always written out as text. Focus indicators are distinct from selection. Decorative icons are hidden from assistive technology. Interactive targets are at least 24×24 CSS px (WCAG 2.5.8), including the segments of the composition bar. ARIA tree navigation follows the [W3C tree-view pattern](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/); the target is [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/).
 
 ## Scaling rules
 

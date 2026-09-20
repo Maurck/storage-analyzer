@@ -20,7 +20,10 @@ const path = require('node:path');
     const page = await app.firstWindow();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await expect(page.locator('#page-title')).toBeVisible();
+    // Startup is measured elsewhere; how long the window takes to paint on a
+    // given machine is not what this check is about, so it waits like the
+    // walkthrough does.
+    await expect(page.locator('#page-title')).toBeVisible({ timeout: 30000 });
     const bridge = await page.evaluate(() => ({ keys: Object.keys(window.storageAnalyzer), nodeAvailable: typeof window.require !== 'undefined' }));
     expect(bridge.keys.sort()).toEqual(['backendUrl', 'getBackendStatus', 'getCommonFolders', 'numberLocale', 'onBackendStatus', 'retryBackend', 'selectDirectory', 'showItemInFolder']);
     expect(bridge.nodeAvailable).toBe(false);

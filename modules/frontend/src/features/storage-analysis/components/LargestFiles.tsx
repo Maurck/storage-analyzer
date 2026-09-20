@@ -19,6 +19,7 @@ import {
 } from "../../../shared/lib/format";
 import { useErrorMessage } from "../../../shared/i18n/useErrorMessage";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
+import { useFittedHeight } from "../../../shared/hooks/useFittedHeight";
 
 const LIMIT = 100;
 /** Files per page of search results. */
@@ -64,6 +65,8 @@ export interface LargestState {
   detail: boolean;
   /** Page scroll of the list when the details opened. */
   scrollY: number;
+  /** Scroll inside the rows' own region when the details opened. */
+  listScroll: number;
 }
 
 export const initialLargestState: LargestState = {
@@ -72,6 +75,7 @@ export const initialLargestState: LargestState = {
   page: 0,
   detail: false,
   scrollY: 0,
+  listScroll: 0,
 };
 
 /** A query or a folder turns the ranking into a search of every file. */
@@ -114,6 +118,8 @@ export function LargestFiles({
   const { minSize, scope, page } = state;
   const showItem = useShowItem(scanId);
   const rowButtons = useRef(new Map<string, HTMLButtonElement>());
+  const scrollRegion = useRef<HTMLDivElement>(null);
+  const footer = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const restore = useRef(restoreList);
   const typed = state.query.trim();
@@ -190,6 +196,19 @@ export function LargestFiles({
   const where = scope
     ? t("search.whereFolder", { name: scope.name })
     : t("search.whereAll");
+  // A warning above the rows moves them down, so the region is measured again.
+  const partialAbove = searchSent ? list?.partial : root.partial;
+
+  // The rows scroll inside their region, so the count and the pages under
+  // them stay on screen.
+  useFittedHeight(
+    scrollRegion,
+    footer,
+    scanId,
+    list?.files.length,
+    searching,
+    !!partialAbove,
+  );
 
   // Rows exist only once the list has arrived, which after a long visit
   // elsewhere may mean a new request.
@@ -197,9 +216,17 @@ export function LargestFiles({
     if (!restore.current || !list || stale || state.detail) return;
     restore.current = false;
     window.scrollTo(0, state.scrollY);
+    if (scrollRegion.current) scrollRegion.current.scrollTop = state.listScroll;
     if (state.selected)
       rowButtons.current.get(state.selected)?.focus({ preventScroll: true });
-  }, [list, stale, state.detail, state.scrollY, state.selected]);
+  }, [
+    list,
+    stale,
+    state.detail,
+    state.scrollY,
+    state.listScroll,
+    state.selected,
+  ]);
 
   useEffect(() => {
     if (!focusSearch || !searchInput.current) return;
@@ -216,6 +243,7 @@ export function LargestFiles({
       selected: file.absolutePath,
       detail: true,
       scrollY: window.scrollY,
+      listScroll: scrollRegion.current?.scrollTop ?? 0,
     });
   };
   const closeDetail = () => {
@@ -261,7 +289,7 @@ export function LargestFiles({
       option.path !== root.absolutePath &&
       all.findIndex((other) => other?.path === option.path) === index,
   );
-  const partial = searchSent ? list?.partial : root.partial;
+  const partial = partialAbove;
   const emptyExit = scope ? (
     <Button variant="secondary" onClick={() => change({ scope: undefined })}>
       {t("search.searchAll")}
@@ -407,6 +435,7 @@ export function LargestFiles({
         <div
           className={`table-scroll${stale ? " is-stale" : ""}`}
           aria-busy={stale || undefined}
+          ref={scrollRegion}
         >
           <table>
             <caption className="sr-only">
@@ -490,7 +519,7 @@ export function LargestFiles({
         </div>
       )}
       {list && (stale || list.files.length > 0) && (
-        <div className="table-footer">
+        <div className="table-footer" ref={footer}>
           <span role="status">
             {stale
               ? t("search.searching")

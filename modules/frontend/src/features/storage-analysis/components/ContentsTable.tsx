@@ -11,6 +11,7 @@ import { IconButton } from "../../../shared/ui/IconButton";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
+import { useFittedHeight } from "../../../shared/hooks/useFittedHeight";
 
 export const PAGE_SIZE = 25;
 
@@ -76,6 +77,8 @@ export function ContentsTable({
   const { t } = useTranslation();
   const { search, filter, sort, page } = state;
   const revealedButton = useRef<HTMLButtonElement>(null);
+  const scrollRegion = useRef<HTMLDivElement>(null);
+  const footer = useRef<HTMLDivElement>(null);
   const items = useMemo(() => contentsItems(node, state), [node, state]);
   const pages = Math.ceil(items.length / PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(pages - 1, 0));
@@ -91,6 +94,10 @@ export function ContentsTable({
       },
       page: 0,
     });
+
+  // The rows scroll inside their region, so the count and the pages under
+  // them stay on screen.
+  useFittedHeight(scrollRegion, footer, node.absolutePath, items.length, query, filter);
 
   useEffect(() => {
     if (!focusRevealed || !revealedButton.current) return;
@@ -190,7 +197,7 @@ export function ContentsTable({
               }
             />
           ) : (
-            <div className="table-scroll">
+            <div className="table-scroll" ref={scrollRegion}>
               <table>
                 <caption className="sr-only">
                   {t("contents.caption", { name: node.name })}
@@ -330,7 +337,7 @@ export function ContentsTable({
               </table>
             </div>
           )}
-          <div className="table-footer">
+          <div className="table-footer" ref={footer}>
             <span role="status">
               {items.length
                 ? t("contents.range", {

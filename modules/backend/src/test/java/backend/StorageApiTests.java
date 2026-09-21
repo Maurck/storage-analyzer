@@ -9,7 +9,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.Map;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -101,6 +104,50 @@ class StorageApiTests {
         mvc.perform(get("/scans/missing/files").param("limit", "101"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
         mvc.perform(get("/scans/missing/files").param("query", "report"))
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCAN_NOT_FOUND"));
+    }
+
+    @Test
+    void filtersFilesByTypeAndDateOverHttp() throws Exception {
+        Path video = Files.write(temporary.resolve("clip.mp4"), new byte[12]);
+        Files.setLastModifiedTime(video, FileTime.from(Instant.parse("2024-05-06T07:08:09Z")));
+        Files.write(temporary.resolve("notes.txt"), new byte[3]);
+        String body = mvc.perform(post("/scans").contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("path", temporary.toString()))))
+                .andReturn().getResponse().getContentAsString();
+        String id = mapper.readTree(body).get("id").asText();
+        for (int i = 0; i < 200 && !mapper.readTree(mvc.perform(get("/scans/" + id)).andReturn().getResponse()
+                .getContentAsString()).get("status").asText().equals("COMPLETE"); i++) Thread.sleep(10);
+
+        mvc.perform(get("/scans/" + id + "/files").param("category", "VIDEO")
+                        .param("modifiedBefore", "2025-01-01T00:00:00Z").param("extension", ".MP4"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchingFiles").value(1))
+                .andExpect(jsonPath("$.category").value("VIDEO"))
+                .andExpect(jsonPath("$.extension").value("mp4"))
+                .andExpect(jsonPath("$.modifiedBefore").value("2025-01-01T00:00:00Z"))
+                .andExpect(jsonPath("$.modifiedFrom").doesNotExist())
+                // Dates are ISO-8601 instants, like the scan's own.
+                .andExpect(jsonPath("$.files[0].lastModified").value("2024-05-06T07:08:09Z"))
+                .andExpect(jsonPath("$.files[0].category").value("VIDEO"))
+                .andExpect(jsonPath("$.files[0].extension").value("mp4"));
+        mvc.perform(get("/scans/" + id + "/types"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalBytes").value(15))
+                .andExpect(jsonPath("$.catalogVersion").value(1))
+                .andExpect(jsonPath("$.categories[0].category").value("VIDEO"))
+                .andExpect(jsonPath("$.categories[0].extensions[0].extension").value("mp4"))
+                .andExpect(jsonPath("$.categories[1].category").value("DOCUMENT"));
+        mvc.perform(get("/scans/" + id + "/directory").param("path", temporary.toString()))
+                .andExpect(jsonPath("$.lastModified").doesNotExist())
+                .andExpect(jsonPath("$.subdirectories[0].lastModified").value("2024-05-06T07:08:09Z"));
+
+        for (String[] invalid : new String[][]{{"category", "MOVIES"}, {"modifiedFrom", "yesterday"},
+                {"modifiedBefore", "2026-01-01"}, {"extension", "tar.gz"}}) {
+            mvc.perform(get("/scans/" + id + "/files").param(invalid[0], invalid[1]))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));
+        }
+        mvc.perform(get("/scans/missing/types"))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("SCAN_NOT_FOUND"));
     }
 

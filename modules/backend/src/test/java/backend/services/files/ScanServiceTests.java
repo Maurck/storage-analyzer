@@ -1,5 +1,6 @@
 package backend.services.files;
 
+import backend.enums.FileCategory;
 import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
 import backend.models.Ancestry;
@@ -8,6 +9,7 @@ import backend.models.FileSearch;
 import backend.models.LargestFiles;
 import backend.models.SkippedItems;
 import backend.models.ScanStatus;
+import backend.models.TypeBreakdown;
 import backend.resources.ApiErrorCode;
 import backend.resources.ApiException;
 import org.junit.jupiter.api.AfterEach;
@@ -18,7 +20,9 @@ import org.springframework.http.HttpStatus;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -183,9 +187,10 @@ class ScanServiceTests {
 
     @Test
     void entryEstimatesStayAboveTheCalibratedMeasurement() {
-        // Measured on JDK 17: about 307 bytes plus one byte per character.
-        for (int length : new int[]{3, 40, 62, 114, 234, 400, 1024}) {
-            long measured = 307 + Math.round(1.02 * length);
+        // Measured on JDK 17: about 315 bytes plus one byte per character since each
+        // file keeps its modification time (307 before).
+        for (int length : new int[]{3, 40, 62, 114, 164, 234, 400, 1024}) {
+            long measured = 315 + Math.round(1.02 * length);
             long estimate = ScanService.estimatedEntryBytes("a".repeat(length));
             assertTrue(estimate >= measured * 1.2, length + ": " + estimate + " vs " + measured);
         }
@@ -782,6 +787,182 @@ class ScanServiceTests {
             release.countDown();
             requester.shutdownNow();
         }
+    }
+
+    @Test
+    void keepsWhenEachFileWasModifiedAndLeavesUnsetTimesUnknown() throws Exception {
+        Instant written = Instant.parse("2024-05-06T07:08:09Z");
+        Path dated = Files.write(temporary.resolve("dated.mp4"), new byte[30]);
+        Files.setLastModifiedTime(dated, FileTime.from(written));
+        // Windows and FAT write zero for a time that was never set.
+        Path unset = Files.write(temporary.resolve("unset.bin"), new byte[20]);
+        Files.setLastModifiedTime(unset, FileTime.fromMillis(0));
+        Path folder = Files.createDirectory(temporary.resolve("folder"));
+        Files.write(folder.resolve("inside.txt"), new byte[10]);
+        ScanStatus complete = finish(service.start(temporary.toString()).id());
+
+        Map<String, Directory> children = new java.util.HashMap<>();
+        complete.root().getSubdirectories().forEach(child -> children.put(child.getName(), child));
+        assertEquals(written, children.get("dated.mp4").getLastModified());
+        assertEquals("mp4", children.get("dated.mp4").getExtension());
+        assertEquals(FileCategory.VIDEO, children.get("dated.mp4").getCategory());
+        assertNull(children.get("unset.bin").getLastModified(), "an unset time is unknown, not 1970");
+        // Folders carry no date of their own and no type.
+        assertNull(children.get("folder").getLastModified());
+        assertNull(children.get("folder").getCategory());
+        assertNull(complete.root().getLastModified());
+
+        LargestFiles.RankedFile ranked = service.largest(complete.id(), 10, 0).files().get(0);
+        assertEquals(written, ranked.lastModified());
+        assertEquals(FileCategory.VIDEO, ranked.category());
+        assertEquals(written, service.search(complete.id(), "dated", null, 0, 0, 10).files().get(0).lastModified());
+        assertEquals(written, service.entry(complete.id(), dated.toString()).getLastModified());
+
+        assertEquals(ScanService.UNKNOWN_TIME, ScanService.modifiedMillis(null));
+        assertEquals(ScanService.UNKNOWN_TIME, ScanService.modifiedMillis(FileTime.fromMillis(0)));
+        assertEquals(ScanService.UNKNOWN_TIME, ScanService.modifiedMillis(FileTime.from(Instant.parse("1601-01-01T00:00:00Z"))));
+        assertEquals(1, ScanService.modifiedMillis(FileTime.fromMillis(1)));
+    }
+
+    @Test
+    void sortsFilesIntoCategoriesByTheirExtensionOnly() {
+        assertEquals("mkv", FileTypes.extensionOf("Movie.MKV"));
+        assertEquals(FileCategory.VIDEO, FileTypes.categoryOf("mkv"));
+        // The last extension decides, as it does for Windows.
+        assertEquals("gz", FileTypes.extensionOf("backup.tar.gz"));
+        assertEquals(FileCategory.ARCHIVE, FileTypes.categoryOf("gz"));
+        assertEquals("exe", FileTypes.extensionOf("setup.pdf.exe"));
+        assertEquals(FileCategory.PROGRAM, FileTypes.categoryOf("exe"));
+        for (String none : new String[]{"README", ".gitignore", "trailing.", "x." + "e".repeat(FileTypes.MAX_EXTENSION_LENGTH + 1)}) {
+            assertNull(FileTypes.extensionOf(none), none);
+        }
+        assertEquals("e".repeat(FileTypes.MAX_EXTENSION_LENGTH), FileTypes.extensionOf("x." + "e".repeat(FileTypes.MAX_EXTENSION_LENGTH)));
+        assertEquals(FileCategory.NO_EXTENSION, FileTypes.categoryOf(null));
+        assertEquals(FileCategory.OTHER, FileTypes.categoryOf("blend"));
+        // Ambiguous: TypeScript as often as a video stream.
+        assertEquals(FileCategory.OTHER, FileTypes.categoryOf("ts"));
+        assertEquals(1, FileTypes.VERSION);
+    }
+
+    @Test
+    void breaksAFolderDownByTypeSoTheCategoriesAddUpToItsTotals() throws Exception {
+        Path media = Files.createDirectory(temporary.resolve("media"));
+        Files.write(media.resolve("a.mp4"), new byte[400]);
+        Files.write(media.resolve("b.MKV"), new byte[300]);
+        Files.write(Files.createDirectory(media.resolve("stills")).resolve("c.jpg"), new byte[50]);
+        Files.write(temporary.resolve("notes.txt"), new byte[40]);
+        Files.write(temporary.resolve("Makefile"), new byte[7]);
+        Files.write(temporary.resolve(".gitignore"), new byte[3]);
+        Files.write(temporary.resolve("empty.bin"), new byte[0]);
+        // Twelve unknown extensions, so only the ten largest are listed.
+        for (int i = 0; i < 12; i++) Files.write(temporary.resolve("f.x" + i), new byte[i + 1]);
+        ScanStatus complete = finish(service.start(temporary.toString()).id());
+        String id = complete.id();
+
+        TypeBreakdown all = service.types(id, null);
+        assertEquals(complete.root().getSizeBytes(), all.totalBytes());
+        assertEquals(complete.root().getFileCount(), all.totalFiles());
+        assertEquals(all.totalBytes(), all.categories().stream().mapToLong(TypeBreakdown.CategoryTotal::sizeBytes).sum());
+        assertEquals(all.totalFiles(), all.categories().stream().mapToLong(TypeBreakdown.CategoryTotal::fileCount).sum());
+        assertEquals(temporary.toString(), all.scope());
+        assertEquals(FileTypes.VERSION, all.catalogVersion());
+        assertFalse(all.partial());
+        assertEquals(List.of(FileCategory.VIDEO, FileCategory.OTHER, FileCategory.IMAGE, FileCategory.DOCUMENT,
+                        FileCategory.NO_EXTENSION),
+                all.categories().stream().map(TypeBreakdown.CategoryTotal::category).toList());
+        TypeBreakdown.CategoryTotal video = all.categories().get(0);
+        assertEquals(700, video.sizeBytes());
+        assertEquals(2, video.fileCount());
+        // Extensions are compared in lower case.
+        assertEquals(List.of("mp4", "mkv"), video.extensions().stream().map(TypeBreakdown.ExtensionTotal::extension).toList());
+        TypeBreakdown.CategoryTotal other = all.categories().get(1);
+        assertEquals(13, other.fileCount(), "twelve unknown extensions and the empty .bin");
+        assertEquals(13, other.extensionCount());
+        assertEquals(ScanService.MAX_BREAKDOWN_EXTENSIONS, other.extensions().size());
+        assertEquals("x11", other.extensions().get(0).extension());
+        TypeBreakdown.CategoryTotal none = all.categories().get(4);
+        assertEquals(10, none.sizeBytes());
+        assertEquals(2, none.fileCount());
+        assertTrue(none.extensions().isEmpty());
+        assertEquals(0, none.extensionCount());
+
+        TypeBreakdown folder = service.types(id, media.toString());
+        assertEquals(750, folder.totalBytes());
+        assertEquals(service.entry(id, media.toString()).getSizeBytes(), folder.totalBytes());
+        assertEquals(List.of(FileCategory.VIDEO, FileCategory.IMAGE),
+                folder.categories().stream().map(TypeBreakdown.CategoryTotal::category).toList());
+        assertEquals(ApiErrorCode.NOT_A_FOLDER, assertThrows(ApiException.class,
+                () -> service.types(id, temporary.resolve("notes.txt").toString())).getCode());
+        assertEquals(ApiErrorCode.PATH_OUTSIDE_SCAN, assertThrows(ApiException.class,
+                () -> service.types(id, temporary + "-sibling")).getCode());
+        assertEquals(ApiErrorCode.SCAN_NOT_FOUND, assertThrows(ApiException.class,
+                () -> service.types("missing", null)).getCode());
+    }
+
+    @Test
+    void combinesTypeDateSizeAndTextFiltersBeforeCuttingThePage() throws Exception {
+        Instant old = Instant.parse("2020-01-01T00:00:00Z");
+        Instant recent = Instant.parse("2026-06-01T00:00:00Z");
+        Path trips = Files.createDirectory(temporary.resolve("trips"));
+        write(trips.resolve("old-trip.mp4"), 500, old);
+        write(trips.resolve("new-trip.mp4"), 400, recent);
+        write(trips.resolve("old-trip.mkv"), 300, old);
+        write(trips.resolve("old-trip.jpg"), 200, old);
+        write(trips.resolve("undated.mp4"), 600, Instant.EPOCH);
+        write(temporary.resolve("old-other.mp4"), 100, old);
+        String id = finish(service.start(temporary.toString()).id()).id();
+        Instant cut = Instant.parse("2025-01-01T00:00:00Z");
+
+        FileSearch oldVideos = service.search(id, null,
+                new ScanService.FileFilter("", 0, FileCategory.VIDEO, null, null, cut), 0, 50);
+        assertEquals(List.of("old-trip.mp4", "old-trip.mkv", "old-other.mp4"), names(oldVideos));
+        assertEquals(3, oldVideos.matchingFiles());
+        assertEquals(FileCategory.VIDEO, oldVideos.category());
+        assertEquals(cut, oldVideos.modifiedBefore());
+        assertNull(oldVideos.modifiedFrom());
+        // Every criterion at once: text, scope, size, extension and date.
+        FileSearch narrow = service.search(id, trips.toString(),
+                new ScanService.FileFilter("trip", 310, null, ".MP4", null, cut), 0, 50);
+        assertEquals(List.of("old-trip.mp4"), names(narrow));
+        assertEquals("mp4", narrow.extension(), "the extension is echoed as the catalog spells it");
+        // An extension from another category matches nothing, rather than failing.
+        assertEquals(0, service.search(id, null, new ScanService.FileFilter("", 0, FileCategory.IMAGE, "mp4", null, null), 0, 50).matchingFiles());
+        // The lower bound is inclusive and the upper one exclusive.
+        assertEquals(List.of("new-trip.mp4"), names(service.search(id, null, new ScanService.FileFilter("", 0, null, null, recent, null), 0, 50)));
+        assertEquals(0, service.search(id, null, new ScanService.FileFilter("", 0, null, null, null, old), 0, 50).matchingFiles());
+        assertEquals(4, service.search(id, null, new ScanService.FileFilter("", 0, null, null, old, recent), 0, 50).matchingFiles());
+        // An unknown time never satisfies a date bound, however wide.
+        FileSearch everDated = service.search(id, null,
+                new ScanService.FileFilter("undated", 0, null, null, Instant.parse("0001-01-01T00:00:00Z"), Instant.parse("9999-01-01T00:00:00Z")), 0, 50);
+        assertEquals(0, everDated.matchingFiles());
+        assertEquals(1, service.search(id, null, ScanService.FileFilter.of("undated", 0), 0, 50).matchingFiles());
+        // Extreme instants saturate instead of overflowing.
+        assertEquals(5, service.search(id, null, new ScanService.FileFilter("", 0, null, null, null, Instant.MAX), 0, 50).matchingFiles());
+        assertEquals(5, service.search(id, null, new ScanService.FileFilter("", 0, null, null, Instant.MIN, null), 0, 50).matchingFiles());
+
+        for (Runnable invalid : List.<Runnable>of(
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, null, recent, old), 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, null, old, old), 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "tar.gz", null, null), 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "a/b", null, null), 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, ".", null, null), 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "e".repeat(FileTypes.MAX_EXTENSION_LENGTH + 1), null, null), 0, 10),
+                () -> ScanService.parseInstant("yesterday"),
+                () -> ScanService.parseInstant("2026-09-20"))) {
+            assertEquals(ApiErrorCode.INVALID_PARAMETER, assertThrows(ApiException.class, invalid::run).getCode());
+        }
+        assertNull(ScanService.parseInstant(" "));
+        assertEquals(old, ScanService.parseInstant("2020-01-01T00:00:00Z"));
+        assertNull(ScanService.normalizedExtension(""));
+    }
+
+    private static void write(Path path, int size, Instant modified) throws IOException {
+        Files.write(path, new byte[size]);
+        Files.setLastModifiedTime(path, FileTime.from(modified));
+    }
+
+    private static List<String> names(FileSearch search) {
+        return search.files().stream().map(LargestFiles.RankedFile::name).toList();
     }
 
     @Test

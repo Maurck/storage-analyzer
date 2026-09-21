@@ -1,12 +1,15 @@
 package backend.resources.directories;
 
+import backend.enums.FileCategory;
 import backend.models.Ancestry;
 import backend.models.Directory;
 import backend.models.FileSearch;
 import backend.models.LargestFiles;
 import backend.models.ScanStatus;
 import backend.models.SkippedItems;
+import backend.models.TypeBreakdown;
 import backend.services.files.ScanService;
+import backend.services.files.ScanService.FileFilter;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -63,9 +66,20 @@ public class ScanResource {
                             @RequestParam(defaultValue = "") String query,
                             @RequestParam(required = false) String scope,
                             @RequestParam(defaultValue = "0") long minSizeBytes,
+                            @RequestParam(required = false) FileCategory category,
+                            @RequestParam(required = false) String extension,
+                            @RequestParam(required = false) String modifiedFrom,
+                            @RequestParam(required = false) String modifiedBefore,
                             @RequestParam(defaultValue = "0") int offset,
                             @RequestParam(defaultValue = "50") int limit) {
-        return scanService.search(id, query, scope, minSizeBytes, offset, limit);
+        FileFilter filter = new FileFilter(query, minSizeBytes, category, extension,
+                ScanService.parseInstant(modifiedFrom), ScanService.parseInstant(modifiedBefore));
+        return scanService.search(id, scope, filter, offset, limit);
+    }
+
+    @GetMapping("/{id}/types")
+    public TypeBreakdown types(@PathVariable String id, @RequestParam(required = false) String scope) {
+        return scanService.types(id, scope);
     }
 
     @GetMapping("/{id}/skipped")

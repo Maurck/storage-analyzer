@@ -1,6 +1,7 @@
 package backend.services.files;
 
 import backend.enums.DirectoryType;
+import backend.enums.FileCategory;
 import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
 import backend.models.Ancestry;
@@ -11,6 +12,7 @@ import backend.models.SkippedItems;
 import backend.models.ScanStatus;
 import backend.models.ScanStatus.State;
 import backend.models.ScanStatus.Volume;
+import backend.models.TypeBreakdown;
 import backend.resources.ApiErrorCode;
 import backend.resources.ApiException;
 import jakarta.annotation.PreDestroy;
@@ -20,7 +22,10 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import java.util.function.Consumer;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -44,6 +49,10 @@ public class ScanService {
     static final int MAX_SEARCH_PAGE = 100;
     static final int MAX_SEARCH_WINDOW = 10_000;
     static final int MAX_QUERY_LENGTH = 1_024;
+    /** Extensions listed per category of a breakdown; the rest are only counted. */
+    static final int MAX_BREAKDOWN_EXTENSIONS = 10;
+    /** A modification time the file system did not report. */
+    static final long UNKNOWN_TIME = Long.MIN_VALUE;
     /** Largest first; equal sizes by path so the order never depends on hashing. */
     private static final Comparator<Entry> SIZE_ORDER = Comparator.comparingLong((Entry entry) -> entry.sizeBytes)
             .reversed().thenComparing(entry -> entry.path.toString());
@@ -59,6 +68,22 @@ public class ScanService {
 
     /** What this computer can hold, derived from the heap the JVM was given. */
     public record Capacity(long maxHeapBytes, long snapshotBudgetBytes, int maxEntries, int referencePathLength) { }
+
+    /**
+     * What a file must satisfy to match a search; every criterion applies at once.
+     *
+     * @param category       null for any
+     * @param extension      with or without its dot, in any case; null or blank for any
+     * @param modifiedFrom   inclusive; null for no lower bound
+     * @param modifiedBefore exclusive; null for no upper bound. A file whose time is unknown
+     *                       never matches a date bound.
+     */
+    public record FileFilter(String query, long minSizeBytes, FileCategory category, String extension,
+                             Instant modifiedFrom, Instant modifiedBefore) {
+        public static FileFilter of(String query, long minSizeBytes) {
+            return new FileFilter(query, minSizeBytes, null, null, null, null);
+        }
+    }
 
     public ScanService() {
         this(new ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS,
@@ -115,8 +140,10 @@ public class ScanService {
     static long estimatedEntryBytes(String path) {
         // Calibrated on JDK 17 with 40,801 entries at average path lengths of 62, 114 and
         // 234 characters: about 307 bytes plus one byte per character, measured after GC.
+        // Keeping each file's modification time added exactly 8 bytes (40,021 entries at
+        // 164 and 234 characters: 474.6 -> 482.6 and 540.2 -> 548.2), so about 315 now.
         // Characters outside Latin-1 make Java store the string in UTF-16, twice the size.
-        // Both terms carry a ~30% margin.
+        // Both terms still carry a margin of about 27%.
         int tenthsPerChar = 13;
         for (int i = 0; i < path.length(); i++) {
             if (path.charAt(i) > 0xFF) {
@@ -261,26 +288,124 @@ public class ScanService {
      * ranking's bounded list. Case and the kind of path separator are ignored.
      */
     public FileSearch search(String id, String query, String scopePath, long minSizeBytes, int offset, int limit) {
-        String needle = query == null ? "" : query.strip();
+        return search(id, scopePath, FileFilter.of(query, minSizeBytes), offset, limit);
+    }
+
+    /**
+     * A page of the files under a folder of a completed scan, subfolders included, that
+     * satisfy every criterion of the filter, largest first. See {@link FileFilter}.
+     */
+    public FileSearch search(String id, String scopePath, FileFilter filter, int offset, int limit) {
+        String needle = filter.query() == null ? "" : filter.query().strip();
+        String extension = normalizedExtension(filter.extension());
+        Instant from = filter.modifiedFrom(), before = filter.modifiedBefore();
         if (limit < 1 || limit > MAX_SEARCH_PAGE || offset < 0 || offset > MAX_SEARCH_WINDOW - limit
-                || minSizeBytes < 0 || needle.length() > MAX_QUERY_LENGTH) {
+                || filter.minSizeBytes() < 0 || needle.length() > MAX_QUERY_LENGTH) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
                     "Ask for 1 to " + MAX_SEARCH_PAGE + " files within the first " + MAX_SEARCH_WINDOW
                             + " matches, a minimum size of 0 bytes or more and a query of at most "
                             + MAX_QUERY_LENGTH + " characters.");
         }
+        if (from != null && before != null && !from.isBefore(before)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
+                    "The start of the modification range must come before its end.");
+        }
         Snapshot snapshot = completedSnapshot(id);
         Session session = snapshot.session;
+        Entry scope = scopeOf(snapshot, scopePath);
+        String root = session.path.toString();
+        // Roots such as C:\ already end with a separator.
+        int relativeStart = session.path.getNameCount() == 0 ? root.length() : root.length() + 1;
+        long fromMillis = from == null ? UNKNOWN_TIME : clampedMillis(from);
+        long beforeMillis = before == null ? UNKNOWN_TIME : clampedMillis(before);
+        boolean byType = filter.category() != null || extension != null;
+        int window = offset + limit;
+        PriorityQueue<Entry> smallestKept = new PriorityQueue<>(window + 1, SIZE_ORDER.reversed());
+        long[] matching = {0};
+        forEachFile(scope, entry -> {
+            // Cheapest checks first; the name is read only when a type is asked for.
+            if (entry.sizeBytes < filter.minSizeBytes()) return;
+            if ((from != null || before != null) && (entry.modifiedMillis == UNKNOWN_TIME
+                    || from != null && entry.modifiedMillis < fromMillis
+                    || before != null && entry.modifiedMillis >= beforeMillis)) return;
+            if (byType) {
+                String own = FileTypes.extensionOf(name(entry.path));
+                if (extension != null && !extension.equals(own)) return;
+                if (filter.category() != null && FileTypes.categoryOf(own) != filter.category()) return;
+            }
+            if (!containsIgnoringCase(entry.path.toString(), relativeStart, needle)) return;
+            matching[0]++;
+            if (smallestKept.size() < window) {
+                smallestKept.add(entry);
+            } else if (SIZE_ORDER.compare(entry, smallestKept.peek()) < 0) {
+                smallestKept.poll();
+                smallestKept.add(entry);
+            }
+        });
+        List<Entry> kept = new ArrayList<>(smallestKept);
+        kept.sort(SIZE_ORDER);
+        List<LargestFiles.RankedFile> files = kept.stream().skip(offset).map(entry -> rankedFile(session, entry)).toList();
+        return new FileSearch(session.id, root, scope.path.toString(), scope.partial, needle, filter.minSizeBytes(),
+                filter.category(), extension, from, before, offset, limit, matching[0], files);
+    }
+
+    /**
+     * The files under a folder of a completed scan, subfolders included, grouped by the
+     * category of their extension. Every file lands in exactly one category, so the
+     * categories add up to the folder's size and file count.
+     */
+    public TypeBreakdown types(String id, String scopePath) {
+        Snapshot snapshot = completedSnapshot(id);
+        Session session = snapshot.session;
+        Entry scope = scopeOf(snapshot, scopePath);
+        EnumMap<FileCategory, long[]> categories = new EnumMap<>(FileCategory.class);
+        Map<String, long[]> extensions = new HashMap<>();
+        forEachFile(scope, entry -> {
+            String extension = FileTypes.extensionOf(name(entry.path));
+            add(categories.computeIfAbsent(FileTypes.categoryOf(extension), category -> new long[2]), entry);
+            if (extension != null) add(extensions.computeIfAbsent(extension, key -> new long[2]), entry);
+        });
+        Comparator<long[]> largestFirst = Comparator.comparingLong((long[] total) -> total[0]).reversed()
+                .thenComparing(Comparator.comparingLong((long[] total) -> total[1]).reversed());
+        long totalBytes = 0, totalFiles = 0;
+        List<TypeBreakdown.CategoryTotal> totals = new ArrayList<>();
+        for (Map.Entry<FileCategory, long[]> category : categories.entrySet()) {
+            List<Map.Entry<String, long[]>> own = extensions.entrySet().stream()
+                    .filter(extension -> FileTypes.categoryOf(extension.getKey()) == category.getKey())
+                    .sorted(Map.Entry.<String, long[]>comparingByValue(largestFirst).thenComparing(Map.Entry.comparingByKey()))
+                    .toList();
+            List<TypeBreakdown.ExtensionTotal> listed = own.stream().limit(MAX_BREAKDOWN_EXTENSIONS)
+                    .map(extension -> new TypeBreakdown.ExtensionTotal(extension.getKey(), extension.getValue()[0], extension.getValue()[1]))
+                    .toList();
+            long[] total = category.getValue();
+            totals.add(new TypeBreakdown.CategoryTotal(category.getKey(), total[0], total[1], own.size(), listed));
+            totalBytes += total[0];
+            totalFiles += total[1];
+        }
+        // Largest first; the enum order settles ties so the order never depends on hashing.
+        totals.sort(Comparator.comparingLong(TypeBreakdown.CategoryTotal::sizeBytes).reversed()
+                .thenComparing(Comparator.comparingLong(TypeBreakdown.CategoryTotal::fileCount).reversed())
+                .thenComparing(TypeBreakdown.CategoryTotal::category));
+        return new TypeBreakdown(session.id, session.path.toString(), scope.path.toString(), scope.partial,
+                FileTypes.VERSION, totalBytes, totalFiles, List.copyOf(totals));
+    }
+
+    private static void add(long[] total, Entry file) {
+        total[0] += file.sizeBytes;
+        total[1]++;
+    }
+
+    /** The folder a query covers with its subfolders: the root when no path is given. */
+    private static Entry scopeOf(Snapshot snapshot, String scopePath) {
         Entry scope = scopePath == null || scopePath.isBlank() ? snapshot.root() : findEntry(snapshot, scopePath);
         if (scope.type != DirectoryType.FOLDER) {
             throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.NOT_A_FOLDER, "Search within a folder of the scan, not a file.");
         }
-        String root = session.path.toString();
-        // Roots such as C:\ already end with a separator.
-        int relativeStart = session.path.getNameCount() == 0 ? root.length() : root.length() + 1;
-        int window = offset + limit;
-        PriorityQueue<Entry> smallestKept = new PriorityQueue<>(window + 1, SIZE_ORDER.reversed());
-        long matching = 0;
+        return scope;
+    }
+
+    /** Visits every file under a folder, depth first, outside the service monitor. */
+    private void forEachFile(Entry scope, Consumer<Entry> visit) {
         ArrayDeque<Entry> pending = new ArrayDeque<>();
         pending.push(scope);
         while (!pending.isEmpty()) {
@@ -288,26 +413,63 @@ public class ScanService {
             searchStep();
             if (entry.type == DirectoryType.FOLDER) {
                 for (Entry child : entry.children) pending.push(child);
-            } else if (entry.type == DirectoryType.FILE && entry.sizeBytes >= minSizeBytes
-                    && containsIgnoringCase(entry.path.toString(), relativeStart, needle)) {
-                matching++;
-                if (smallestKept.size() < window) {
-                    smallestKept.add(entry);
-                } else if (SIZE_ORDER.compare(entry, smallestKept.peek()) < 0) {
-                    smallestKept.poll();
-                    smallestKept.add(entry);
-                }
+            } else if (entry.type == DirectoryType.FILE) {
+                visit.accept(entry);
             }
         }
-        List<Entry> kept = new ArrayList<>(smallestKept);
-        kept.sort(SIZE_ORDER);
-        List<LargestFiles.RankedFile> files = kept.stream().skip(offset).map(entry -> rankedFile(session, entry)).toList();
-        return new FileSearch(session.id, root, scope.path.toString(), scope.partial, needle, minSizeBytes,
-                offset, limit, matching, files);
     }
 
-    /** Test seam: runs on the requesting thread for each entry a search visits, outside the service monitor. */
+    /** Test seam: runs on the requesting thread for each entry a query visits, outside the service monitor. */
     void searchStep() { }
+
+    /** An extension as the catalog spells it, or null for any; rejects what could never be one. */
+    static String normalizedExtension(String requested) {
+        if (requested == null || requested.isBlank()) return null;
+        String extension = requested.strip();
+        if (extension.startsWith(".")) extension = extension.substring(1);
+        extension = extension.toLowerCase(Locale.ROOT);
+        if (extension.isEmpty() || extension.length() > FileTypes.MAX_EXTENSION_LENGTH
+                || extension.contains(".") || extension.contains("/") || extension.contains("\\")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
+                    "An extension has 1 to " + FileTypes.MAX_EXTENSION_LENGTH + " characters and no dots or separators.");
+        }
+        return extension;
+    }
+
+    /** An ISO-8601 instant such as 2026-09-20T00:00:00Z, or null when absent. */
+    public static Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Instant.parse(value.strip());
+        } catch (DateTimeParseException exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, ApiErrorCode.INVALID_PARAMETER,
+                    "Dates are ISO-8601 instants in UTC, such as 2026-09-20T00:00:00Z.");
+        }
+    }
+
+    /** Milliseconds since the epoch, saturated for instants a long cannot hold. */
+    private static long clampedMillis(Instant instant) {
+        try {
+            return instant.toEpochMilli();
+        } catch (ArithmeticException exception) {
+            return instant.isBefore(Instant.EPOCH) ? UNKNOWN_TIME + 1 : Long.MAX_VALUE;
+        }
+    }
+
+    /**
+     * When a file was last written, or UNKNOWN_TIME. Windows and FAT store zero for a time
+     * that was never set, which reads as 1601 or 1970; no file on a real disk predates 1980,
+     * so nothing at or before the epoch is taken as a date.
+     */
+    static long modifiedMillis(FileTime time) {
+        if (time == null) return UNKNOWN_TIME;
+        long millis = time.toMillis();
+        return millis > 0 ? millis : UNKNOWN_TIME;
+    }
+
+    private static Instant instantOf(long millis) {
+        return millis == UNKNOWN_TIME ? null : Instant.ofEpochMilli(millis);
+    }
 
     /** Whether {@code text}, from {@code from} on, contains {@code needle} ignoring case and separator kind. */
     static boolean containsIgnoringCase(String text, int from, String needle) {
@@ -328,8 +490,11 @@ public class ScanService {
     }
 
     private static LargestFiles.RankedFile rankedFile(Session session, Entry entry) {
-        return new LargestFiles.RankedFile(name(entry.path), entry.path.toString(),
-                session.path.relativize(entry.path).toString(), entry.sizeBytes);
+        String name = name(entry.path);
+        String extension = FileTypes.extensionOf(name);
+        return new LargestFiles.RankedFile(name, entry.path.toString(),
+                session.path.relativize(entry.path).toString(), entry.sizeBytes,
+                instantOf(entry.modifiedMillis), extension, FileTypes.categoryOf(extension));
     }
 
     /** A page of the items a completed scan skipped or could not fully read, ordered by path. */
@@ -483,6 +648,7 @@ public class ScanService {
                         Entry entry = add(session, path, DirectoryType.FILE);
                         entry.sizeBytes = attributes.size();
                         entry.fileCount = 1;
+                        entry.modifiedMillis = modifiedMillis(attributes.lastModifiedTime());
                         session.files.incrementAndGet();
                         session.bytes.addAndGet(entry.sizeBytes);
                     }
@@ -647,6 +813,12 @@ public class ScanService {
         directory.setPartial(entry.partial);
         directory.setError(entry.error);
         directory.setErrorCode(entry.errorCode);
+        if (entry.type == DirectoryType.FILE) {
+            String extension = FileTypes.extensionOf(directory.getName());
+            directory.setLastModified(instantOf(entry.modifiedMillis));
+            directory.setExtension(extension);
+            directory.setCategory(FileTypes.categoryOf(extension));
+        }
         if (includeChildren) directory.setSubdirectories(entry.children.stream().map(child -> toDirectory(child, false)).toList());
         return directory;
     }
@@ -724,6 +896,8 @@ public class ScanService {
         boolean partial;
         String error;
         NodeIssueCode errorCode;
+        // Files only. Eight bytes per entry, included in estimatedEntryBytes.
+        long modifiedMillis = UNKNOWN_TIME;
 
         Entry(Path path, DirectoryType type) { this.path = path; this.type = type; }
 

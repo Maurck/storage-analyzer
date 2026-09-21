@@ -1,6 +1,6 @@
 # Storage Analyzer: análisis de producto, UX y UI
 
-> Revisión: 2026-09-19 · Alcance: aplicación actual y evolución desde H3.
+> Revisión: 2026-09-19, actualizada el 2026-09-20 con H4c · Alcance: aplicación actual y evolución desde H3.
 > Base inspeccionada: commit `1856f19`, frontend, backend, integración Electron, instalador, documentación, pruebas y capturas existentes.
 > Esta revisión propone cambios de producto; no implementa las funcionalidades ni vuelve a ejecutar las verificaciones históricas.
 
@@ -83,7 +83,7 @@ La tabla se monta por ruta y el ranking se desmonta al salir; filtros/página/um
 
 ### 2.5 El tamaño no basta para decidir
 
-Faltan modificación, extensión/categoría y conteos por carpeta en la tabla. Estos últimos ya existen en el modelo; las fechas todavía no se guardan en las entradas del snapshot. Añadir datos debe enriquecer la misma tarea de búsqueda y detalle, no crear pantallas desconectadas. «Antiguo» no significa «sin uso» ni «seguro para borrar».
+Faltan modificación, extensión/categoría y conteos por carpeta en la tabla. Estos últimos ya existen en el modelo; las fechas todavía no se guardan en las entradas del snapshot. Añadir datos debe enriquecer la misma tarea de búsqueda y detalle, no crear pantallas desconectadas. «Antiguo» no significa «sin uso» ni «seguro para borrar». **Atendido en H4c** (§5.2): fecha de modificación y tipo por archivo, conteo de archivos por carpeta en la tabla y filtros combinables en la misma búsqueda.
 
 ### 2.6 No sé si estos resultados siguen vigentes
 
@@ -140,7 +140,7 @@ El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta e
 
 ### F2. Los archivos más grandes de todo el análisis
 
-**Estado al 2026-09-19:** F2a implementada en H2. F2b.1 entregada en H4a (detalle, carpeta contenedora y regreso) y F2b.2 en H4b (consulta global con ámbito, conteo y páginas). Sigue F2b.3 (H4c).
+**Estado al 2026-09-19:** F2a implementada en H2. F2b.1 entregada en H4a (detalle, carpeta contenedora y regreso) y F2b.2 en H4b (consulta global con ámbito, conteo y páginas). F2b.3 entregada en H4c (tipo, extensión y fecha combinados con texto, ámbito y tamaño, con chips).
 
 **Necesidad:** encontrar un archivo grande sin abrir sus carpetas antecesoras. **Impacto esperado: alto. Complejidad: M.**
 
@@ -150,7 +150,7 @@ El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta e
 - **UI:** reutilizar primitivas de tabla y selección sin forzar el contrato de hijos directos. Mostrar ubicación incluso con nombres duplicados. El top 100 es un límite visible, no una supuesta lista completa.
 - **F2b.1 · H4a:** seleccionar un resultado, inspeccionar un detalle y «Ver carpeta en el análisis» cargando solo los ancestros necesarios. «Volver a resultados» restaura filtros, fila, foco y desplazamiento.
 - **F2b.2 · H4b (entregado):** `GET /scans/{id}/files` recorre todas las entradas del ámbito, filtra antes de ordenar y paginar, y devuelve el número exacto de coincidencias. La caché de 500 del ranking no interviene. Páginas de 50 hasta la coincidencia 10.000; más allá se pide precisar la búsqueda.
-- **F2b.3 · H4c:** integrar fecha (F7), extensión/categoría (F5) con filtros AND, chips eliminables y «Limpiar filtros». Las carpetas agregadas van separadas para no duplicar bytes de descendientes.
+- **F2b.3 · H4c (entregado):** integrar fecha (F7), extensión/categoría (F5) con filtros AND, chips eliminables y «Limpiar filtros». Las carpetas agregadas van separadas para no duplicar bytes de descendientes.
 - **Fuera del MVP:** deduplicación por contenido, búsqueda en el disco en tiempo real, carpeta+archivo en un mismo total y expansión masiva del árbol.
 - **Dependencias:** H0 validado y contrato de errores F11. F1a complementa el hallazgo, pero no bloquea calcular el ranking.
 
@@ -182,7 +182,7 @@ El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta e
 
 ### F5. Desglose por tipo de archivo
 
-**Estado al 2026-09-19:** Pendiente; H4 después de búsqueda/fechas, enlazada a la misma consulta.
+**Estado al 2026-09-20:** MVP entregado en H4c (§5.2): catálogo versionado de 9 categorías por extensión, desglose `GET /types` que cuadra con el total de la carpeta y franja de tipos que filtra la misma lista. Sin selector «Por carpeta | Por tipo» aparte: el desglose vive en la vista de archivos.
 
 **Necesidad:** entender cuánto representan vídeos, imágenes, documentos u otros tipos. **Impacto esperado: medio–alto. Complejidad: M.**
 
@@ -206,7 +206,7 @@ El instalador **ya existe**. Pendientes reales: entorno limpio sin red, cuenta e
 
 ### F7. Fechas de modificación y filtros combinables
 
-**Estado al 2026-09-19:** Pendiente; H4. El backend aún no retiene lastModifiedTime en el snapshot.
+**Estado al 2026-09-20:** MVP entregado en H4c (§5.2): el snapshot retiene la fecha (8 B por entrada, medidos), columna «Modificado» ordenable en la tabla de carpeta y en la búsqueda (ordenada en el servidor) y filtros de fecha con semántica AND. Pendiente: la fecha más reciente de los descendientes para carpetas.
 
 **Necesidad:** localizar elementos antiguos o grandes con criterios explícitos. **Impacto esperado: medio–alto. Complejidad: B–M.**
 
@@ -507,7 +507,7 @@ No se fijan fechas sin capacidad estimada. Una entrega principal y, como máximo
 | H1 · Motor, errores y progreso       | Cerrado según verificación registrada.           | Revisar accesibilidad manual pendiente; diálogo nativo ya corregido en H3.                                                                            |
 | H2 · Primer hallazgo                 | Cerrado según verificación registrada.           | Integrar ranking/contexto; no rehacer F1a/F2a/F6a/F10/F14a.                                                                                           |
 | H3 · Distribución interna y claridad | Instalador y UX de H3b entregados; hito abierto. | H3a: entorno limpio/offline, cuenta estándar y Windows 10 no verificados. H3b: falta la revisión manual con lector de pantalla y alto contraste real. |
-| H4 · Encontrar y comprender          | H4a y H4b entregados; H4c–d propuestos.          | H4c: fechas y categorías con filtros combinables. H4a y H4b quedan sin revisión manual con lector de pantalla, como H3b. Después comodidad (H4d).     |
+| H4 · Encontrar y comprender          | H4a, H4b y H4c entregados; H4d propuesto.        | H4d (comodidad), independiente de H5a/b. H4a, H4b y H4c quedan sin revisión manual con lector de pantalla, como H3b.                                   |
 | H5 · Retomar y comparar              | Propuesto.                                       | Resúmenes locales compatibles, comparación, informes y revisión manual.                                                                               |
 | H6 · Orientación y precisión         | Propuesto, alcance acotado.                      | Catálogo explicable y precisión Windows verificada.                                                                                                   |
 | H7 · Apuestas de mayor riesgo        | Diferido.                                        | Papelera, mapa, monitor e iniciativas sin retorno suficientemente claro.                                                                              |
@@ -763,6 +763,56 @@ La primera fila pasa de y = 669 a y = 527 en la vista de carpeta y de y = 586 a 
 
 **Límites conocidos:** en HD la región no se acota —con un análisis parcial, encima de las filas quedan menos de 150 px—, así que allí el pie sigue bajo el pliegue y la página se desplaza; lo mismo con texto al 200 %, donde el desplazamiento de página es además lo que WCAG espera. Ajustar la altura es trabajo de medición en el cliente (un `ResizeObserver` sobre el documento), no CSS: con dos columnas y un pie no hay `calc()` que conozca dónde empieza la tabla; los iconos no crecen con el texto; las cifras son de Chromium en el equipo de desarrollo, no de todas las escalas de Windows ni de otros navegadores; y sigue sin ejecutarse la revisión manual con lector de pantalla y alto contraste real.
 
+#### Evidencia de H4c (2026-09-20) — entregado, revisión manual pendiente
+
+**Entregado** en la rama `feat/h4c-explain-filter` (F7 → F5 → F2b.3 + UX4/UX5), con fixtures sintéticos y sin rutas personales:
+
+- **F7 · Fecha retenida y medida.** Cada archivo guarda la fecha de modificación que dio el sistema de archivos. Se envía como instante ISO-8601 en `lastModified`, o `null` si es desconocida: Windows y FAT escriben cero cuando nunca se fijó, así que nada anterior o igual a 1970 se toma como fecha. Una fecha posterior al análisis se conserva tal cual y la interfaz la marca «posterior al análisis». La sonda de memoria (40.021 entradas, rutas medias de 164 y 234 caracteres, JDK 17 tras GC) mide **exactamente +8 B por entrada** (474,6 → 482,6 y 540,2 → 548,2 B); la estimación `400 + 1,3 × longitud` sigue un 27 % por encima, así que no cambia y la capacidad tampoco (11.375.918 entradas en este equipo).
+- **F5 · Catálogo versionado.** Nueve categorías por extensión (`FileTypes.VERSION = 1`): vídeo, imagen, audio, documento, comprimido, imagen de disco, programa, otros y sin extensión. Solo por nombre, nunca por contenido; `.ts` queda en «otros» por ambiguo. `GET /scans/{id}/types?scope=` agrupa los archivos de una carpeta con sus subcarpetas y las categorías suman exactamente el tamaño y el número de archivos de la carpeta; el frontend rechaza un desglose que no cuadre.
+- **F2b.3 · Filtros AND en la misma búsqueda.** `GET /files` añade `category`, `extension`, `modifiedFrom` (inclusivo), `modifiedBefore` (exclusivo) y `order` (`LARGEST`, `OLDEST`, `NEWEST`). Todo se aplica antes de paginar y la respuesta repite los filtros; el frontend comprueba que cada fila los cumple. Una fecha desconocida nunca satisface un límite de fecha y va al final en ambos órdenes por fecha. No cambia `apiVersion`: los campos y parámetros son aditivos y un servicio anterior sigue siendo aceptado.
+- **UX4 · Superficie.** «Tipo» y «Modificado» (cualquier fecha, últimos 30 días, último año, hace más de un año, hace más de 3 años) comparten fila con la búsqueda; «Extensión» aparece al elegir un tipo, con las diez mayores y su tamaño. Cada filtro activo tiene un chip «Quitar el filtro: …» y hay un «Quitar los filtros» que no borra el texto. Los rangos cuentan hacia atrás **desde el final del análisis**, no desde hoy, y el chip escribe la fecha absoluta. Los vacíos nombran los filtros y ofrecen la salida que más amplía.
+- **UX5 · Tabla y detalle.** Columnas «Tipo» y «Modificado» en la lista de archivos (el tipo se pliega por debajo de 1200 px, la fecha en compacto) y en la tabla de carpeta, donde las carpetas muestran su número de archivos. «Modificado» ordena en ambas; en la búsqueda lo hace el servidor. El detalle del hallazgo y el de un archivo del árbol muestran tipo con extensión y fecha con hora, con la aclaración «No indica cuándo se abrió o se usó por última vez».
+- **Franja de tipos.** Una línea como la de composición, en el hueco que deja el tamaño mínimo: un segmento por categoría con color propio (tokens `--chart-*`), activable (`aria-pressed`) para filtrar la misma lista; el elegido se contornea y el resto pasa a gris, que conserva el contraste de sus etiquetas (atenuarlos con opacidad lo rompía, detectado por axe). Sigue el ámbito de la búsqueda, no el resto de filtros.
+- **Altura y paquete.** Colocar tipo y fecha en la fila de la búsqueda y la franja junto al tamaño mínimo evitó perder filas: la primera versión, con los filtros en su propia línea, dejaba HD en 1 fila de búsqueda y QHD en 15, por debajo de los mínimos de `SCREENS`, que no se tocaron. El CSS nuevo viaja en el fragmento diferido del área de trabajo: dentro del paquete inicial lo llevaba a 245 KiB, sobre el aviso de 244 KiB; queda en 242,7 KiB y sin avisos.
+
+**Medición de filas (fixture de 64 elementos, Chromium, inglés, comparada con `main` en la misma sesión):**
+
+| Pantalla (píxeles CSS) | Carpeta: filas / primera fila | Búsqueda: filas / primera fila | Altura de página |
+| ---------------------- | ----------------------------- | ------------------------------ | ---------------- |
+| HD 1280×720            | 3 / y = 527 (igual)           | 3 / y = 523 (antes 514)        | 1.904 / 3.399 px |
+| FHD 1920×1080          | 11 (igual)                    | 10 (igual)                     | 1.080 px         |
+| QHD 2560×1440          | 18 (igual)                    | 16 (igual)                     | 1.440 px         |
+| UHD 3840×2160          | 25 (igual)                    | 29 (igual)                     | 2.160 px         |
+
+La búsqueda baja 9 px por la franja y no pierde ninguna fila. A 390 px los filtros van de dos en dos con la etiqueta encima y no hay desplazamiento horizontal; con texto al 200 % pasa la prueba existente.
+
+**Medición T9 (equipo de desarrollo, fixture sintético de 172.186 entradas y 172.001 archivos, once extensiones y fechas en cinco años; 10 repeticiones tras una primera):**
+
+| Operación                               | p50   | p95   | Coincidencias |
+| --------------------------------------- | ----- | ----- | ------------- |
+| Búsqueda sin filtros                    | 13 ms | 33 ms | 172.001       |
+| Por categoría (vídeo)                   | 14 ms | 52 ms | 30.395        |
+| Por extensión (`mkv`)                   | 12 ms | 19 ms | 15.198        |
+| Más de un año sin modificar             | 6 ms  | 8 ms  | 139.155       |
+| Todo a la vez (texto, tamaño, tipo, extensión, fecha) | 10 ms | 14 ms | 527 |
+| Página 100 de una categoría             | 19 ms | 23 ms | 30.395        |
+| Desglose de todo el análisis            | 14 ms | 25 ms | 9 categorías  |
+| Desglose de una doceava parte           | 1 ms  | 1 ms  | 9 categorías  |
+
+Las consultas nuevas recorren el snapshot con el mismo método que la búsqueda de H4b, fuera del monitor del servicio. No se midieron equipos distintos, rutas de red ni el DOM de páginas grandes.
+
+**Recorridos internos (§5.5).** Operador: automatización con fixtures. No hubo recorrido manual del responsable en esta entrega.
+
+| Caso | Resultado                | Evidencia y límites |
+| ---- | ------------------------ | ------------------- |
+| T7   | Aprobado (automatizado). | Backend: fechas retenidas y desconocidas, catálogo, desglose que cuadra con la carpeta, tipo + fecha + tamaño + texto + ámbito combinados antes de paginar, límites inclusivo/exclusivo, instantes extremos, orden por fecha con desconocidas al final y parámetros inválidos por HTTP. UI: franja → filtro, chips que quitan solo lo suyo, «Quitar los filtros» que conserva el texto, rango contado desde el final del análisis, fecha desconocida y posterior que nunca entran en un filtro de fecha, orden por fecha y posición en el detalle. Recorrido real con Electron y el JAR: tipo «Documentos» deja 2 archivos y «hace más de 3 años» deja `needle-report.txt`, con su fecha fijada por `utimes`. |
+| T9   | Aprobado (automatizado). | Tabla anterior y regresión de H4b (búsqueda bloqueada a mitad sin retener progreso ni cancelación). **No medido:** equipos con menos memoria y volúmenes de red. |
+| T4   | **Parcial.**             | Automatizado: axe WCAG 2.2 AA con filtros, chips, franja, detalle y tabla de carpeta, en inglés y en español a 390 px; contorno del segmento elegido con colores forzados emulados. **No ejecutado:** lector de pantalla (Narrador/NVDA) y alto contraste real de Windows. |
+
+**Regresiones:** backend 49 pruebas (1 omitida por enlaces simbólicos; 4 de servicio y 1 de API nuevas). Frontend: `tsc`, webpack sin avisos, 44 pruebas de datos (6 nuevas), 29 de escritorio y 72 de UI (5 nuevas). Integración real con Electron (`electron-smoke.cjs`, `electron-first-finding.cjs` ampliado con tipo y fecha) contra el backend empaquetado.
+
+**Límites conocidos:** la fecha es la última escritura, no el último uso, y la de las carpetas no se calcula todavía (ni la más reciente de sus descendientes); la categoría es una aproximación por extensión y un archivo renombrado cambia de tipo; la franja muestra la composición del ámbito, no la de los resultados filtrados; solo se listan las diez extensiones mayores de cada tipo (el resto se cuenta); los rangos de fecha son fijos, sin selector de fechas propio; el orden por fecha solo existe para archivos; el estado de filtros no se guarda entre sesiones; y sigue sin ejecutarse la revisión manual con lector de pantalla y alto contraste real.
+
 ### 5.3 Secuencia de entregas
 
 **H0–H2 se conservan como planificación histórica, no como una nueva lista de trabajo.** Su cierre y excepciones constan en §5.2. La revisión manual restante de F15a se traslada expresamente a H3a/b; no se considera aprobada por el cierre de H2.
@@ -928,6 +978,6 @@ No se recluta ni contacta a nadie. El responsable de desarrollo/producto realiza
 | Necesidad de mutaciones       | Identificar una tarea concreta no resuelta con inspección/Explorador y demostrar seguridad. | Papelera permanece diferida; no es meta obligatoria.                  |
 | Preferencia/impacto comercial | No hay estudio externo ni datos longitudinales ahora.                                       | No justificar prioridades con conversiones o satisfacción inventadas. |
 
-**Siguiente paso recomendado:** H4b (consulta global con ámbito visible) está entregado con verificación automatizada, incluida la medición T9 que confirma que las consultas ya no retienen el monitor del servicio. Lo siguiente es **H4c: explicar y filtrar** (F7 fechas → F5 extensión/categoría → F2b.3 filtros AND en la misma superficie), que exige retener `lastModifiedTime` en el snapshot y recalibrar memoria, DTO y validadores. Siguen abiertos, en paralelo y sin bloquear H4c, los pendientes de H3a y la revisión manual con lector de pantalla y alto contraste real de H3b, H4a y H4b.
+**Siguiente paso recomendado:** H4c (fechas, tipos y filtros combinables) está entregado con verificación automatizada, incluida la medición de memoria (+8 B por entrada) y de consultas T9. Con él quedan cerrados los incrementos funcionales de encontrar y comprender (H4a–c). Lo siguiente según §5.3 es **H4d: repetir con comodidad** (F14c subanálisis independiente, F6b unidades con fecha de lectura, F15b tema Sistema/Claro/Oscuro); como H4d no bloquea H5a/b, puede adelantarse **H5a** (resúmenes locales) si se prioriza la continuidad. Siguen abiertos, en paralelo, los pendientes de H3a y la revisión manual con lector de pantalla y alto contraste real de H3b, H4a, H4b y H4c.
 
 Esta revisión actualiza el plan y sus criterios; no autoriza implementar automáticamente todas las funcionalidades ni publicar o distribuir el producto.

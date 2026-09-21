@@ -4,11 +4,18 @@ import {
   Ancestry,
   Capacity,
   DirectoryNode,
+  FILE_CATEGORIES,
+  FILE_ORDERS,
+  FileCategory,
+  FileFacts,
+  FileOrder,
   FileSearch,
   Health,
   LargestFiles,
+  RankedFile,
   Scan,
   SkippedItems,
+  TypeBreakdown,
   Volume,
 } from "../model/directory.types";
 
@@ -29,6 +36,20 @@ const validInstant = (value: unknown) =>
     !Number.isNaN(Date.parse(value)));
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
+const isCategory = (value: unknown): value is FileCategory =>
+  (FILE_CATEGORIES as readonly unknown[]).includes(value);
+const validCategory = (value: unknown) => value == null || isCategory(value);
+/** As the backend's catalog spells it: lower case, no dot, no separator. */
+const isExtension = (value: unknown): value is string =>
+  typeof value === "string" &&
+  /^[^.\\/]{1,32}$/.test(value) &&
+  value === value.toLowerCase();
+const validExtension = (value: unknown) => value == null || isExtension(value);
+/** Date, extension and category of a file; each may be absent or null. */
+const validFacts = (facts: FileFacts) =>
+  validInstant(facts.lastModified) &&
+  validExtension(facts.extension) &&
+  validCategory(facts.category);
 
 function validParams(value: unknown) {
   return (
@@ -79,7 +100,8 @@ function validateNode(value: unknown, paths: Set<string>): DirectoryNode {
     typeof node.childrenLoaded !== "boolean" ||
     typeof node.partial !== "boolean" ||
     !validError(node.error) ||
-    !validCode(node.errorCode)
+    !validCode(node.errorCode) ||
+    !validFacts(node)
   ) {
     throw invalidData();
   }
@@ -222,8 +244,24 @@ export const getAncestors = async (
     ),
   );
 
-/** Distinct files at or above the minimum, largest first, no more than the limit. */
-function validFiles(list: LargestFiles | FileSearch) {
+const timeOf = (file: RankedFile) =>
+  file.lastModified ? Date.parse(file.lastModified) : null;
+
+/** Whether `file` may follow `previous` in a list sorted this way. */
+function follows(previous: RankedFile, file: RankedFile, order: FileOrder) {
+  const bySize = file.sizeBytes <= previous.sizeBytes;
+  if (order === "LARGEST") return bySize;
+  const before = timeOf(previous);
+  const after = timeOf(file);
+  // Unknown dates come last in both directions; size settles ties.
+  if (before === null) return after === null && bySize;
+  if (after === null) return true;
+  if (before === after) return bySize;
+  return order === "OLDEST" ? before < after : before > after;
+}
+
+/** Distinct files at or above the minimum, in order, no more than the limit. */
+function validFiles(list: LargestFiles | FileSearch, order: FileOrder) {
   const paths = new Set<string>();
   return (
     Array.isArray(list.files) &&
@@ -237,12 +275,30 @@ function validFiles(list: LargestFiles | FileSearch) {
         !paths.has(file.absolutePath) &&
         text(file.relativePath) &&
         validCount(file.sizeBytes) &&
+        validFacts(file) &&
         file.sizeBytes >= list.minSizeBytes &&
-        (index === 0 || file.sizeBytes <= list.files[index - 1].sizeBytes);
+        (index === 0 || follows(list.files[index - 1], file, order));
       if (valid) paths.add(file.absolutePath);
       return valid;
     })
   );
+}
+
+/** Every file of a page satisfies the type and date filters it echoes. */
+function matchesFilters(search: FileSearch) {
+  const from = search.modifiedFrom ? Date.parse(search.modifiedFrom) : null;
+  const before = search.modifiedBefore
+    ? Date.parse(search.modifiedBefore)
+    : null;
+  return search.files.every((file) => {
+    const time = timeOf(file);
+    return (
+      (!search.category || file.category === search.category) &&
+      (!search.extension || file.extension === search.extension) &&
+      (from === null || (time !== null && time >= from)) &&
+      (before === null || (time !== null && time < before))
+    );
+  });
 }
 
 export function validateLargest(value: unknown): LargestFiles {
@@ -255,7 +311,7 @@ export function validateLargest(value: unknown): LargestFiles {
     ![largest.limit, largest.minSizeBytes, largest.matchingFiles].every(
       validCount,
     ) ||
-    !validFiles(largest)
+    !validFiles(largest, "LARGEST")
   ) {
     throw invalidData();
   }
@@ -272,19 +328,75 @@ export function validateSearch(value: unknown): FileSearch {
     search.scope.length === 0 ||
     !text(search.query) ||
     typeof search.partial !== "boolean" ||
+    !validCategory(search.category) ||
+    !validExtension(search.extension) ||
+    !validInstant(search.modifiedFrom) ||
+    !validInstant(search.modifiedBefore) ||
+    (search.order != null && !FILE_ORDERS.includes(search.order)) ||
     ![
       search.minSizeBytes,
       search.offset,
       search.limit,
       search.matchingFiles,
     ].every(validCount) ||
-    !validFiles(search) ||
+    !validFiles(search, search.order ?? "LARGEST") ||
+    !matchesFilters(search) ||
     // A page never claims more files than the count it belongs to.
     search.offset + search.files.length > search.matchingFiles
   ) {
     throw invalidData();
   }
   return search;
+}
+
+export function validateTypes(value: unknown): TypeBreakdown {
+  const types = value as TypeBreakdown | null;
+  if (
+    !isRecord(types) ||
+    !text(types.scanId) ||
+    !text(types.root) ||
+    !text(types.scope) ||
+    types.scope.length === 0 ||
+    typeof types.partial !== "boolean" ||
+    ![types.catalogVersion, types.totalBytes, types.totalFiles].every(
+      validCount,
+    ) ||
+    !Array.isArray(types.categories)
+  )
+    throw invalidData();
+  const seen = new Set<string>();
+  let bytes = 0;
+  let files = 0;
+  for (const total of types.categories) {
+    if (
+      !isRecord(total) ||
+      !isCategory(total.category) ||
+      seen.has(total.category) ||
+      ![total.sizeBytes, total.fileCount, total.extensionCount].every(
+        validCount,
+      ) ||
+      total.fileCount === 0 ||
+      !Array.isArray(total.extensions) ||
+      total.extensions.length > total.extensionCount ||
+      !total.extensions.every(
+        (extension) =>
+          isRecord(extension) &&
+          isExtension(extension.extension) &&
+          validCount(extension.sizeBytes) &&
+          validCount(extension.fileCount) &&
+          extension.sizeBytes <= total.sizeBytes &&
+          extension.fileCount <= total.fileCount,
+      )
+    )
+      throw invalidData();
+    seen.add(total.category);
+    bytes += total.sizeBytes;
+    files += total.fileCount;
+  }
+  // Each file counts once: the categories add up to the totals.
+  if (bytes !== types.totalBytes || files !== types.totalFiles)
+    throw invalidData();
+  return types;
 }
 
 export function validateSkipped(value: unknown): SkippedItems {
@@ -345,6 +457,11 @@ export const searchFiles = async (
     query = "",
     scope,
     minSizeBytes = 0,
+    category,
+    extension,
+    modifiedFrom,
+    modifiedBefore,
+    order = "LARGEST",
     offset = 0,
     limit = 50,
   }: {
@@ -352,6 +469,13 @@ export const searchFiles = async (
     /** A folder of the analysis; the whole analysis when absent. */
     scope?: string;
     minSizeBytes?: number;
+    category?: FileCategory;
+    extension?: string;
+    /** ISO-8601 instant, inclusive. */
+    modifiedFrom?: string;
+    /** ISO-8601 instant, exclusive. */
+    modifiedBefore?: string;
+    order?: FileOrder;
     offset?: number;
     limit?: number;
   } = {},
@@ -364,6 +488,12 @@ export const searchFiles = async (
     limit: String(limit),
   });
   if (scope) params.set("scope", scope);
+  if (category) params.set("category", category);
+  if (extension) params.set("extension", extension);
+  if (modifiedFrom) params.set("modifiedFrom", modifiedFrom);
+  if (modifiedBefore) params.set("modifiedBefore", modifiedBefore);
+  // Left out when it is the default, so older services keep answering.
+  if (order !== "LARGEST") params.set("order", order);
   return validateSearch(
     await request(
       backendUrl(),
@@ -372,6 +502,18 @@ export const searchFiles = async (
     ),
   );
 };
+export const getTypes = async (
+  id: string,
+  scope?: string,
+  signal?: AbortSignal,
+) =>
+  validateTypes(
+    await request(
+      backendUrl(),
+      `/scans/${encodeURIComponent(id)}/types${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`,
+      { signal },
+    ),
+  );
 export const getSkipped = async (
   id: string,
   offset: number,

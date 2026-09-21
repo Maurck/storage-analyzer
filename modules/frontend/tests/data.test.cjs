@@ -682,3 +682,150 @@ test('saving recent folders is a preference that is on by default and does not c
   assert.equal(readRememberRecent(), true);
   assert.doesNotThrow(() => writeRememberRecent(false));
 });
+
+const { validateTypes, getTypes } = require('../src/features/storage-analysis/api/directory.api.ts');
+const { modifiedBounds } = require('../src/features/storage-analysis/model/modifiedRange.ts');
+
+test('file dates are formatted as dates alone and invalid ones are unavailable', () => {
+  const { formatDate } = createFormatters('en-US');
+  const iso = '2024-05-06T12:00:00Z';
+  assert.equal(formatDate(iso), new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(Date.parse(iso)));
+  assert.match(formatDate(iso), /^May [567], 2024$/);
+  assert.equal(formatDate('soon'), UNAVAILABLE);
+});
+
+test('date ranges count back from when the analysis ended, and recent ones stop there', () => {
+  const end = '2026-03-04T05:06:08.500Z';
+  assert.deepEqual(modifiedBounds('any', end), {});
+  assert.deepEqual(modifiedBounds('last30', end), {
+    from: '2026-02-02T05:06:08.500Z', before: '2026-03-04T05:06:08.501Z',
+  });
+  assert.deepEqual(modifiedBounds('lastYear', end), {
+    from: '2025-03-04T05:06:08.500Z', before: '2026-03-04T05:06:08.501Z',
+  });
+  assert.deepEqual(modifiedBounds('over1', end), { before: '2025-03-04T05:06:08.500Z' });
+  assert.deepEqual(modifiedBounds('over3', end), { before: '2023-03-04T05:06:08.500Z' });
+  // Calendar years in UTC: a leap day lands on the first of March.
+  assert.deepEqual(modifiedBounds('over1', '2024-02-29T10:00:00Z'), { before: '2023-03-01T10:00:00.000Z' });
+  // Nanosecond precision from the backend is read to the millisecond.
+  assert.deepEqual(modifiedBounds('over1', '2026-03-04T05:06:08.123456789Z'), { before: '2025-03-04T05:06:08.123Z' });
+  assert.deepEqual(modifiedBounds('over1', 'not a date'), {});
+});
+
+test('file facts are optional, but when present they must be well formed', () => {
+  const file = directory({
+    name: 'Clip.MP4', absolutePath: 'C:\\Documents\\Clip.MP4', type: 'FILE', sizeBytes: 5, fileCount: 1,
+    lastModified: '2024-05-06T07:08:09Z', extension: 'mp4', category: 'VIDEO',
+  });
+  assert.equal(validateDirectory(file), file);
+  // Services older than the contract send none of them; an unknown date is null.
+  assert.ok(validateDirectory(directory({ lastModified: null, extension: null, category: null })));
+  for (const facts of [
+    { lastModified: 'last week' }, { lastModified: 1714979289000 },
+    { extension: 'MP4' }, { extension: '.mp4' }, { extension: 'tar.gz' }, { extension: 'a/b' },
+    { extension: '' }, { extension: 'x'.repeat(33) }, { category: 'MOVIES' }, { category: 1 },
+  ]) {
+    assert.throws(() => validateDirectory({ ...file, ...facts }), error => assertAppError(error, /analysis data is incomplete/i, 0, 'invalid-data'));
+  }
+});
+
+test('a search page must honour the filters and the order it echoes', () => {
+  const file = (name, sizeBytes, lastModified, category = 'IMAGE', extension = 'jpg') => ({
+    name, absolutePath: `C:\\Data\\Photos\\${name}`, relativePath: `Photos\\${name}`, sizeBytes,
+    lastModified, extension, category,
+  });
+  const old = file('old.jpg', 4, '2020-01-01T00:00:00Z');
+  const recent = file('recent.jpg', 9, '2026-01-01T00:00:00Z');
+  const unknown = file('unknown.jpg', 12, null);
+  const filtered = search({ category: 'IMAGE', extension: 'jpg', modifiedBefore: '2025-01-01T00:00:00Z', files: [old] });
+  assert.equal(validateSearch(filtered), filtered);
+  const oldest = search({ order: 'OLDEST', files: [old, recent, unknown] });
+  assert.equal(validateSearch(oldest), oldest);
+  const newest = search({ order: 'NEWEST', files: [recent, old, unknown] });
+  assert.equal(validateSearch(newest), newest);
+  // Equal dates fall back to size.
+  const tie = { ...old, name: 'tie.jpg', absolutePath: 'C:\\Data\\Photos\\tie.jpg', sizeBytes: 2 };
+  assert.ok(validateSearch(search({ order: 'OLDEST', files: [old, tie] })));
+  for (const value of [
+    search({ category: 'VIDEO', files: [old] }), // a file of another category
+    search({ extension: 'png', files: [old] }),
+    search({ modifiedBefore: '2020-01-01T00:00:00Z', files: [old] }), // the upper bound is exclusive
+    search({ modifiedFrom: '2021-01-01T00:00:00Z', files: [old] }),
+    search({ modifiedFrom: '2000-01-01T00:00:00Z', files: [unknown] }), // unknown never matches a bound
+    search({ order: 'OLDEST', files: [recent, old] }),
+    search({ order: 'OLDEST', files: [unknown, old] }), // unknown dates come last
+    search({ order: 'NEWEST', files: [old, recent] }),
+    search({ order: 'OLDEST', files: [tie, old] }),
+    search({ order: 'SMALLEST' }), search({ category: 'MOVIES' }), search({ modifiedFrom: 'today' }),
+  ]) {
+    assert.throws(() => validateSearch(value), error => assertAppError(error, /analysis data is incomplete/i, 0, 'invalid-data'));
+  }
+});
+
+function types(overrides = {}) {
+  return {
+    scanId: 'scan-1', root: 'C:\\Data', scope: 'C:\\Data', partial: false, catalogVersion: 1,
+    totalBytes: 110, totalFiles: 4,
+    categories: [
+      { category: 'VIDEO', sizeBytes: 100, fileCount: 2, extensionCount: 2,
+        extensions: [{ extension: 'mp4', sizeBytes: 70, fileCount: 1 }, { extension: 'mkv', sizeBytes: 30, fileCount: 1 }] },
+      { category: 'NO_EXTENSION', sizeBytes: 10, fileCount: 2, extensionCount: 0, extensions: [] },
+    ],
+    ...overrides,
+  };
+}
+
+test('a type breakdown is accepted only when its categories add up to its totals', async t => {
+  const valid = types();
+  assert.equal(validateTypes(valid), valid);
+  assert.ok(validateTypes(types({ totalBytes: 0, totalFiles: 0, categories: [] })));
+  const [video, none] = valid.categories;
+  for (const value of [
+    null, types({ scope: '' }), types({ partial: 1 }), types({ categories: null }),
+    types({ totalBytes: 111 }), // the categories do not add up
+    types({ totalFiles: 5 }),
+    types({ categories: [video, { ...video }], totalBytes: 200 }), // a category twice
+    types({ categories: [{ ...video, category: 'MOVIES' }, none] }),
+    types({ categories: [video, { ...none, fileCount: 0 }], totalFiles: 2 }), // an empty category
+    types({ categories: [{ ...video, extensionCount: 1 }, none] }), // more listed than counted
+    types({ categories: [{ ...video, extensions: [{ extension: '.mp4', sizeBytes: 1, fileCount: 1 }] }, none] }),
+    types({ categories: [{ ...video, extensions: [{ extension: 'mp4', sizeBytes: 101, fileCount: 1 }] }, none] }),
+  ]) {
+    assert.throws(() => validateTypes(value), error => assertAppError(error, /analysis data is incomplete/i, 0, 'invalid-data'));
+  }
+
+  const oldWindow = globalThis.window;
+  globalThis.window = { storageAnalyzer: { backendUrl: 'http://127.0.0.1:5050' } };
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const urls = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    urls.push(url);
+    return response(types());
+  });
+  await getTypes('scan/1', 'C:\\Data\\My Photos');
+  await getTypes('scan-2');
+  assert.deepEqual(urls, [
+    'http://127.0.0.1:5050/scans/scan%2F1/types?scope=C%3A%5CData%5CMy%20Photos',
+    'http://127.0.0.1:5050/scans/scan-2/types',
+  ]);
+});
+
+test('a filtered search encodes each criterion and leaves the default order out', async t => {
+  const oldWindow = globalThis.window;
+  globalThis.window = { storageAnalyzer: { backendUrl: 'http://127.0.0.1:5050' } };
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const urls = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    urls.push(url);
+    return response(search({ offset: 0, files: [], matchingFiles: 0 }));
+  });
+  await searchFiles('scan-1', {
+    category: 'VIDEO', extension: 'mp4', modifiedFrom: '2025-01-01T00:00:00.000Z',
+    modifiedBefore: '2026-01-01T00:00:00.000Z', order: 'OLDEST',
+  });
+  await searchFiles('scan-1', { order: 'LARGEST' });
+  assert.deepEqual(urls, [
+    'http://127.0.0.1:5050/scans/scan-1/files?query=&minSizeBytes=0&offset=0&limit=50&category=VIDEO&extension=mp4&modifiedFrom=2025-01-01T00%3A00%3A00.000Z&modifiedBefore=2026-01-01T00%3A00%3A00.000Z&order=OLDEST',
+    'http://127.0.0.1:5050/scans/scan-1/files?query=&minSizeBytes=0&offset=0&limit=50',
+  ]);
+});

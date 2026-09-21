@@ -58,6 +58,17 @@
     --color-info: #075985;
     --color-info-text: #e0f2fe;
     --color-overlay: rgb(2 6 23 / 72%);
+    /* One fixed color per file category, so a type reads the same in every
+       folder. All take dark text (#0b1220) above 7:1. */
+    --chart-video: #60a5fa;
+    --chart-image: #a78bfa;
+    --chart-audio: #2dd4bf;
+    --chart-document: #fbbf24;
+    --chart-archive: #fb7185;
+    --chart-disk-image: #fb923c;
+    --chart-program: #4ade80;
+    --chart-other: #94a3b8;
+    --chart-no-extension: #cbd5e1;
 
     --font-sans: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
     --font-mono: "Cascadia Code", Consolas, ui-monospace, monospace;

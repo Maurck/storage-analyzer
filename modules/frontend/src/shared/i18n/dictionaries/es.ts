@@ -436,4 +436,60 @@ export const es: Dictionary = {
   "capacity.description":
     "En este equipo, un análisis admite unos {count} elementos con rutas de unos {length} caracteres. Las carpetas más grandes se detienen con una explicación.",
   "capacity.unavailable": "Se muestra cuando el motor de análisis esté listo.",
+  "category.VIDEO": "Vídeos",
+  "category.IMAGE": "Imágenes",
+  "category.AUDIO": "Audio",
+  "category.DOCUMENT": "Documentos",
+  "category.ARCHIVE": "Archivos comprimidos",
+  "category.DISK_IMAGE": "Imágenes de disco",
+  "category.PROGRAM": "Programas e instaladores",
+  "category.OTHER": "Otros tipos",
+  "category.NO_EXTENSION": "Sin extensión",
+  "category.withExtension": "{category} · .{extension}",
+
+  "date.unknown": "Desconocida",
+  "date.future": "posterior al análisis",
+  "date.meaning":
+    "Cuándo se escribió el archivo por última vez, según lo leyó el análisis. No indica cuándo se abrió o se usó por última vez.",
+
+  "filters.label": "Filtros",
+  "filters.typeLabel": "Tipo",
+  "filters.anyType": "Todos los tipos",
+  "filters.extensionLabel": "Extensión",
+  "filters.anyExtension": "Todas las extensiones",
+  "filters.extensionOption": ".{extension} · {size}",
+  "filters.modifiedLabel": "Modificado",
+  "filters.modifiedAny": "Cualquier fecha",
+  "filters.modifiedLast30": "En los últimos 30 días",
+  "filters.modifiedLastYear": "En el último año",
+  "filters.modifiedOver1": "Hace más de un año",
+  "filters.modifiedOver3": "Hace más de 3 años",
+  "filters.chipSince": "Modificados desde el {date}",
+  "filters.chipBefore": "Modificados antes del {date}",
+  "filters.remove": "Quitar el filtro: {name}",
+  "filters.clear": "Quitar los filtros",
+  "filters.dateNote":
+    "Los filtros de fecha dejan fuera los archivos sin fecha conocida y cuentan desde el final de este análisis.",
+  "filters.emptyFiltered": "Solo se listan los archivos que cumplen todos los filtros.",
+
+  "types.title": "Tipos",
+  "types.figureLabel":
+    "Archivos de {where} por tipo, {size} en total. Elige un tipo para listar solo sus archivos; los tamaños exactos están en el filtro de tipo.",
+  "types.segment": "{category}: {size}, {share}",
+  "types.error": "No se pudieron desglosar estos archivos por tipo.",
+
+  "largest.columnType": "Tipo",
+  "largest.columnModified": "Modificado",
+  "largest.sortBySize": "Ordenar por tamaño, de mayor a menor",
+  "largest.sortByDate": "Ordenar por fecha de modificación",
+
+  "finding.matchValueOldest":
+    "N.º {rank} de {total} archivos que coinciden, del más antiguo al más reciente",
+  "finding.matchValueNewest":
+    "N.º {rank} de {total} archivos que coinciden, del más reciente al más antiguo",
+  "finding.type": "Tipo",
+  "finding.modified": "Modificado",
+
+  "contents.columnModified": "Modificado",
+  "contents.folderFiles": "{count} archivos",
 };

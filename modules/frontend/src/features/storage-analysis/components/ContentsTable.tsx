@@ -12,14 +12,20 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 import { useFittedHeight } from "../../../shared/hooks/useFittedHeight";
+import { ModifiedDate } from "./FileFacts";
 
 export const PAGE_SIZE = 25;
+
+type SortKey = "name" | "sizeBytes" | "modified";
+
+const timeOf = (node: DirectoryNode) =>
+  node.lastModified ? Date.parse(node.lastModified) : null;
 
 /** How one folder's table is shown; the page keeps one per folder and scan. */
 export interface ContentsState {
   search: string;
   filter: "all" | DirectoryNode["type"];
-  sort: { key: "name" | "sizeBytes"; descending: boolean };
+  sort: { key: SortKey; descending: boolean };
   page: number;
 }
 
@@ -40,17 +46,34 @@ export function contentsItems(node: DirectoryNode, state: ContentsState) {
         child.name.toLocaleLowerCase().includes(query) &&
         (filter === "all" || child.type === filter),
     )
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      if (sort.key === "modified") {
+        // Folders and unknown dates have no time to compare: they come last
+        // in both directions, largest first among themselves.
+        const [first, second] = [timeOf(a), timeOf(b)];
+        if (first === null || second === null)
+          return first !== null
+            ? -1
+            : second !== null
+              ? 1
+              : b.sizeBytes - a.sizeBytes || a.name.localeCompare(b.name);
+        return (
+          (first - second || a.name.localeCompare(b.name)) *
+          (sort.descending ? -1 : 1)
+        );
+      }
+      return (
         (sort.key === "name"
           ? a.name.localeCompare(b.name, undefined, { numeric: true })
           : a.sizeBytes - b.sizeBytes || a.name.localeCompare(b.name)) *
-        (sort.descending ? -1 : 1),
-    );
+        (sort.descending ? -1 : 1)
+      );
+    });
 }
 
 export function ContentsTable({
   node,
+  analyzedAt,
   onSelect,
   state,
   onStateChange,
@@ -61,6 +84,8 @@ export function ContentsTable({
   onSearchSubfolders,
 }: {
   node: DirectoryNode;
+  /** When the analysis ended, to mark dates after it. */
+  analyzedAt: string;
   onSelect(node: DirectoryNode): void;
   state: ContentsState;
   onStateChange(state: ContentsState): void;
@@ -85,7 +110,8 @@ export function ContentsTable({
     onStateChange({ ...state, ...change });
   const reset = () => update({ search: "", filter: "all", page: 0 });
   const query = search.trim();
-  const sortBy = (key: "name" | "sizeBytes") =>
+  // Size starts largest first; name and date start from A and the oldest.
+  const sortBy = (key: SortKey) =>
     update({
       sort: {
         key,
@@ -93,6 +119,8 @@ export function ContentsTable({
       },
       page: 0,
     });
+  const sortState = (key: SortKey) =>
+    sort.key === key ? (sort.descending ? "descending" : "ascending") : "none";
 
   // The rows scroll inside their region, so the count and the pages under
   // them stay on screen.
@@ -197,7 +225,7 @@ export function ContentsTable({
             />
           ) : (
             <div className="table-scroll" ref={scrollRegion}>
-              <table>
+              <table className="contents-table">
                 <caption className="sr-only">
                   {t("contents.caption", { name: node.name })}
                 </caption>
@@ -227,6 +255,21 @@ export function ContentsTable({
                     </th>
                     <th scope="col" className="type-column">
                       {t("contents.columnType")}
+                    </th>
+                    <th
+                      scope="col"
+                      className="modified-column"
+                      aria-sort={sortState("modified")}
+                    >
+                      <button onClick={() => sortBy("modified")}>
+                        {t("contents.columnModified")}{" "}
+                        {sort.key === "modified" && (
+                          <Icon
+                            name={sort.descending ? "arrow-down" : "arrow-up"}
+                            size={14}
+                          />
+                        )}
+                      </button>
                     </th>
                     <th
                       scope="col"
@@ -304,10 +347,28 @@ export function ContentsTable({
                           </td>
                           <td className="type-column muted">
                             {child.type === "FILE"
-                              ? t("contents.typeFile")
+                              ? child.category
+                                ? t(`category.${child.category}`)
+                                : t("contents.typeFile")
                               : child.type === "ERROR"
                                 ? t("contents.typeSkipped")
                                 : t("contents.typeFolder")}
+                            {child.type === "FOLDER" && (
+                              <span className="type-detail">
+                                {t("contents.folderFiles", {
+                                  count: formatNumber(child.fileCount),
+                                })}
+                              </span>
+                            )}
+                          </td>
+                          <td className="modified-column muted">
+                            {child.type === "FILE" &&
+                              child.lastModified !== undefined && (
+                                <ModifiedDate
+                                  file={child}
+                                  analyzedAt={analyzedAt}
+                                />
+                              )}
                           </td>
                           <td className="numeric">
                             {child.partial ? "≥ " : ""}

@@ -1,8 +1,21 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useQuery } from "react-query";
-import { getLargest, searchFiles } from "../api/directory.api";
-import { DirectoryNode, RankedFile } from "../model/directory.types";
+import { getLargest, getTypes, searchFiles } from "../api/directory.api";
+import {
+  DirectoryNode,
+  FILE_CATEGORIES,
+  FileCategory,
+  FileOrder,
+  RankedFile,
+} from "../model/directory.types";
 import { useShowItem } from "../hooks/useShowItem";
+import { TypeDistribution } from "./TypeDistribution";
+import { ModifiedDate, useFileType } from "./FileFacts";
+import {
+  MODIFIED_RANGES,
+  ModifiedRange,
+  modifiedBounds,
+} from "../model/modifiedRange";
 import { Alert } from "../../../shared/components/Alert";
 import { EmptyState } from "../../../shared/components/EmptyState";
 import { ErrorState } from "../../../shared/components/ErrorState";
@@ -13,6 +26,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import {
   formatBytes,
+  formatDate,
   formatNumber,
   formatPercent,
   percentOf,
@@ -35,6 +49,7 @@ const GB = 1024 ** 3;
 const thresholds = [0, 100 * MB, GB, 10 * GB];
 /** The scope option that stands for the whole analysis. */
 const WHOLE_ANALYSIS = "";
+const ANY = "";
 
 /** The folder part of a path relative to the scan root. */
 function locationOf(file: RankedFile) {
@@ -48,6 +63,14 @@ export interface SearchScope {
   name: string;
 }
 
+const rangeLabels = {
+  any: "filters.modifiedAny",
+  last30: "filters.modifiedLast30",
+  lastYear: "filters.modifiedLastYear",
+  over1: "filters.modifiedOver1",
+  over3: "filters.modifiedOver3",
+} as const;
+
 /**
  * What the view shows, kept by the page for one scan so that leaving it (to
  * open a folder, for instance) and coming back loses nothing.
@@ -58,6 +81,11 @@ export interface LargestState {
   query: string;
   /** A folder searched with its subfolders; the whole analysis when absent. */
   scope?: SearchScope;
+  category?: FileCategory;
+  /** Lower case, without the dot. */
+  extension?: string;
+  modified: ModifiedRange;
+  order: FileOrder;
   /** Page of search results; the ranking has one. */
   page: number;
   /** The file last opened, marked in the list. */
@@ -73,19 +101,38 @@ export interface LargestState {
 export const initialLargestState: LargestState = {
   minSize: 0,
   query: "",
+  modified: "any",
+  order: "LARGEST",
   page: 0,
   detail: false,
   scrollY: 0,
   listScroll: 0,
 };
 
-/** A query or a folder turns the ranking into a search of every file. */
+/** Filters beyond text and scope: each has a chip that removes it. */
+const hasFilters = (state: LargestState) =>
+  state.minSize > 0 ||
+  !!state.category ||
+  !!state.extension ||
+  state.modified !== "any";
+
+/**
+ * Anything but the size threshold turns the ranking into a search of every
+ * file: text, a folder, a type, a date or an order by date.
+ */
 export const isSearch = (state: LargestState) =>
-  state.query.trim() !== "" || !!state.scope;
+  state.query.trim() !== "" ||
+  !!state.scope ||
+  !!state.category ||
+  !!state.extension ||
+  state.modified !== "any" ||
+  state.order !== "LARGEST";
 
 interface LargestFilesProps {
   scanId: string;
   root: DirectoryNode;
+  /** When the analysis ended: date ranges count back from it. */
+  analyzedAt: string;
   state: LargestState;
   onStateChange(state: LargestState): void;
   /** The folder selected in the explorer, offered as a search scope. */
@@ -104,6 +151,7 @@ interface LargestFilesProps {
 export function LargestFiles({
   scanId,
   root,
+  analyzedAt,
   state,
   onStateChange,
   folder,
@@ -116,7 +164,7 @@ export function LargestFiles({
 }: LargestFilesProps) {
   const { t } = useTranslation();
   const describeError = useErrorMessage();
-  const { minSize, scope, page } = state;
+  const { minSize, scope, page, category, extension, modified, order } = state;
   const showItem = useShowItem(scanId);
   const rowButtons = useRef(new Map<string, HTMLButtonElement>());
   const scrollRegion = useRef<HTMLDivElement>(null);
@@ -127,7 +175,9 @@ export function LargestFiles({
   const [sent, setSent] = useState(typed);
   const pending = sent !== typed;
   const searching = isSearch(state);
-  const searchSent = sent !== "" || !!scope;
+  // Text counts once it is sent; every other criterion applies at once.
+  const searchSent = sent !== "" || isSearch({ ...state, query: "" });
+  const bounds = modifiedBounds(modified, analyzedAt);
 
   useEffect(() => {
     if (!pending) return;
@@ -147,7 +197,19 @@ export function LargestFiles({
     },
   );
   const search = useQuery(
-    ["files", scanId, sent, scope?.path ?? "", minSize, page],
+    [
+      "files",
+      scanId,
+      sent,
+      scope?.path ?? "",
+      minSize,
+      category ?? "",
+      extension ?? "",
+      bounds.from ?? "",
+      bounds.before ?? "",
+      order,
+      page,
+    ],
     ({ signal }) =>
       searchFiles(
         scanId,
@@ -155,6 +217,11 @@ export function LargestFiles({
           query: sent,
           scope: scope?.path,
           minSizeBytes: minSize,
+          category,
+          extension,
+          modifiedFrom: bounds.from,
+          modifiedBefore: bounds.before,
+          order,
           offset: page * SEARCH_PAGE_SIZE,
           limit: SEARCH_PAGE_SIZE,
         },
@@ -168,6 +235,16 @@ export function LargestFiles({
       retry: 1,
     },
   );
+  // What the scope holds by type; the filters below do not change it.
+  const types = useQuery(
+    ["types", scanId, scope?.path ?? ""],
+    ({ signal }) => getTypes(scanId, scope?.path, signal),
+    { staleTime: Infinity, keepPreviousData: true, retry: 1 },
+  );
+  const typesNow =
+    types.data?.scope === (scope?.path ?? root.absolutePath)
+      ? types.data
+      : undefined;
   const active = searchSent ? search : ranking;
   const rankingData =
     ranking.data?.minSizeBytes === minSize ? ranking.data : undefined;
@@ -203,6 +280,7 @@ export function LargestFiles({
   const partialNotice = useDismissible(
     partialAbove ? `${scanId}:${searchSent ? "search" : "ranking"}` : null,
   );
+  const filtered = hasFilters(state);
 
   // The rows scroll inside their region, so the count and the pages under
   // them stay on screen.
@@ -212,6 +290,9 @@ export function LargestFiles({
     list?.files.length,
     searching,
     partialNotice.open,
+    filtered,
+    category,
+    !!typesNow,
   );
 
   // Rows exist only once the list has arrived, which after a long visit
@@ -240,6 +321,13 @@ export function LargestFiles({
 
   const change = (next: Partial<LargestState>) =>
     onStateChange({ ...state, page: 0, detail: false, ...next });
+  const clearFilters = () =>
+    change({
+      minSize: 0,
+      category: undefined,
+      extension: undefined,
+      modified: "any",
+    });
   const openDetail = (file: RankedFile) => {
     showItem.clearFailure();
     onStateChange({
@@ -267,17 +355,21 @@ export function LargestFiles({
     </div>
   );
 
-  if (list && detailIndex >= 0)
+  if (list && detailIndex >= 0) {
+    const rank = formatNumber(list.offset + detailIndex + 1);
+    const total = formatNumber(list.matching);
     return (
       <FindingDetail
         file={list.files[detailIndex]}
+        analyzedAt={analyzedAt}
         position={
-          searchSent
-            ? t("finding.matchValue", {
-                rank: formatNumber(list.offset + detailIndex + 1),
-                total: formatNumber(list.matching),
-              })
-            : t("finding.rankValue", { rank: formatNumber(detailIndex + 1) })
+          !searchSent
+            ? t("finding.rankValue", { rank })
+            : order === "OLDEST"
+              ? t("finding.matchValueOldest", { rank, total })
+              : order === "NEWEST"
+                ? t("finding.matchValueNewest", { rank, total })
+                : t("finding.matchValue", { rank, total })
         }
         backLabel={searchSent ? t("finding.backToResults") : t("finding.back")}
         root={root}
@@ -287,6 +379,7 @@ export function LargestFiles({
         onOpenFolder={onOpenFolder}
       />
     );
+  }
 
   const folders = [scope, folder].filter(
     (option, index, all): option is SearchScope =>
@@ -295,9 +388,72 @@ export function LargestFiles({
       all.findIndex((other) => other?.path === option.path) === index,
   );
   const partial = partialNotice.open;
+  const categoryTotal = typesNow?.categories.find(
+    (total) => total.category === category,
+  );
+  // The largest extensions of the chosen type, with their sizes. The chosen
+  // one stays listed, without a size, even when it is not among them.
+  const extensions: { extension: string; label: string }[] = (
+    categoryTotal?.extensions ?? []
+  ).map((total) => ({
+    extension: total.extension,
+    label: t("filters.extensionOption", {
+      extension: total.extension,
+      size: formatBytes(total.sizeBytes),
+    }),
+  }));
+  if (extension && !extensions.some((item) => item.extension === extension))
+    extensions.push({ extension, label: `.${extension}` });
+  const chips: { key: string; label: string; remove(): void }[] = [
+    ...(minSize > 0
+      ? [
+          {
+            key: "size",
+            label: t("largest.atLeast", { size: formatBytes(minSize) }),
+            remove: () => change({ minSize: 0 }),
+          },
+        ]
+      : []),
+    ...(category
+      ? [
+          {
+            key: "category",
+            label: t(`category.${category}`),
+            remove: () => change({ category: undefined, extension: undefined }),
+          },
+        ]
+      : []),
+    ...(extension
+      ? [
+          {
+            key: "extension",
+            label: `.${extension}`,
+            remove: () => change({ extension: undefined }),
+          },
+        ]
+      : []),
+    ...(modified !== "any"
+      ? [
+          {
+            key: "modified",
+            label: bounds.from
+              ? t("filters.chipSince", { date: formatDate(bounds.from) })
+              : t("filters.chipBefore", {
+                  date: formatDate(bounds.before ?? analyzedAt),
+                }),
+            remove: () => change({ modified: "any" }),
+          },
+        ]
+      : []),
+  ];
+  const typeOrDate = !!category || !!extension || modified !== "any";
   const emptyExit = scope ? (
     <Button variant="secondary" onClick={() => change({ scope: undefined })}>
       {t("search.searchAll")}
+    </Button>
+  ) : typeOrDate ? (
+    <Button variant="secondary" onClick={clearFilters}>
+      {t("filters.clear")}
     </Button>
   ) : minSize > 0 ? (
     <Button variant="secondary" onClick={() => change({ minSize: 0 })}>
@@ -308,6 +464,16 @@ export function LargestFiles({
       {t("search.clear")}
     </Button>
   );
+  const sortedBy = (column: "size" | "date") =>
+    column === "size"
+      ? order === "LARGEST"
+        ? "descending"
+        : "none"
+      : order === "OLDEST"
+        ? "ascending"
+        : order === "NEWEST"
+          ? "descending"
+          : "none";
 
   return (
     <section
@@ -340,6 +506,65 @@ export function LargestFiles({
             onChange={(event) => change({ query: event.target.value })}
           />
         </div>
+        {/* Name, type and date narrow the same search, so they share its row. */}
+        <label className="filter-select">
+          <span>{t("filters.typeLabel")}</span>
+          <select
+            id="file-type"
+            value={category ?? ANY}
+            onChange={(event) =>
+              change({
+                category: (event.target.value || undefined) as
+                  | FileCategory
+                  | undefined,
+                extension: undefined,
+              })
+            }
+          >
+            <option value={ANY}>{t("filters.anyType")}</option>
+            {FILE_CATEGORIES.map((value) => (
+              <option key={value} value={value}>
+                {t(`category.${value}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        {extensions.length > 0 && (
+          <label className="filter-select">
+            <span>{t("filters.extensionLabel")}</span>
+            <select
+              id="file-extension"
+              value={extension ?? ANY}
+              onChange={(event) =>
+                change({ extension: event.target.value || undefined })
+              }
+            >
+              <option value={ANY}>{t("filters.anyExtension")}</option>
+              {extensions.map((item) => (
+                <option key={item.extension} value={item.extension}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="filter-select">
+          <span>{t("filters.modifiedLabel")}</span>
+          <select
+            id="file-modified"
+            value={modified}
+            aria-describedby={modified !== "any" ? "date-note" : undefined}
+            onChange={(event) =>
+              change({ modified: event.target.value as ModifiedRange })
+            }
+          >
+            {MODIFIED_RANGES.map((value) => (
+              <option key={value} value={value}>
+                {t(rangeLabels[value])}
+              </option>
+            ))}
+          </select>
+        </label>
         {headingAction}
       </div>
       <div className="table-tools largest-filters">
@@ -377,7 +602,49 @@ export function LargestFiles({
                 : t("largest.atLeast", { size: formatBytes(value) }),
           }))}
         />
+        <div className="type-strip-slot">
+          <TypeDistribution
+            types={typesNow}
+            where={where}
+            failed={types.isError}
+            selected={category}
+            onSelect={(value) =>
+              change({ category: value, extension: undefined })
+            }
+            onRetry={() => {
+              void types.refetch();
+            }}
+          />
+        </div>
       </div>
+      {chips.length > 0 && (
+        <div
+          className="filter-chips"
+          role="group"
+          aria-label={t("filters.label")}
+        >
+          {chips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              className="filter-chip"
+              aria-label={t("filters.remove", { name: chip.label })}
+              onClick={chip.remove}
+            >
+              <span>{chip.label}</span>
+              <Icon name="close" size={14} />
+            </button>
+          ))}
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            {t("filters.clear")}
+          </Button>
+          {modified !== "any" && (
+            <span id="date-note" className="muted filter-note">
+              {t("filters.dateNote")}
+            </span>
+          )}
+        </div>
+      )}
       <p id="file-search-scope" className="search-scope muted">
         {searching
           ? t("search.scopeNote", { where })
@@ -420,7 +687,8 @@ export function LargestFiles({
                 : t("search.emptyAll", { where })) +
               (minSize > 0
                 ? " " + t("search.emptyMin", { size: formatBytes(minSize) })
-                : "")
+                : "") +
+              (typeOrDate ? " " + t("filters.emptyFiltered") : "")
             }
             icon={<Icon name="search" size={28} />}
             action={emptyExit}
@@ -442,7 +710,7 @@ export function LargestFiles({
           aria-busy={stale || undefined}
           ref={scrollRegion}
         >
-          <table>
+          <table className="files-table">
             <caption className="sr-only">
               {searchSent
                 ? t("search.caption", { where })
@@ -454,8 +722,41 @@ export function LargestFiles({
                 <th scope="col" className="location-column">
                   {t("largest.columnLocation")}
                 </th>
-                <th scope="col" className="numeric">
-                  {t("largest.columnSize")}
+                <th scope="col" className="type-column">
+                  {t("largest.columnType")}
+                </th>
+                <th
+                  scope="col"
+                  className="modified-column"
+                  aria-sort={sortedBy("date")}
+                >
+                  <button
+                    title={t("largest.sortByDate")}
+                    onClick={() =>
+                      change({
+                        order: order === "OLDEST" ? "NEWEST" : "OLDEST",
+                      })
+                    }
+                  >
+                    {t("largest.columnModified")}{" "}
+                    {order !== "LARGEST" && (
+                      <Icon
+                        name={order === "OLDEST" ? "arrow-up" : "arrow-down"}
+                        size={14}
+                      />
+                    )}
+                  </button>
+                </th>
+                <th scope="col" className="numeric" aria-sort={sortedBy("size")}>
+                  <button
+                    title={t("largest.sortBySize")}
+                    onClick={() => change({ order: "LARGEST" })}
+                  >
+                    {t("largest.columnSize")}{" "}
+                    {order === "LARGEST" && (
+                      <Icon name="arrow-down" size={14} />
+                    )}
+                  </button>
                 </th>
                 {showItem.available && (
                   <th scope="col" className="action-column">
@@ -500,6 +801,12 @@ export function LargestFiles({
                       <span className="location" title={file.absolutePath}>
                         {location || t("largest.rootLocation")}
                       </span>
+                    </td>
+                    <td className="type-column muted">
+                      {file.category && t(`category.${file.category}`)}
+                    </td>
+                    <td className="modified-column muted">
+                      <ModifiedDate file={file} analyzedAt={analyzedAt} />
                     </td>
                     <td className="numeric">{formatBytes(file.sizeBytes)}</td>
                     {showItem.available && (
@@ -585,6 +892,7 @@ export function LargestFiles({
 
 interface FindingDetailProps {
   file: RankedFile;
+  analyzedAt: string;
   /** Where the file stands in the list it was opened from. */
   position: string;
   backLabel: string;
@@ -598,6 +906,7 @@ interface FindingDetailProps {
 /** One file of the list, with what it is, where it sits and what to do next. */
 function FindingDetail({
   file,
+  analyzedAt,
   position,
   backLabel,
   root,
@@ -608,6 +917,7 @@ function FindingDetail({
 }: FindingDetailProps) {
   const { t } = useTranslation();
   const describeError = useErrorMessage();
+  const fileType = useFileType();
   const heading = useRef<HTMLHeadingElement>(null);
   const [opening, setOpening] = useState(false);
   const [openError, setOpenError] = useState("");
@@ -724,6 +1034,21 @@ function FindingDetail({
           <dt>{t("finding.rank")}</dt>
           <dd>{position}</dd>
         </div>
+        {file.category && (
+          <div>
+            <dt>{t("finding.type")}</dt>
+            <dd>{fileType(file)}</dd>
+          </div>
+        )}
+        {file.lastModified !== undefined && (
+          <div>
+            <dt>{t("finding.modified")}</dt>
+            <dd>
+              <ModifiedDate file={file} analyzedAt={analyzedAt} withTime />
+              <span className="fact-note muted">{t("date.meaning")}</span>
+            </dd>
+          </div>
+        )}
         <div>
           <dt>{t("finding.location")}</dt>
           <dd>{location || t("largest.rootLocation")}</dd>

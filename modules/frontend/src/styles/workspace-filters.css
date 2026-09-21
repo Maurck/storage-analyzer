@@ -1,0 +1,178 @@
+/* Dates, types and the filters built on them. Only the workspace uses these
+   rules, so its lazy chunk loads them and the initial bundle stays under the
+   size warning. The layers were declared by tokens.css, which arrives first,
+   so these rules keep their place in the cascade whenever they are injected. */
+@layer app {
+  /* Type and date narrow the search like its text, so they share its row,
+     their labels in view like the segmented controls' legends. The field
+     keeps a useful width and the selects wrap below it when room runs out. */
+  .largest-search {
+    flex-wrap: wrap;
+  }
+  .largest-search .search-field {
+    flex: 1 1 14rem;
+  }
+  .filter-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+  }
+  .table-tools .filter-select select {
+    width: auto;
+    max-width: 14rem;
+    color: var(--color-text);
+  }
+  /* Every active filter once, each removable on its own. */
+  .filter-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 22px 12px;
+  }
+  .filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 0 8px 0 11px;
+    border: 1px solid var(--color-border-interactive);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-raised);
+    color: var(--color-text);
+    font-size: 0.75rem;
+  }
+  .filter-chip:hover {
+    background: var(--color-surface-hover);
+  }
+  .filter-chip:focus-visible {
+    outline: var(--focus-width) solid var(--color-focus);
+    outline-offset: var(--focus-offset);
+  }
+  .filter-note {
+    flex-basis: 100%;
+    font-size: 0.6875rem;
+  }
+
+  /* The files of the scope by type, one line like the folder's composition.
+     It takes the room the size filter leaves, and a line of its own when
+     there is too little. */
+  .type-strip-slot {
+    flex: 1 1 18rem;
+    min-width: min(18rem, 100%);
+  }
+  .type-strip-error {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 24px;
+    font-size: 0.75rem;
+  }
+  /* The chosen type is outlined and the rest lose their color; the pressed
+     state and the filter's chip say it in text. Grey keeps the lightness of
+     each color, so the dark labels keep their contrast, which fading would
+     not. */
+  .bar-segment.is-dimmed {
+    filter: grayscale(1);
+  }
+  .bar-segment.is-chosen {
+    box-shadow: inset 0 0 0 2px var(--color-background);
+    outline: 2px solid var(--color-text);
+    outline-offset: -2px;
+  }
+
+  .contents-table th:first-child {
+    width: 34%;
+  }
+  .contents-table th.type-column,
+  .contents-table th.modified-column {
+    width: 14%;
+  }
+  .contents-table th.numeric {
+    width: 16%;
+  }
+  .files-table {
+    min-width: 42rem;
+  }
+  .files-table th:first-child {
+    width: 30%;
+  }
+  .files-table th.type-column {
+    width: 13%;
+  }
+  .files-table th.modified-column {
+    width: 14%;
+  }
+  .files-table th.numeric {
+    width: 12%;
+  }
+  .modified-column {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .date-flag {
+    color: var(--color-warning-text);
+  }
+  .type-detail {
+    display: block;
+    font-size: 0.625rem;
+  }
+  .fact-note {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.6875rem;
+    line-height: 1.5;
+  }
+
+  /* The type is written in the filter, the strip and the name. */
+  @media (max-width: 1199px) {
+    .files-table .type-column {
+      display: none;
+    }
+  }
+  /* Compact windows keep name and size; the details keep everything. */
+  @media (max-width: 767px) {
+    /* Two filters to a line, each label above its select. */
+    .largest-search .filter-select {
+      flex: 1 1 9rem;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
+    }
+    .table-tools .filter-select select {
+      width: 100%;
+      max-width: none;
+    }
+    .modified-column {
+      display: none;
+    }
+    .contents-table th:first-child {
+      width: 48%;
+    }
+    .contents-table th.numeric,
+    .files-table th.numeric {
+      width: 27%;
+    }
+    .files-table {
+      min-width: 0;
+    }
+    .files-table th:first-child {
+      width: auto;
+    }
+  }
+}
+
+@layer utilities {
+  @media (forced-colors: active) {
+    .bar-segment.is-chosen {
+      outline: 3px solid Highlight;
+      outline-offset: -3px;
+    }
+    .filter-chip {
+      border-color: CanvasText;
+    }
+  }
+}

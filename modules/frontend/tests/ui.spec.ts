@@ -1,12 +1,15 @@
 import { expect, Page, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import type {
+  CategoryTotal,
   DirectoryNode,
+  FileCategory,
   FileSearch,
   LargestFiles,
   RankedFile,
   Scan,
   SkippedItems,
+  TypeBreakdown,
 } from "../src/features/storage-analysis/model/directory.types";
 import type { BackendLifecycle } from "../src/shared/lib/desktopBridge";
 
@@ -15,6 +18,34 @@ const GB = 1024 ** 3;
 const CORS = { "Access-Control-Allow-Origin": "*" };
 const axeSource = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
+/** A subset of the backend's catalog, enough for the fixtures. */
+const CATALOG: Record<string, FileCategory> = {
+  mkv: "VIDEO",
+  mp4: "VIDEO",
+  png: "IMAGE",
+  jpg: "IMAGE",
+  txt: "DOCUMENT",
+  zip: "ARCHIVE",
+};
+function typeOf(name: string) {
+  const dot = name.lastIndexOf(".");
+  const extension =
+    dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLowerCase() : null;
+  const category: FileCategory = !extension
+    ? "NO_EXTENSION"
+    : (CATALOG[extension] ?? "OTHER");
+  return { extension, category };
+}
+/** The analysis ends at 2026-03-04T05:06:08Z; see scan() below. */
+const MODIFIED: Record<string, string | null> = {
+  "package.zip": "2021-06-01T09:00:00Z",
+  "assets.png": "2025-11-20T12:30:00Z",
+  "sun.jpg": "2026-02-20T08:15:00Z",
+  "readme.txt": null,
+  "movie.mkv": "2019-04-02T18:00:00Z",
+  // A clock set wrong on the machine that wrote it: after the analysis.
+  "clip-01.bin": "2027-01-10T12:00:00Z",
+};
 function file(name: string, parent: string, sizeBytes: number): DirectoryNode {
   return {
     name,
@@ -27,6 +58,9 @@ function file(name: string, parent: string, sizeBytes: number): DirectoryNode {
     childrenLoaded: true,
     partial: false,
     subdirectories: [],
+    lastModified:
+      name in MODIFIED ? MODIFIED[name] : "2024-07-10T10:00:00Z",
+    ...typeOf(name),
   };
 }
 function folder(
@@ -141,6 +175,9 @@ function rankFiles(root: DirectoryNode): RankedFile[] {
         absolutePath: node.absolutePath,
         relativePath: node.absolutePath.slice(root.absolutePath.length + 1),
         sizeBytes: node.sizeBytes,
+        lastModified: node.lastModified,
+        extension: node.extension,
+        category: node.category,
       });
     node.subdirectories.forEach(visit);
   };
@@ -164,6 +201,7 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     skipped: [] as string[],
     ancestors: [] as string[],
     files: [] as string[],
+    types: [] as string[],
   };
   const state = {
     pending: !!options.pending,
@@ -176,6 +214,8 @@ async function prepare(page: Page, options: ApiOptions = {}) {
     extras: options.scanExtras ?? ({} as Partial<Scan>),
     expiredQueries: false,
     ancestorErrors: options.ancestorErrors ?? 0,
+    /** GET /types answers SCANNER_BUSY this many times. */
+    typeErrors: 0,
     /** Holds GET /ancestors for this path until the promise settles. */
     ancestorGates: new Map<string, Promise<void>>(),
     /** Holds GET /files for this query until the promise settles. */
@@ -334,12 +374,37 @@ async function prepare(page: Page, options: ApiOptions = {}) {
       const limit = Number(url.searchParams.get("limit"));
       await state.fileGates.get(query);
       const needle = query.toLowerCase().replace(/\\/g, "/");
-      const matching = rankFiles(data.root).filter(
-        (file) =>
+      const category = url.searchParams.get("category") as FileCategory | null;
+      const extension = url.searchParams.get("extension");
+      const modifiedFrom = url.searchParams.get("modifiedFrom");
+      const modifiedBefore = url.searchParams.get("modifiedBefore");
+      const order = (url.searchParams.get("order") ??
+        "LARGEST") as FileSearch["order"] & string;
+      const time = (file: RankedFile) =>
+        file.lastModified ? Date.parse(file.lastModified) : null;
+      // Every criterion at once, like the backend; unknown dates never match a bound.
+      const matching = rankFiles(data.root).filter((file) => {
+        const modified = time(file);
+        return (
           file.absolutePath.startsWith(scope + "/") &&
           file.sizeBytes >= minSizeBytes &&
-          file.relativePath.toLowerCase().includes(needle),
-      );
+          file.relativePath.toLowerCase().includes(needle) &&
+          (!category || file.category === category) &&
+          (!extension || file.extension === extension) &&
+          (!modifiedFrom ||
+            (modified !== null && modified >= Date.parse(modifiedFrom))) &&
+          (!modifiedBefore ||
+            (modified !== null && modified < Date.parse(modifiedBefore)))
+        );
+      });
+      if (order !== "LARGEST")
+        // Unknown dates last, then by date; the sort is stable, so size stays.
+        matching.sort((a, b) => {
+          const [first, second] = [time(a), time(b)];
+          if (first === null || second === null)
+            return first === second ? 0 : first === null ? 1 : -1;
+          return order === "OLDEST" ? first - second : second - first;
+        });
       const body: FileSearch = {
         scanId: url.pathname.split("/")[2],
         root: data.root.absolutePath,
@@ -347,12 +412,68 @@ async function prepare(page: Page, options: ApiOptions = {}) {
         partial: data.nodes.get(scope)!.partial,
         query,
         minSizeBytes,
+        category,
+        extension,
+        modifiedFrom,
+        modifiedBefore,
+        order,
         offset,
         limit,
         matchingFiles: matching.length,
         files: matching.slice(offset, offset + limit),
       };
       // The page may have given up on a request it no longer needs.
+      await respond(body).catch(() => {});
+    } else if (url.pathname.endsWith("/types")) {
+      requests.types.push(url.search);
+      if (state.typeErrors-- > 0) {
+        await respond(
+          { code: "SCANNER_BUSY", message: "The scanner is busy." },
+          429,
+        );
+        return;
+      }
+      const scope = url.searchParams.get("scope") ?? data.root.absolutePath;
+      const totals = new Map<FileCategory, CategoryTotal>();
+      for (const file of rankFiles(data.root)) {
+        if (!file.absolutePath.startsWith(scope + "/")) continue;
+        const category = file.category ?? "OTHER";
+        const total = totals.get(category) ?? {
+          category,
+          sizeBytes: 0,
+          fileCount: 0,
+          extensionCount: 0,
+          extensions: [],
+        };
+        total.sizeBytes += file.sizeBytes;
+        total.fileCount += 1;
+        if (file.extension) {
+          let own = total.extensions.find(
+            (item) => item.extension === file.extension,
+          );
+          if (!own) {
+            own = { extension: file.extension, sizeBytes: 0, fileCount: 0 };
+            total.extensions.push(own);
+            total.extensionCount += 1;
+          }
+          own.sizeBytes += file.sizeBytes;
+          own.fileCount += 1;
+        }
+        totals.set(category, total);
+      }
+      const categories = [...totals.values()].sort(
+        (a, b) => b.sizeBytes - a.sizeBytes || b.fileCount - a.fileCount,
+      );
+      const body: TypeBreakdown = {
+        scanId: url.pathname.split("/")[2],
+        root: data.root.absolutePath,
+        scope,
+        partial: data.nodes.get(scope)!.partial,
+        catalogVersion: 1,
+        totalBytes: categories.reduce((sum, total) => sum + total.sizeBytes, 0),
+        totalFiles: categories.reduce((sum, total) => sum + total.fileCount, 0),
+        categories,
+      };
       await respond(body).catch(() => {});
     } else if (url.pathname.endsWith("/ancestors")) {
       const path = url.searchParams.get("path")!;
@@ -2716,4 +2837,316 @@ test("search reads in Spanish on a narrow window and never focuses the closed ex
   await expect(page.getByText("Desde la búsqueda")).toBeVisible();
   await page.getByRole("button", { name: "Volver a los resultados" }).click();
   await expect(search).toHaveValue("mkv");
+});
+
+function typeStrip(page: Page, where = "the whole analysis") {
+  return page.getByRole("figure", {
+    name: new RegExp(`^Files in ${where} by type`),
+  });
+}
+
+test("type, date, size and text combine before paging, each with its own chip (T7)", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page, { deep: true });
+  await analyze(page);
+  await showLargest(page);
+  expect(requests.types).toEqual([""]);
+  // The categories add up to what the analysis measured.
+  const strip = typeStrip(page);
+  await expect(strip).toContainText("7.00 GB");
+  await expect(strip.getByRole("button")).toHaveCount(4);
+
+  // Choosing a type in the bar filters the same list, and says so in text.
+  await strip.getByRole("button", { name: /^Videos: 150 MB/ }).click();
+  await expect(
+    strip.getByRole("button", { name: /^Videos:/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("combobox", { name: "Type" })).toHaveValue(
+    "VIDEO",
+  );
+  expect(requests.files.at(-1)).toBe(
+    "?query=&minSizeBytes=0&offset=0&limit=50&category=VIDEO",
+  );
+  const table = results(page);
+  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(table.locator("tbody tr").first()).toContainText("movie.mkv");
+  await expect(table.locator("tbody tr").first()).toContainText("Videos");
+  const chips = page.getByRole("group", { name: "Filters" });
+  await expect(chips.getByRole("button", { name: "Remove filter: Videos" })).toBeVisible();
+  // The extensions of the chosen type come with their sizes.
+  const extension = page.getByRole("combobox", { name: "Extension" });
+  await expect(extension.locator("option")).toHaveText([
+    "All extensions",
+    ".mkv · 150 MB",
+  ]);
+
+  // Another type, then a date: both apply at once.
+  await page.getByRole("combobox", { name: "Type" }).selectOption("IMAGE");
+  await expect(extension.locator("option")).toHaveText([
+    "All extensions",
+    ".jpg · 256 MB",
+    ".png · 256 MB",
+  ]);
+  await expect(page.getByText("1–2 of 2 matching files")).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Modified" })
+    .selectOption("last30");
+  // Thirty days back from when the analysis ended, not from today.
+  expect(requests.files.at(-1)).toBe(
+    "?query=&minSizeBytes=0&offset=0&limit=50&category=IMAGE&modifiedFrom=2026-02-02T05%3A06%3A08.000Z&modifiedBefore=2026-03-04T05%3A06%3A08.001Z",
+  );
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+  await expect(table.locator("tbody tr").first()).toContainText("sun.jpg");
+  await expect(
+    chips.getByRole("button", { name: /^Remove filter: Modified since Feb [12], 2026$/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Date filters leave out files whose date is unknown, and count from when this analysis ended.",
+    ),
+  ).toBeVisible();
+  await checkAccessibility(page);
+
+  // Text and size narrow it further, before the page is cut.
+  await fileSearch(page).fill("sun");
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+  await page.getByRole("radio", { name: "1.00 GB or more" }).check();
+  await expect(
+    page.getByRole("heading", { name: "No matching files" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "No file in the whole analysis has “sun” in its name or path. Only files of 1.00 GB or more are included. Only files that meet every filter are listed.",
+    ),
+  ).toBeVisible();
+  expect(requests.files.at(-1)).toContain("query=sun&minSizeBytes=1073741824");
+  // Each chip removes its own filter and nothing else.
+  await chips
+    .getByRole("button", { name: "Remove filter: 1.00 GB or more" })
+    .click();
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Type" })).toHaveValue(
+    "IMAGE",
+  );
+  // Clearing the filters keeps the text; clearing the text brings the ranking back.
+  await chips.getByRole("button", { name: "Clear filters" }).click();
+  await expect(chips).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "Modified" })).toHaveValue(
+    "any",
+  );
+  await expect(fileSearch(page)).toHaveValue("sun");
+  await fileSearch(page).fill("");
+  await expect(
+    page.getByRole("heading", { name: "Largest files in this analysis" }),
+  ).toBeVisible();
+});
+
+test("unknown and later dates are said so, never match a date filter, and sort last (T7)", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page, { deep: true });
+  await analyze(page);
+  const ranking = await showLargest(page);
+  await expect(
+    ranking.getByRole("row", { name: /movie\.mkv/ }),
+  ).toContainText("Apr 2, 2019");
+
+  // Sorting by date searches every file, oldest first, unknown dates last.
+  const modified = page.getByRole("columnheader", { name: "Modified" });
+  await modified.getByRole("button").click();
+  await expect(modified).toHaveAttribute("aria-sort", "ascending");
+  expect(requests.files.at(-1)).toBe(
+    "?query=&minSizeBytes=0&offset=0&limit=50&order=OLDEST",
+  );
+  const rows = results(page).locator("tbody tr");
+  await expect(rows).toHaveCount(35);
+  await expect(rows.first()).toContainText("movie.mkv");
+  await expect(rows.nth(1)).toContainText("package.zip");
+  await expect(rows.last()).toContainText("readme.txt");
+  await expect(rows.last()).toContainText("Unknown");
+  // A date after the analysis is shown, and marked rather than trusted.
+  await expect(rows.nth(33)).toContainText("clip-01.bin");
+  await expect(rows.nth(33)).toContainText("Jan 10, 2027 · after the analysis");
+  await modified.getByRole("button").click();
+  await expect(modified).toHaveAttribute("aria-sort", "descending");
+  await expect(rows.first()).toContainText("clip-01.bin");
+  await expect(rows.nth(1)).toContainText("sun.jpg");
+  await expect(rows.last()).toContainText("readme.txt");
+  // The detail says where the file stands in that order.
+  await page.getByRole("button", { name: "sun.jpg", exact: true }).click();
+  await expect(
+    page.getByText("No. 2 of 35 matching files, newest first"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Back to search results" }).click();
+  await page
+    .getByRole("columnheader", { name: "Size" })
+    .getByRole("button")
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Largest files in this analysis" }),
+  ).toBeVisible();
+
+  // An unknown date never satisfies a date filter, nor does a later one.
+  await fileSearch(page).fill("readme");
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Modified" })
+    .selectOption("over3");
+  await expect(
+    page.getByRole("heading", { name: "No matching files" }),
+  ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Modified" })
+    .selectOption("last30");
+  await expect(
+    page.getByRole("heading", { name: "No matching files" }),
+  ).toBeVisible();
+  await fileSearch(page).fill("clip-01");
+  await expect(
+    page.getByRole("heading", { name: "No matching files" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).first().click();
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+});
+
+test("a file's details and its folder's table say what type it is and when it changed", async ({
+  page,
+}) => {
+  await prepare(page, { deep: true });
+  await analyze(page);
+  await showLargest(page);
+  await page.getByRole("button", { name: "movie.mkv", exact: true }).click();
+  const facts = page.locator(".finding-facts");
+  await expect(facts).toContainText("TypeVideos · .mkv");
+  await expect(facts).toContainText(/ModifiedApr 2, 2019/);
+  await expect(facts).toContainText(
+    "It does not say when the file was last opened or used.",
+  );
+  await checkAccessibility(page);
+
+  // The folder table: type per file, file count per folder, sortable dates.
+  await page.getByRole("button", { name: /^Back to largest files$/ }).click();
+  await page.getByRole("radio", { name: "Folder contents" }).check();
+  const root = page.getByRole("table", { name: /^Contents of Fixture/ });
+  await expect(root.getByRole("row", { name: /Projects/ })).toContainText(
+    "Folder2 files",
+  );
+  await expect(root.getByRole("row", { name: /readme\.txt/ })).toContainText(
+    "DocumentsUnknown",
+  );
+  await treeNode(page, "Projects").click();
+  const projects = page.getByRole("table", { name: /^Contents of Projects/ });
+  const rows = projects.locator("tbody tr");
+  await expect(rows.first()).toContainText("package.zip");
+  await expect(rows.first()).toContainText("Compressed archivesJun 1, 2021");
+  const modified = projects.getByRole("columnheader", { name: "Modified" });
+  await modified.getByRole("button").click();
+  await expect(modified).toHaveAttribute("aria-sort", "ascending");
+  await expect(rows.first()).toContainText("package.zip");
+  await modified.getByRole("button").click();
+  await expect(modified).toHaveAttribute("aria-sort", "descending");
+  await expect(rows.first()).toContainText("assets.png");
+  await checkAccessibility(page);
+
+  // A file opened from the tree lists the same facts.
+  await treeNode(page, "Photos").click();
+  await page.getByRole("button", { name: "sun.jpg", exact: true }).click();
+  await expect(page.locator(".file-detail")).toContainText("TypeImages · .jpg");
+  await expect(page.locator(".file-detail")).toContainText(/ModifiedFeb 20, 2026/);
+});
+
+test("the type bar follows the search scope and a failed breakdown can be retried", async ({
+  page,
+}) => {
+  const { requests, state } = await prepare(page, { deep: true });
+  // The request and its one automatic retry.
+  state.typeErrors = 2;
+  await analyze(page);
+  await showLargest(page);
+  await expect(
+    page.getByText("Could not break these files down by type."),
+  ).toBeVisible();
+  // The list does not depend on it.
+  await expect(
+    page.getByRole("table", { name: /^Largest files in Fixture/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(typeStrip(page)).toBeVisible();
+
+  await treeNode(page, "Projects").click();
+  await page.getByRole("radio", { name: "Largest files" }).check();
+  await page
+    .getByRole("group", { name: "Search in" })
+    .getByRole("radio", { name: "Projects and subfolders" })
+    .check();
+  const strip = typeStrip(page, "Projects and its subfolders");
+  await expect(strip).toContainText("768 MB");
+  await expect(strip.getByRole("button")).toHaveCount(2);
+  expect(requests.types.at(-1)).toBe("?scope=%2Ffixture%2FProjects");
+  // A second choice of the same segment removes its filter.
+  const archives = strip.getByRole("button", { name: /^Compressed archives:/ });
+  await archives.click();
+  await expect(page.getByText("1–1 of 1 matching files")).toBeVisible();
+  await archives.click();
+  await expect(page.getByText("1–2 of 2 matching files")).toBeVisible();
+  await expect(archives).toHaveAttribute("aria-pressed", "false");
+});
+
+test("filters read in Spanish, fit a narrow window and keep their chosen state visible in forced colors", async ({
+  page,
+}) => {
+  await prepare(page, { deep: true });
+  await analyze(page);
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByLabel("Language").selectOption("es");
+  await page.getByRole("button", { name: "Listo" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("radio", { name: "Archivos más grandes" }).check();
+  await page.getByRole("combobox", { name: "Tipo" }).selectOption("VIDEO");
+  await page
+    .getByRole("combobox", { name: "Modificado" })
+    .selectOption("over1");
+  await expect(page.getByText("1–1 de 1 archivos que coinciden")).toBeVisible();
+  const chips = page.getByRole("group", { name: "Filtros" });
+  await expect(
+    chips.getByRole("button", { name: "Quitar el filtro: Vídeos" }),
+  ).toBeVisible();
+  await expect(
+    chips.getByRole("button", {
+      // Dates follow the system's regional format, like the analysis date.
+      name: /^Quitar el filtro: Modificados antes del Mar [34], 2025$/,
+    }),
+  ).toBeVisible();
+  await expect(
+    chips.getByRole("button", { name: "Quitar los filtros" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth + 1,
+    ),
+  ).toBe(true);
+  await checkAccessibility(page);
+  await page.screenshot({
+    path: "test-results/filters-compact-es.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "movie.mkv", exact: true }).click();
+  await expect(page.locator(".finding-facts")).toContainText(
+    "TipoVídeos · .mkv",
+  );
+  await expect(
+    page.getByText(
+      "N.º 1 de 1 archivos que coinciden, por tamaño",
+    ),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Volver a los resultados" }).click();
+  await page.emulateMedia({ forcedColors: "active" });
+  // The chosen segment keeps an outline when forced colors drop its fill.
+  const segment = page.locator(".type-strip .bar-segment.is-chosen");
+  await expect(segment).toHaveCount(1);
+  expect(
+    await segment.evaluate((element) => getComputedStyle(element).outlineStyle),
+  ).toBe("solid");
 });

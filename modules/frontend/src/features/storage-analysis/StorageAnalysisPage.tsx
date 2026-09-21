@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery, useQueryClient } from "react-query";
 import { useStorageScan } from "./hooks/useStorageScan";
 import { ServiceStatus, useServiceStatus } from "./hooks/useServiceStatus";
@@ -14,6 +20,7 @@ import {
   initialLargestState,
   isSearch,
 } from "./components/LargestFiles";
+import { ModifiedDate, useFileType } from "./components/FileFacts";
 import { SkippedItemsDialog } from "./components/SkippedItemsDialog";
 import { QuickStart } from "./components/QuickStart";
 import { DirectoryTree } from "./components/DirectoryTree";
@@ -62,6 +69,8 @@ import { AppShell } from "../../layouts/AppShell";
 import { SettingsDialog } from "../settings/SettingsDialog";
 import { QuickAccessMenu } from "./components/QuickAccessMenu";
 import { useTranslation } from "../../shared/i18n/LanguageProvider";
+// Only the workspace uses these rules, so they travel in its lazy chunk.
+import "../../styles/workspace-filters.css";
 
 /** What the service banner reports, or nothing while it has no failure. */
 function serviceFailure(status: ServiceStatus): string | null {
@@ -484,6 +493,15 @@ export function StorageAnalysisPage() {
         ? "partial"
         : "complete";
   const analyzedAt = snapshot?.finishedAt ?? snapshot?.startedAt ?? undefined;
+  // Date filters count back from the end of the analysis. A service older
+  // than that contract gets the moment its results arrived, fixed per scan so
+  // the same filter always asks the same question.
+  const reference = useMemo(
+    () => analyzedAt ?? new Date().toISOString(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [snapshot?.id, analyzedAt],
+  );
+  const fileType = useFileType();
 
   // Every message above the workspace can be closed once it has been read,
   // and the room it took goes back to the results. Each one is keyed by what
@@ -832,6 +850,7 @@ export function StorageAnalysisPage() {
                 key={snapshot!.id}
                 scanId={snapshot!.id}
                 root={root}
+                analyzedAt={reference}
                 state={largestState}
                 onStateChange={setLargestState}
                 restoreList={restoreLargest}
@@ -1008,6 +1027,27 @@ export function StorageAnalysisPage() {
                         <dt>{t("file.size")}</dt>
                         <dd>{formatBytes(selected.sizeBytes)}</dd>
                       </div>
+                      {selected.category && (
+                        <div>
+                          <dt>{t("finding.type")}</dt>
+                          <dd>{fileType(selected)}</dd>
+                        </div>
+                      )}
+                      {selected.lastModified !== undefined && (
+                        <div>
+                          <dt>{t("finding.modified")}</dt>
+                          <dd>
+                            <ModifiedDate
+                              file={selected}
+                              analyzedAt={reference}
+                              withTime
+                            />
+                            <span className="fact-note muted">
+                              {t("date.meaning")}
+                            </span>
+                          </dd>
+                        </div>
+                      )}
                       <div>
                         <dt>{t("file.path")}</dt>
                         <dd>{selected.absolutePath}</dd>
@@ -1031,6 +1071,7 @@ export function StorageAnalysisPage() {
                     <ContentsTable
                       key={selected.absolutePath}
                       node={selected}
+                      analyzedAt={reference}
                       onSelect={selectNode}
                       state={
                         contentsStates[selected.absolutePath] ??

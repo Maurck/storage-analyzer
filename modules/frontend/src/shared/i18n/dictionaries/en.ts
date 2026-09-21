@@ -426,4 +426,58 @@ export const en = {
   "capacity.description":
     "On this computer, one analysis can hold about {count} items with paths of about {length} characters. Larger folders stop with an explanation.",
   "capacity.unavailable": "Shown once the analysis engine is ready.",
+  "category.VIDEO": "Videos",
+  "category.IMAGE": "Images",
+  "category.AUDIO": "Audio",
+  "category.DOCUMENT": "Documents",
+  "category.ARCHIVE": "Compressed archives",
+  "category.DISK_IMAGE": "Disk images",
+  "category.PROGRAM": "Programs and installers",
+  "category.OTHER": "Other types",
+  "category.NO_EXTENSION": "No extension",
+  "category.withExtension": "{category} · .{extension}",
+
+  "date.unknown": "Unknown",
+  "date.future": "after the analysis",
+  "date.meaning":
+    "When the file was last written, as the analysis read it. It does not say when the file was last opened or used.",
+
+  "filters.label": "Filters",
+  "filters.typeLabel": "Type",
+  "filters.anyType": "All types",
+  "filters.extensionLabel": "Extension",
+  "filters.anyExtension": "All extensions",
+  "filters.extensionOption": ".{extension} · {size}",
+  "filters.modifiedLabel": "Modified",
+  "filters.modifiedAny": "Any date",
+  "filters.modifiedLast30": "In the last 30 days",
+  "filters.modifiedLastYear": "In the last year",
+  "filters.modifiedOver1": "More than a year ago",
+  "filters.modifiedOver3": "More than 3 years ago",
+  "filters.chipSince": "Modified since {date}",
+  "filters.chipBefore": "Modified before {date}",
+  "filters.remove": "Remove filter: {name}",
+  "filters.clear": "Clear filters",
+  "filters.dateNote":
+    "Date filters leave out files whose date is unknown, and count from when this analysis ended.",
+  "filters.emptyFiltered": "Only files that meet every filter are listed.",
+
+  "types.title": "Types",
+  "types.figureLabel":
+    "Files in {where} by type, {size} in all. Choose a type to list only its files; exact sizes are in the type filter.",
+  "types.segment": "{category}: {size}, {share}",
+  "types.error": "Could not break these files down by type.",
+
+  "largest.columnType": "Type",
+  "largest.columnModified": "Modified",
+  "largest.sortBySize": "Sort by size, largest first",
+  "largest.sortByDate": "Sort by date modified",
+
+  "finding.matchValueOldest": "No. {rank} of {total} matching files, oldest first",
+  "finding.matchValueNewest": "No. {rank} of {total} matching files, newest first",
+  "finding.type": "Type",
+  "finding.modified": "Modified",
+
+  "contents.columnModified": "Modified",
+  "contents.folderFiles": "{count} files",
 };

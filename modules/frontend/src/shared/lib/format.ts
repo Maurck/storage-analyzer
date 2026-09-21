@@ -27,6 +27,8 @@ export interface Formatters {
   formatDuration(milliseconds: number): string;
   /** Date and time in the regional format, or UNAVAILABLE for an invalid date. */
   formatDateTime(iso: string): string;
+  /** The date alone, in the regional format, or UNAVAILABLE for an invalid date. */
+  formatDate(iso: string): string;
 }
 
 export function createFormatters(locale: string): Formatters {
@@ -102,6 +104,11 @@ export function createFormatters(locale: string): Formatters {
     const time = Date.parse(iso);
     return Number.isNaN(time) ? UNAVAILABLE : dateTime.format(time);
   }
+  const dateOnly = new Intl.DateTimeFormat(locale, { dateStyle: "medium" });
+  function formatDate(iso: string): string {
+    const time = Date.parse(iso);
+    return Number.isNaN(time) ? UNAVAILABLE : dateOnly.format(time);
+  }
 
   return {
     locale,
@@ -110,6 +117,7 @@ export function createFormatters(locale: string): Formatters {
     formatPercent,
     formatDuration,
     formatDateTime,
+    formatDate,
   };
 }
 
@@ -142,6 +150,7 @@ export const formatBytes = formatters.formatBytes;
 export const formatPercent = formatters.formatPercent;
 export const formatDuration = formatters.formatDuration;
 export const formatDateTime = formatters.formatDateTime;
+export const formatDate = formatters.formatDate;
 
 export const percentOf = (part: number, total: number) =>
   total > 0 ? Math.min(100, Math.max(0, (part / total) * 100)) : 0;

@@ -1,6 +1,7 @@
 package backend.resources.directories;
 
 import backend.enums.FileCategory;
+import backend.enums.FileOrder;
 import backend.models.Ancestry;
 import backend.models.Directory;
 import backend.models.FileSearch;
@@ -70,11 +71,12 @@ public class ScanResource {
                             @RequestParam(required = false) String extension,
                             @RequestParam(required = false) String modifiedFrom,
                             @RequestParam(required = false) String modifiedBefore,
+                            @RequestParam(defaultValue = "LARGEST") FileOrder order,
                             @RequestParam(defaultValue = "0") int offset,
                             @RequestParam(defaultValue = "50") int limit) {
         FileFilter filter = new FileFilter(query, minSizeBytes, category, extension,
                 ScanService.parseInstant(modifiedFrom), ScanService.parseInstant(modifiedBefore));
-        return scanService.search(id, scope, filter, offset, limit);
+        return scanService.search(id, scope, filter, order, offset, limit);
     }
 
     @GetMapping("/{id}/types")

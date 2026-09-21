@@ -142,7 +142,10 @@ class StorageApiTests {
                 .andExpect(jsonPath("$.lastModified").doesNotExist())
                 .andExpect(jsonPath("$.subdirectories[0].lastModified").value("2024-05-06T07:08:09Z"));
 
-        for (String[] invalid : new String[][]{{"category", "MOVIES"}, {"modifiedFrom", "yesterday"},
+        mvc.perform(get("/scans/" + id + "/files").param("order", "OLDEST"))
+                .andExpect(jsonPath("$.order").value("OLDEST"))
+                .andExpect(jsonPath("$.files[0].name").value("clip.mp4"));
+        for (String[] invalid : new String[][]{{"category", "MOVIES"}, {"order", "SMALLEST"}, {"modifiedFrom", "yesterday"},
                 {"modifiedBefore", "2026-01-01"}, {"extension", "tar.gz"}}) {
             mvc.perform(get("/scans/" + id + "/files").param(invalid[0], invalid[1]))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAMETER"));

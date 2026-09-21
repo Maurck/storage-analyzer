@@ -1,12 +1,13 @@
 package backend.models;
 
 import backend.enums.FileCategory;
+import backend.enums.FileOrder;
 
 import java.time.Instant;
 import java.util.List;
 
 /**
- * One page of the files of a completed scan that match every filter, largest first, ties by
+ * One page of the files of a completed scan that match every filter, in the order asked for, ties by
  * path. Every file under the scope is considered before the page is cut, so
  * {@code matchingFiles} counts them all.
  *
@@ -17,9 +18,10 @@ import java.util.List;
  * @param extension      only files with this extension, lower case and without the dot; null for any
  * @param modifiedFrom   only files modified at or after this instant; null for no lower bound
  * @param modifiedBefore only files modified before this instant; null for no upper bound
+ * @param order          how the matches are sorted before the page is cut
  * @param matchingFiles  files under the scope that match every filter
  */
 public record FileSearch(String scanId, String root, String scope, boolean partial, String query,
                          long minSizeBytes, FileCategory category, String extension,
-                         Instant modifiedFrom, Instant modifiedBefore, int offset, int limit,
+                         Instant modifiedFrom, Instant modifiedBefore, FileOrder order, int offset, int limit,
                          long matchingFiles, List<LargestFiles.RankedFile> files) { }

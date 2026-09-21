@@ -1,6 +1,7 @@
 package backend.services.files;
 
 import backend.enums.FileCategory;
+import backend.enums.FileOrder;
 import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
 import backend.models.Ancestry;
@@ -914,7 +915,7 @@ class ScanServiceTests {
         Instant cut = Instant.parse("2025-01-01T00:00:00Z");
 
         FileSearch oldVideos = service.search(id, null,
-                new ScanService.FileFilter("", 0, FileCategory.VIDEO, null, null, cut), 0, 50);
+                new ScanService.FileFilter("", 0, FileCategory.VIDEO, null, null, cut), FileOrder.LARGEST, 0, 50);
         assertEquals(List.of("old-trip.mp4", "old-trip.mkv", "old-other.mp4"), names(oldVideos));
         assertEquals(3, oldVideos.matchingFiles());
         assertEquals(FileCategory.VIDEO, oldVideos.category());
@@ -922,35 +923,45 @@ class ScanServiceTests {
         assertNull(oldVideos.modifiedFrom());
         // Every criterion at once: text, scope, size, extension and date.
         FileSearch narrow = service.search(id, trips.toString(),
-                new ScanService.FileFilter("trip", 310, null, ".MP4", null, cut), 0, 50);
+                new ScanService.FileFilter("trip", 310, null, ".MP4", null, cut), FileOrder.LARGEST, 0, 50);
         assertEquals(List.of("old-trip.mp4"), names(narrow));
         assertEquals("mp4", narrow.extension(), "the extension is echoed as the catalog spells it");
         // An extension from another category matches nothing, rather than failing.
-        assertEquals(0, service.search(id, null, new ScanService.FileFilter("", 0, FileCategory.IMAGE, "mp4", null, null), 0, 50).matchingFiles());
+        assertEquals(0, service.search(id, null, new ScanService.FileFilter("", 0, FileCategory.IMAGE, "mp4", null, null), FileOrder.LARGEST, 0, 50).matchingFiles());
         // The lower bound is inclusive and the upper one exclusive.
-        assertEquals(List.of("new-trip.mp4"), names(service.search(id, null, new ScanService.FileFilter("", 0, null, null, recent, null), 0, 50)));
-        assertEquals(0, service.search(id, null, new ScanService.FileFilter("", 0, null, null, null, old), 0, 50).matchingFiles());
-        assertEquals(4, service.search(id, null, new ScanService.FileFilter("", 0, null, null, old, recent), 0, 50).matchingFiles());
+        assertEquals(List.of("new-trip.mp4"), names(service.search(id, null, new ScanService.FileFilter("", 0, null, null, recent, null), FileOrder.LARGEST, 0, 50)));
+        assertEquals(0, service.search(id, null, new ScanService.FileFilter("", 0, null, null, null, old), FileOrder.LARGEST, 0, 50).matchingFiles());
+        assertEquals(4, service.search(id, null, new ScanService.FileFilter("", 0, null, null, old, recent), FileOrder.LARGEST, 0, 50).matchingFiles());
         // An unknown time never satisfies a date bound, however wide.
         FileSearch everDated = service.search(id, null,
-                new ScanService.FileFilter("undated", 0, null, null, Instant.parse("0001-01-01T00:00:00Z"), Instant.parse("9999-01-01T00:00:00Z")), 0, 50);
+                new ScanService.FileFilter("undated", 0, null, null, Instant.parse("0001-01-01T00:00:00Z"), Instant.parse("9999-01-01T00:00:00Z")), FileOrder.LARGEST, 0, 50);
         assertEquals(0, everDated.matchingFiles());
-        assertEquals(1, service.search(id, null, ScanService.FileFilter.of("undated", 0), 0, 50).matchingFiles());
+        assertEquals(1, service.search(id, null, ScanService.FileFilter.of("undated", 0), FileOrder.LARGEST, 0, 50).matchingFiles());
         // Extreme instants saturate instead of overflowing.
-        assertEquals(5, service.search(id, null, new ScanService.FileFilter("", 0, null, null, null, Instant.MAX), 0, 50).matchingFiles());
-        assertEquals(5, service.search(id, null, new ScanService.FileFilter("", 0, null, null, Instant.MIN, null), 0, 50).matchingFiles());
+        assertEquals(5, service.search(id, null, new ScanService.FileFilter("", 0, null, null, null, Instant.MAX), FileOrder.LARGEST, 0, 50).matchingFiles());
+        assertEquals(5, service.search(id, null, new ScanService.FileFilter("", 0, null, null, Instant.MIN, null), FileOrder.LARGEST, 0, 50).matchingFiles());
 
         for (Runnable invalid : List.<Runnable>of(
-                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, null, recent, old), 0, 10),
-                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, null, old, old), 0, 10),
-                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "tar.gz", null, null), 0, 10),
-                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "a/b", null, null), 0, 10),
-                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, ".", null, null), 0, 10),
-                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "e".repeat(FileTypes.MAX_EXTENSION_LENGTH + 1), null, null), 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, null, recent, old), FileOrder.LARGEST, 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, null, old, old), FileOrder.LARGEST, 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "tar.gz", null, null), FileOrder.LARGEST, 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "a/b", null, null), FileOrder.LARGEST, 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, ".", null, null), FileOrder.LARGEST, 0, 10),
+                () -> service.search(id, null, new ScanService.FileFilter("", 0, null, "e".repeat(FileTypes.MAX_EXTENSION_LENGTH + 1), null, null), FileOrder.LARGEST, 0, 10),
                 () -> ScanService.parseInstant("yesterday"),
                 () -> ScanService.parseInstant("2026-09-20"))) {
             assertEquals(ApiErrorCode.INVALID_PARAMETER, assertThrows(ApiException.class, invalid::run).getCode());
         }
+        // By date, either way, files whose time is unknown come last; size then path settle ties.
+        ScanService.FileFilter everything = ScanService.FileFilter.of("", 0);
+        assertEquals(List.of("old-trip.mp4", "old-trip.mkv", "old-trip.jpg", "old-other.mp4", "new-trip.mp4", "undated.mp4"),
+                names(service.search(id, null, everything, FileOrder.OLDEST, 0, 50)));
+        assertEquals(List.of("new-trip.mp4", "old-trip.mp4", "old-trip.mkv", "old-trip.jpg", "old-other.mp4", "undated.mp4"),
+                names(service.search(id, null, everything, FileOrder.NEWEST, 0, 50)));
+        FileSearch secondOldest = service.search(id, null, everything, FileOrder.OLDEST, 1, 2);
+        assertEquals(List.of("old-trip.mkv", "old-trip.jpg"), names(secondOldest));
+        assertEquals(FileOrder.OLDEST, secondOldest.order());
+
         assertNull(ScanService.parseInstant(" "));
         assertEquals(old, ScanService.parseInstant("2020-01-01T00:00:00Z"));
         assertNull(ScanService.normalizedExtension(""));

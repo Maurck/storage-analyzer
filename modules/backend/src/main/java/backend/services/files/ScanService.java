@@ -2,6 +2,7 @@ package backend.services.files;
 
 import backend.enums.DirectoryType;
 import backend.enums.FileCategory;
+import backend.enums.FileOrder;
 import backend.enums.NodeIssueCode;
 import backend.enums.ScanErrorCode;
 import backend.models.Ancestry;
@@ -56,6 +57,12 @@ public class ScanService {
     /** Largest first; equal sizes by path so the order never depends on hashing. */
     private static final Comparator<Entry> SIZE_ORDER = Comparator.comparingLong((Entry entry) -> entry.sizeBytes)
             .reversed().thenComparing(entry -> entry.path.toString());
+    /** Files with a known time first, then by time; size and path settle ties. */
+    private static final Comparator<Entry> KNOWN_TIME_FIRST = Comparator.comparing((Entry entry) -> entry.modifiedMillis == UNKNOWN_TIME);
+    private static final Comparator<Entry> OLDEST_ORDER = KNOWN_TIME_FIRST
+            .thenComparingLong((Entry entry) -> entry.modifiedMillis).thenComparing(SIZE_ORDER);
+    private static final Comparator<Entry> NEWEST_ORDER = KNOWN_TIME_FIRST
+            .thenComparing(Comparator.comparingLong((Entry entry) -> entry.modifiedMillis).reversed()).thenComparing(SIZE_ORDER);
     private final ExecutorService executor;
     private final int maximumEntries;
     private final int maximumDepth;
@@ -288,14 +295,14 @@ public class ScanService {
      * ranking's bounded list. Case and the kind of path separator are ignored.
      */
     public FileSearch search(String id, String query, String scopePath, long minSizeBytes, int offset, int limit) {
-        return search(id, scopePath, FileFilter.of(query, minSizeBytes), offset, limit);
+        return search(id, scopePath, FileFilter.of(query, minSizeBytes), FileOrder.LARGEST, offset, limit);
     }
 
     /**
      * A page of the files under a folder of a completed scan, subfolders included, that
-     * satisfy every criterion of the filter, largest first. See {@link FileFilter}.
+     * satisfy every criterion of the filter, in the order asked for. See {@link FileFilter}.
      */
-    public FileSearch search(String id, String scopePath, FileFilter filter, int offset, int limit) {
+    public FileSearch search(String id, String scopePath, FileFilter filter, FileOrder order, int offset, int limit) {
         String needle = filter.query() == null ? "" : filter.query().strip();
         String extension = normalizedExtension(filter.extension());
         Instant from = filter.modifiedFrom(), before = filter.modifiedBefore();
@@ -320,7 +327,12 @@ public class ScanService {
         long beforeMillis = before == null ? UNKNOWN_TIME : clampedMillis(before);
         boolean byType = filter.category() != null || extension != null;
         int window = offset + limit;
-        PriorityQueue<Entry> smallestKept = new PriorityQueue<>(window + 1, SIZE_ORDER.reversed());
+        Comparator<Entry> sorted = switch (order) {
+            case LARGEST -> SIZE_ORDER;
+            case OLDEST -> OLDEST_ORDER;
+            case NEWEST -> NEWEST_ORDER;
+        };
+        PriorityQueue<Entry> lastKept = new PriorityQueue<>(window + 1, sorted.reversed());
         long[] matching = {0};
         forEachFile(scope, entry -> {
             // Cheapest checks first; the name is read only when a type is asked for.
@@ -335,18 +347,18 @@ public class ScanService {
             }
             if (!containsIgnoringCase(entry.path.toString(), relativeStart, needle)) return;
             matching[0]++;
-            if (smallestKept.size() < window) {
-                smallestKept.add(entry);
-            } else if (SIZE_ORDER.compare(entry, smallestKept.peek()) < 0) {
-                smallestKept.poll();
-                smallestKept.add(entry);
+            if (lastKept.size() < window) {
+                lastKept.add(entry);
+            } else if (sorted.compare(entry, lastKept.peek()) < 0) {
+                lastKept.poll();
+                lastKept.add(entry);
             }
         });
-        List<Entry> kept = new ArrayList<>(smallestKept);
-        kept.sort(SIZE_ORDER);
+        List<Entry> kept = new ArrayList<>(lastKept);
+        kept.sort(sorted);
         List<LargestFiles.RankedFile> files = kept.stream().skip(offset).map(entry -> rankedFile(session, entry)).toList();
         return new FileSearch(session.id, root, scope.path.toString(), scope.partial, needle, filter.minSizeBytes(),
-                filter.category(), extension, from, before, offset, limit, matching[0], files);
+                filter.category(), extension, from, before, order, offset, limit, matching[0], files);
     }
 
     /**

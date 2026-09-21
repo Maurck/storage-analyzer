@@ -2,7 +2,8 @@
 // fixture only: choose a folder, find a deep file in the ranking without
 // opening the tree, show it in Explorer, search for a file that no ranking
 // lists and no open branch holds (H4b), open its folder from its details and
-// come back to the same row (H4a), then see a moved file explained.
+// come back to the same row (H4a), narrow the list by type and date on the
+// server (H4c), then see a moved file explained.
 // Requires the backend at http://localhost:5000 and a production build.
 // Selectors avoid visible text so the check works in any interface language.
 const { _electron: electron, expect } = require('@playwright/test');
@@ -27,6 +28,8 @@ const path = require('node:path');
   // snapshot can reach it, never the ranking of the largest 100.
   const needle = path.join(deep, 'needle-report.txt');
   await fs.writeFile(needle, 'report');
+  // Written years before the analysis, for the date filter (H4c).
+  await fs.utimes(needle, new Date('2018-05-06T07:08:09Z'), new Date('2018-05-06T07:08:09Z'));
   const filler = path.join(fixture, 'filler');
   await fs.mkdir(filler);
   for (let index = 0; index < 110; index++) {
@@ -84,6 +87,18 @@ const path = require('node:path');
     await page.locator('#file-search').fill('');
     await expect(rows).toHaveCount(100);
 
+    // 3c. H4c: type and date combine on the server. Both documents match the
+    // type; only the one written years ago also matches the date.
+    await expect(page.locator('.type-strip .bar-segment')).toHaveCount(2); // Other types and documents
+    await page.locator('#file-type').selectOption('DOCUMENT');
+    await expect(rows).toHaveCount(2);
+    await page.locator('#file-modified').selectOption('over3');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.nth(0)).toContainText('needle-report.txt');
+    await expect(rows.nth(0).locator('.modified-column time')).toHaveAttribute('datetime', '2018-05-06T07:08:09Z');
+    await page.locator('.filter-chips .sa-button--ghost').click();
+    await expect(rows).toHaveCount(100);
+
     // 4. H4a: its details lead to its folder, opened only along the way, and
     // the way back returns to the same row.
     await rows.nth(0).locator('.item-link').click();
@@ -109,7 +124,7 @@ const path = require('node:path');
     await fs.mkdir(path.join(frontend, 'test-results'), { recursive: true });
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach(window => window.show()));
     await page.screenshot({ path: path.join(frontend, 'test-results', 'electron-first-finding.png') });
-    console.log(`First finding passed: deep file ranked first, shown, found again by a search that the ranking cannot answer, opened in its folder and back to its row; moved file explained. This computer holds about ${capacity.maxEntries.toLocaleString('en-US')} items per analysis (heap ${(capacity.maxHeapBytes / 1024 ** 3).toFixed(1)} GiB).`);
+    console.log(`First finding passed: deep file ranked first, shown, found again by a search that the ranking cannot answer, narrowed by type and date, opened in its folder and back to its row; moved file explained. This computer holds about ${capacity.maxEntries.toLocaleString('en-US')} items per analysis (heap ${(capacity.maxHeapBytes / 1024 ** 3).toFixed(1)} GiB).`);
   } finally {
     await app.close();
     await fs.rm(fixture, { recursive: true, force: true });

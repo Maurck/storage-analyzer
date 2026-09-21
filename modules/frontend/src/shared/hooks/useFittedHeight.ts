@@ -34,9 +34,14 @@ export function useFittedHeight(
     const element = region.current;
     if (!element) return;
     const fit = () => {
-      // The region's own height never moves its top, and shrinking it moves
-      // what follows by the same amount, so measuring needs no reset and
-      // writing only on a change keeps the observer from looping.
+      // Measured without a bound of its own. A region sitting beside a taller
+      // column reads that column's bottom as content below itself, so a bound
+      // it already carries would be the floor of every later measurement and
+      // the room a closing block frees above would never come back.
+      // Unbounding the region stops it scrolling, which drops where it was
+      // scrolled to; the position goes back with the bound.
+      const { scrollTop, scrollLeft } = element;
+      element.style.maxHeight = "";
       const rect = element.getBoundingClientRect();
       const top = rect.top + window.scrollY;
       const below = Math.max(
@@ -48,7 +53,12 @@ export function useFittedHeight(
         window.innerWidth >= COMPACT && height >= MINIMUM
           ? `${Math.floor(height)}px`
           : "";
-      if (element.style.maxHeight !== bound) element.style.maxHeight = bound;
+      // The unbound height is never painted: the write closes the same frame
+      // the read opened. An unchanged bound leaves the region the size it
+      // already had, so the observer has nothing to report and never loops.
+      element.style.maxHeight = bound;
+      if (element.scrollTop !== scrollTop) element.scrollTop = scrollTop;
+      if (element.scrollLeft !== scrollLeft) element.scrollLeft = scrollLeft;
     };
     fit();
     // Whatever sits above or below the region decides its room: a warning, the

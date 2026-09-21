@@ -13,6 +13,8 @@ interface ServiceStatusBannerProps {
   hasResults: boolean;
   retrying: boolean;
   onRetry(): void;
+  /** Closes a failure the person has read. Absent while the engine starts. */
+  onDismiss?(): void;
 }
 
 const failures: Record<string, [TranslationKey, TranslationKey]> = {
@@ -34,6 +36,7 @@ export function ServiceStatusBanner({
   hasResults,
   retrying,
   onRetry,
+  onDismiss,
 }: ServiceStatusBannerProps) {
   const { t } = useTranslation();
   if (status.state === "ready") return null;
@@ -81,6 +84,7 @@ export function ServiceStatusBanner({
       }
       title={t(titleKey)}
       className="service-banner"
+      onDismiss={onDismiss}
     >
       <p>{t(descriptionKey, { origin })}</p>
       {hasResults && <p>{t("service.resultsKept")}</p>}

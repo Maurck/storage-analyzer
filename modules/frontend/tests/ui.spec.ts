@@ -1498,6 +1498,42 @@ test("a partial analysis warns about its ranking and lists what it skipped", asy
   ).toBeVisible();
 });
 
+test("the warnings of a partial analysis can be closed and come back with the next one", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await prepare(page, {
+    extraFiles: 60,
+    partialRoot: true,
+    scanExtras: { skippedCount: 3 },
+  });
+  await analyze(page);
+  const summary = page
+    .locator(".page-feedback")
+    .filter({ hasText: "Some items could not be measured" });
+  await expect(summary).toBeVisible();
+  const rows = page.locator(".table-scroll").first();
+  const height = async () => (await rows.boundingBox())!.height;
+  const shown = await height();
+  await summary.getByRole("button", { name: "Dismiss this message" }).click();
+  await expect(summary).toHaveCount(0);
+  await expect
+    .poll(height, { message: "the rows take the warning's room" })
+    .toBeGreaterThan(shown);
+  await showLargest(page);
+  const ranking = page.locator(".largest-partial");
+  await expect(ranking).toContainText(
+    "This analysis skipped some items, so files inside them are not ranked.",
+  );
+  await ranking.getByRole("button", { name: "Dismiss this message" }).click();
+  await expect(ranking).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Rescan Fixture", exact: true })
+    .click();
+  await expect(page.locator(".largest-partial")).toBeVisible();
+  await expect(summary).toBeVisible();
+});
+
 test("recent and common folders start an analysis in one click", async ({
   page,
 }) => {
@@ -1760,6 +1796,60 @@ test("the rows get their height back when the size explanation closes", async ({
   await expect
     .poll(height, { message: "the rows fill the window again" })
     .toBe(initial);
+});
+
+test("a failure banner can be closed and the rows take back its room", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const { state } = await prepare(page, { extraFiles: 60 });
+  await analyze(page);
+  const rows = page.locator(".table-scroll").first();
+  const height = async () => (await rows.boundingBox())!.height;
+  const initial = await height();
+  state.health = "down";
+  const banner = page.locator(".service-banner");
+  await expect(banner).toContainText("The analysis engine stopped responding", {
+    timeout: 8000,
+  });
+  const shown = await height();
+  expect(shown, "the banner takes its room from the rows").toBeLessThan(
+    initial,
+  );
+  await banner.getByRole("button", { name: "Dismiss this message" }).click();
+  await expect(banner).toHaveCount(0);
+  await expect
+    .poll(height, { message: "the rows fill the window again" })
+    .toBe(initial);
+  await expect(
+    page.getByRole("table", { name: /^Contents of Fixture/ }),
+  ).toBeVisible();
+  // Closing one failure never hides the next one.
+  state.health = "other-service";
+  await expect(banner).toContainText("Another program is using the engine’s address", {
+    timeout: 10000,
+  });
+});
+
+test("a closed analysis error comes back when the next analysis fails", async ({
+  page,
+}) => {
+  const { requests } = await prepare(page, {
+    scanExtras: { status: "ERROR" },
+  });
+  await selectFolder(page).click();
+  const failure = page
+    .getByRole("alert")
+    .filter({ hasText: "Analysis could not finish" });
+  await expect(failure).toBeVisible();
+  await failure.getByRole("button", { name: "Dismiss this message" }).click();
+  await expect(failure).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Choose a folder" }),
+  ).toBeVisible();
+  await selectFolder(page).click();
+  await expect(failure).toBeVisible();
+  expect(requests.starts).toBe(2);
 });
 
 test("the controls keep their place across views, paths and filters", async ({

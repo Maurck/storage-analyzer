@@ -186,6 +186,7 @@
   }
 
   .sa-alert {
+    position: relative;
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
@@ -222,6 +223,24 @@
   .sa-alert__title {
     margin-bottom: var(--space-1);
     font-weight: var(--weight-semibold);
+  }
+
+  /* The close button sits in the corner instead of the row, so a banner is
+     the same height whether or not it can be closed. */
+  .sa-alert--dismissible {
+    padding-right: calc(var(--space-4) + 32px);
+  }
+
+  .sa-alert__dismiss,
+  .sa-state__dismiss {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    color: inherit;
+  }
+
+  .sa-state-shell {
+    position: relative;
   }
 
   .sa-text {

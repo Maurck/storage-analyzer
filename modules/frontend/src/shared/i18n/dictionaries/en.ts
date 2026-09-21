@@ -292,6 +292,7 @@ export const en = {
   "summary.volumeUnknown": "Drive capacity: unknown",
 
   "common.close": "Close",
+  "common.dismiss": "Dismiss this message",
   "api.INVALID_PARAMETER": "The request was not valid. Please try again.",
 
   "view.label": "View",

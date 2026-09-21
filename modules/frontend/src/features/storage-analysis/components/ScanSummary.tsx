@@ -5,8 +5,11 @@ import { Alert } from "../../../shared/components/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { formatBytes, formatNumber } from "../../../shared/lib/format";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
+import { useDismissible } from "../../../shared/hooks/useDismissible";
 
 interface ScanSummaryProps {
+  /** The analysis summarized; a new one warns again about what it skipped. */
+  scanId: string;
   root: DirectoryNode;
   skippedCount: number;
   volume?: Volume | null;
@@ -15,12 +18,14 @@ interface ScanSummaryProps {
 
 /** A compact strip, so the results start within the first screen. */
 export function ScanSummary({
+  scanId,
   root,
   skippedCount,
   volume,
   onOpenSkipped,
 }: ScanSummaryProps) {
   const { t } = useTranslation();
+  const partialNotice = useDismissible(root.partial ? scanId : null);
   return (
     <>
       <section className="summary-strip" aria-label={t("summary.label")}>
@@ -85,9 +90,13 @@ export function ScanSummary({
           </details>
         </div>
       </section>
-      {root.partial && (
+      {partialNotice.open && (
         <div className="page-feedback">
-          <Alert variant="warning" title={t("summary.partialTitle")}>
+          <Alert
+            variant="warning"
+            title={t("summary.partialTitle")}
+            onDismiss={partialNotice.dismiss}
+          >
             {t("summary.partialDescription")}
           </Alert>
         </div>

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "react-query";
 import { useStorageScan } from "./hooks/useStorageScan";
-import { useServiceStatus } from "./hooks/useServiceStatus";
+import { ServiceStatus, useServiceStatus } from "./hooks/useServiceStatus";
 import { ServiceStatusBanner } from "./components/ServiceStatusBanner";
 import { ScanProgress } from "./components/ScanProgress";
 import { useShowItem } from "./hooks/useShowItem";
@@ -46,6 +46,7 @@ import {
 } from "../../shared/i18n/useErrorMessage";
 import { useMediaQuery } from "../../shared/hooks/useMediaQuery";
 import { useFittedHeight } from "../../shared/hooks/useFittedHeight";
+import { useDismissible } from "../../shared/hooks/useDismissible";
 import { SplitPane } from "../../layouts/SplitPane";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { CommonFolder, desktopBridge } from "../../shared/lib/desktopBridge";
@@ -61,6 +62,20 @@ import { AppShell } from "../../layouts/AppShell";
 import { SettingsDialog } from "../settings/SettingsDialog";
 import { QuickAccessMenu } from "./components/QuickAccessMenu";
 import { useTranslation } from "../../shared/i18n/LanguageProvider";
+
+/** What the service banner reports, or nothing while it has no failure. */
+function serviceFailure(status: ServiceStatus): string | null {
+  switch (status.state) {
+    case "ready":
+    case "checking":
+    case "starting":
+      return null;
+    case "unavailable":
+      return `unavailable:${status.wasReady}`;
+    default:
+      return `${status.state}:${status.reason}`;
+  }
+}
 
 const resultStateLabels = {
   complete: "work.stateComplete",
@@ -469,6 +484,37 @@ export function StorageAnalysisPage() {
         ? "partial"
         : "complete";
   const analyzedAt = snapshot?.finishedAt ?? snapshot?.startedAt ?? undefined;
+
+  // Every message above the workspace can be closed once it has been read,
+  // and the room it took goes back to the results. Each one is keyed by what
+  // it says, so a different failure, or the same one raised again after a
+  // retry, opens its banner anew instead of staying silently closed.
+  const serviceProblem = serviceFailure(service.status);
+  const serviceBanner = useDismissible(serviceProblem);
+  // Only a failure can be closed: while the engine is being checked or is
+  // starting, its banner says what the page is waiting for.
+  const showServiceBanner = serviceProblem === null || serviceBanner.open;
+  const startBanner = useDismissible(
+    pickerError
+      ? `picker:${pickerError}`
+      : start.isError
+        ? `start:${start.failureCount}`
+        : null,
+  );
+  const pollBanner = useDismissible(
+    query.isError && (expired || serviceReady)
+      ? `poll:${expired}:${query.errorUpdatedAt}`
+      : null,
+  );
+  const scanBanner = useDismissible(
+    scan?.status === "ERROR" ? `scan:${scan.id}:${scan.errorCode ?? ""}` : null,
+  );
+  const cancelledBanner = useDismissible(
+    scan?.status === "CANCELLED" ? `cancelled:${scan.id}` : null,
+  );
+  const cancelBanner = useDismissible(
+    cancel.isError ? `cancel:${cancel.failureCount}` : null,
+  );
   const pageActions = (
     <div className="page-actions">
       {snapshot && root && (
@@ -595,18 +641,21 @@ export function StorageAnalysisPage() {
           {pageActions}
         </section>
       )}
-      <ServiceStatusBanner
-        status={service.status}
-        hasResults={!!snapshot}
-        retrying={service.retrying}
-        onRetry={() => {
-          void service.retry();
-        }}
-      />
+      {showServiceBanner && (
+        <ServiceStatusBanner
+          status={service.status}
+          hasResults={!!snapshot}
+          retrying={service.retrying}
+          onRetry={() => {
+            void service.retry();
+          }}
+          onDismiss={serviceBanner.dismiss}
+        />
+      )}
       <div className="global-feedback" aria-live="polite" aria-atomic="true">
         <span className="sr-only">{statusText}</span>
       </div>
-      {(pickerError || start.isError) && (
+      {startBanner.open && (
         <div className="page-feedback">
           <ErrorState
             title={t("error.startTitle")}
@@ -614,11 +663,12 @@ export function StorageAnalysisPage() {
             onRetry={() => {
               void chooseFolder();
             }}
+            onDismiss={startBanner.dismiss}
           />
         </div>
       )}
       {/* When the engine is away, its banner already explains the failure. */}
-      {query.isError && (expired || serviceReady) && (
+      {pollBanner.open && (
         <div className="page-feedback">
           <ErrorState
             title={
@@ -637,10 +687,11 @@ export function StorageAnalysisPage() {
               if (expired) void chooseFolder();
               else void query.refetch();
             }}
+            onDismiss={pollBanner.dismiss}
           />
         </div>
       )}
-      {scan?.status === "ERROR" && (
+      {scan?.status === "ERROR" && scanBanner.open && (
         <div className="page-feedback">
           <ErrorState
             title={t("error.scanFailedTitle")}
@@ -654,12 +705,17 @@ export function StorageAnalysisPage() {
             onRetry={() => {
               void begin(scan.path).catch(() => {});
             }}
+            onDismiss={scanBanner.dismiss}
           />
         </div>
       )}
-      {scan?.status === "CANCELLED" && (
+      {scan?.status === "CANCELLED" && cancelledBanner.open && (
         <div className="page-feedback">
-          <Alert variant="info" title={t("status.cancelled")}>
+          <Alert
+            variant="info"
+            title={t("status.cancelled")}
+            onDismiss={cancelledBanner.dismiss}
+          >
             {snapshot
               ? t("error.cancelledWithResults")
               : t("error.cancelledNoResults")}
@@ -674,9 +730,13 @@ export function StorageAnalysisPage() {
           onCancel={() => cancel.mutate()}
         />
       )}
-      {cancel.isError && (
+      {cancelBanner.open && (
         <div className="page-feedback">
-          <Alert variant="error" title={t("error.couldNotCancel")}>
+          <Alert
+            variant="error"
+            title={t("error.couldNotCancel")}
+            onDismiss={cancelBanner.dismiss}
+          >
             {describeError(cancel.error)} {t("error.couldNotCancelHint")}
           </Alert>
         </div>
@@ -713,6 +773,7 @@ export function StorageAnalysisPage() {
       {root && selected && (
         <>
           <ScanSummary
+            scanId={snapshot!.id}
             root={root}
             skippedCount={snapshot?.skippedCount ?? 0}
             volume={snapshot?.volume}
@@ -904,6 +965,7 @@ export function StorageAnalysisPage() {
                       title={t("show.errorTitle", {
                         name: showSelected.failure.name,
                       })}
+                      onDismiss={showSelected.clearFailure}
                     >
                       {showSelected.failure.message}
                     </Alert>
@@ -918,6 +980,8 @@ export function StorageAnalysisPage() {
                     onRetry={() => {
                       void loadNode(branchError.node);
                     }}
+                    // Closed, it leaves the folder's own load button in place.
+                    onDismiss={() => setBranchError(null)}
                   />
                 )}
                 {loadingPaths.has(selected.absolutePath) ? (

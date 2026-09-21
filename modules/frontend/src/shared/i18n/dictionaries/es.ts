@@ -298,6 +298,7 @@ export const es: Dictionary = {
   "summary.volumeUnknown": "Capacidad de la unidad: desconocida",
 
   "common.close": "Cerrar",
+  "common.dismiss": "Descartar este aviso",
   "api.INVALID_PARAMETER": "La solicitud no era válida. Inténtalo de nuevo.",
 
   "view.label": "Vista",

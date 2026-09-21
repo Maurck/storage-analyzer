@@ -20,6 +20,7 @@ import {
 import { useErrorMessage } from "../../../shared/i18n/useErrorMessage";
 import { useTranslation } from "../../../shared/i18n/LanguageProvider";
 import { useFittedHeight } from "../../../shared/hooks/useFittedHeight";
+import { useDismissible } from "../../../shared/hooks/useDismissible";
 
 const LIMIT = 100;
 /** Files per page of search results. */
@@ -197,6 +198,11 @@ export function LargestFiles({
     : t("search.whereAll");
   // A warning above the rows moves them down, so the region is measured again.
   const partialAbove = searchSent ? list?.partial : root.partial;
+  // Once read, the warning can be closed; the ranking and the search each say
+  // it again, since what they are missing is not the same.
+  const partialNotice = useDismissible(
+    partialAbove ? `${scanId}:${searchSent ? "search" : "ranking"}` : null,
+  );
 
   // The rows scroll inside their region, so the count and the pages under
   // them stay on screen.
@@ -205,7 +211,7 @@ export function LargestFiles({
     scanId,
     list?.files.length,
     searching,
-    !!partialAbove,
+    partialNotice.open,
   );
 
   // Rows exist only once the list has arrived, which after a long visit
@@ -254,6 +260,7 @@ export function LargestFiles({
       <Alert
         variant="error"
         title={t("show.errorTitle", { name: showItem.failure.name })}
+        onDismiss={showItem.clearFailure}
       >
         {showItem.failure.message}
       </Alert>
@@ -287,7 +294,7 @@ export function LargestFiles({
       option.path !== root.absolutePath &&
       all.findIndex((other) => other?.path === option.path) === index,
   );
-  const partial = partialAbove;
+  const partial = partialNotice.open;
   const emptyExit = scope ? (
     <Button variant="secondary" onClick={() => change({ scope: undefined })}>
       {t("search.searchAll")}
@@ -379,7 +386,7 @@ export function LargestFiles({
       </p>
       {partial && (
         <div className="largest-partial">
-          <Alert variant="warning">
+          <Alert variant="warning" onDismiss={partialNotice.dismiss}>
             <p>{searching ? t("search.partial") : t("largest.partial")}</p>
             <Button variant="secondary" size="sm" onClick={onOpenSkipped}>
               {t("skipped.open")}
@@ -701,6 +708,7 @@ function FindingDetail({
           <Alert
             variant="error"
             title={t("finding.openError", { name: file.name })}
+            onDismiss={() => setOpenError("")}
           >
             {openError}
           </Alert>
